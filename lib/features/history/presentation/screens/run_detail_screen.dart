@@ -6,6 +6,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../run/presentation/widgets/metric_card.dart';
+import '../../../run/presentation/screens/run_share_screen.dart';
 
 class RunDetailScreen extends StatefulWidget {
   final RunModel run;
@@ -33,7 +34,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   }
 
   String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} às ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 
   String _formatDuration(int seconds) {
@@ -58,6 +59,17 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(LucideIcons.share2, color: AppColors.primaryNeon),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => RunShareScreen(run: widget.run),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(LucideIcons.trash2, color: Colors.redAccent),
             onPressed: () => _showDeleteConfirmation(context),
@@ -137,17 +149,20 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
           ),
           
           // Metrics Card
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: const BoxDecoration(
-              color: AppColors.backgroundDarkGreen,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(30),
-                topRight: Radius.circular(30),
+          SafeArea(
+            top: false,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+              decoration: const BoxDecoration(
+                color: AppColors.backgroundDarkGreen,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(30),
+                  topRight: Radius.circular(30),
+                ),
               ),
-            ),
-            child: Column(
-              children: [
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
@@ -210,7 +225,8 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
               ],
             ),
           ),
-        ],
+        ),
+      ],
       ),
     );
   }

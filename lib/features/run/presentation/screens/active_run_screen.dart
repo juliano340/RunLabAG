@@ -37,6 +37,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   Timer? _timer;
   UserProfile? _userProfile;
   
+  // Smoothing fields
+  List<Position> _paceBuffer = [];
+  String _currentSmoothedPace = '0:00';
+  
   static const CameraPosition _initialPosition = CameraPosition(
     target: LatLng(0, 0),
     zoom: 15,
@@ -124,6 +128,12 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _positionStream = _locationService.getLocationStream().listen((Position position) {
         if (_isPaused) return;
 
+        // 1. Filtro de Precisão (Ignorar se o erro for maior que 25 metros)
+        if (position.accuracy > 25) {
+          debugPrint("GPS impreciso ignorado: ${position.accuracy}m");
+          return;
+        }
+
         final newPoint = LatLng(position.latitude, position.longitude);
         
         if (_routePoints.isNotEmpty) {
@@ -132,19 +142,60 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             lastPoint.latitude, lastPoint.longitude,
             newPoint.latitude, newPoint.longitude,
           );
+
+          // 2. Filtro de Jitter (Ignorar pequenos movimentos < 2.5 metros)
+          if (distanceInMeters > 2.5) {
+            setState(() {
+              _distanceKm += distanceInMeters / 1000;
+              
+              // 3. Atualizar buffer para ritmo suavizado
+              _paceBuffer.add(position);
+              if (_paceBuffer.length > 10) _paceBuffer.removeAt(0);
+              _updateSmoothedPace();
+            });
+            
+            setState(() {
+              _routePoints = List.from(_routePoints)..add(newPoint);
+            });
+            
+            _updateCamera(newPoint);
+          }
+        } else {
           setState(() {
-            _distanceKm += distanceInMeters / 1000;
+            _routePoints = [newPoint];
+            _paceBuffer = [position];
           });
+          _updateCamera(newPoint);
         }
-        
-        setState(() {
-          _routePoints = List.from(_routePoints)..add(newPoint);
-        });
-        
-        _updateCamera(newPoint);
       });
     } catch (e) {
       debugPrint("Error starting location stream: $e");
+    }
+  }
+
+  void _updateSmoothedPace() {
+    if (_paceBuffer.length < 2) {
+      _currentSmoothedPace = '0:00';
+      return;
+    }
+
+    final first = _paceBuffer.first;
+    final last = _paceBuffer.last;
+    
+    final distMeters = Geolocator.distanceBetween(
+      first.latitude, first.longitude,
+      last.latitude, last.longitude,
+    );
+    
+    final timeSeconds = last.timestamp.difference(first.timestamp).inSeconds;
+
+    if (timeSeconds > 0 && distMeters > 5) {
+      double paceInMinutes = (timeSeconds / 60) / (distMeters / 1000);
+      if (paceInMinutes > 0 && paceInMinutes < 30) { // Limite razoável de 30 min/km
+        int minutes = paceInMinutes.toInt();
+        int seconds = ((paceInMinutes - minutes) * 60).toInt();
+        _currentSmoothedPace = '$minutes:${seconds.toString().padLeft(2, '0')}';
+      }
     }
   }
 
@@ -618,6 +669,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   }
 
   String _calculatePace() {
+    if (_isRunning && !_isFinished) {
+      return _currentSmoothedPace;
+    }
+    
     if (_distanceKm == 0) return '0:00';
     double paceInMinutes = (_secondsElapsed / 60) / _distanceKm;
     int minutes = paceInMinutes.toInt();

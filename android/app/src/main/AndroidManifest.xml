@@ -16,7 +16,7 @@
         
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyCOyZk6Sk12xvmy1aPHaT7RPIbycA2Ut4E" />
+            android:value="${MAPS_API_KEY}" />
 
         <service
             android:name="com.baseflow.geolocator.GeolocatorLocationService"
