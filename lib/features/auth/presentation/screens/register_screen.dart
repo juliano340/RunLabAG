@@ -40,7 +40,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(LucideIcons.arrowLeft, color: Colors.white),
+          icon: Icon(LucideIcons.arrowLeft, color: Theme.of(context).colorScheme.onSurface),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -50,10 +50,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              AppColors.backgroundDarkGreen,
-              AppColors.background,
-            ],
+            colors: Theme.of(context).brightness == Brightness.dark 
+              ? [AppColors.backgroundDarkGreen, AppColors.background]
+              : [AppColors.borderLight, AppColors.backgroundLight],
           ),
         ),
         child: SafeArea(
@@ -68,7 +67,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     style: GoogleFonts.outfit(
                       fontSize: 32,
                       fontWeight: FontWeight.w900,
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -76,7 +75,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     'Junte-se ao movimento neon',
                     style: GoogleFonts.outfit(
                       fontSize: 16,
-                      color: Colors.grey.shade400,
+                      color: Theme.of(context).brightness == Brightness.dark 
+                          ? Colors.grey.shade400 
+                          : AppColors.textMutedDark,
                     ),
                   ),
                   const SizedBox(height: 48),

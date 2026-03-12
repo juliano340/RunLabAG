@@ -150,7 +150,7 @@ class _RunShareScreenState extends State<RunShareScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  '${widget.run.distanceKm.toStringAsFixed(2)}',
+                                  widget.run.distanceKm.toStringAsFixed(2),
                                   style: GoogleFonts.outfit(
                                     color: AppColors.primaryNeon,
                                     fontSize: 64,

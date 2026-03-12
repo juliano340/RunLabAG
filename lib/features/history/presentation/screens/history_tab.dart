@@ -53,7 +53,7 @@ class _HistoryTabState extends State<HistoryTab> {
             Text(
               'Histórico de Atividades',
               style: GoogleFonts.outfit(
-                color: AppColors.textLight,
+                color: Theme.of(context).colorScheme.onSurface,
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
               ),
@@ -71,7 +71,11 @@ class _HistoryTabState extends State<HistoryTab> {
                               const SizedBox(height: 16),
                               Text(
                                 'Nenhuma atividade registrada ainda.',
-                                style: GoogleFonts.outfit(color: AppColors.textMuted),
+                                style: GoogleFonts.outfit(
+                                  color: Theme.of(context).brightness == Brightness.dark 
+                                      ? AppColors.textMuted 
+                                      : AppColors.textMutedDark,
+                                ),
                               ),
                               const SizedBox(height: 8),
                               Text(
@@ -104,7 +108,9 @@ class _HistoryTabState extends State<HistoryTab> {
                                       Container(
                                         padding: const EdgeInsets.all(12),
                                         decoration: BoxDecoration(
-                                          color: AppColors.cardBorder,
+                                          color: Theme.of(context).brightness == Brightness.dark 
+                                                ? AppColors.cardBorder.withValues(alpha: 0.3) 
+                                                : AppColors.borderLight,
                                           borderRadius: BorderRadius.circular(12),
                                         ),
                                         child: const Icon(LucideIcons.mapPin, color: AppColors.primaryNeon),
@@ -117,7 +123,7 @@ class _HistoryTabState extends State<HistoryTab> {
                                             Text(
                                               'Corrida de ${run.distanceKm.toStringAsFixed(2)} km',
                                               style: GoogleFonts.outfit(
-                                                color: AppColors.textLight,
+                                                color: Theme.of(context).colorScheme.onSurface,
                                                 fontSize: 18,
                                                 fontWeight: FontWeight.bold,
                                               ),
@@ -126,7 +132,9 @@ class _HistoryTabState extends State<HistoryTab> {
                                             Text(
                                               '${_formatDate(run.date)} • ${_formatDuration(run.durationSeconds)}',
                                               style: GoogleFonts.outfit(
-                                                color: AppColors.textMuted,
+                                                color: Theme.of(context).brightness == Brightness.dark 
+                                                    ? AppColors.textMuted 
+                                                    : AppColors.textMutedDark,
                                                 fontSize: 14,
                                               ),
                                             ),
@@ -147,7 +155,9 @@ class _HistoryTabState extends State<HistoryTab> {
                                           Text(
                                             '/km',
                                             style: GoogleFonts.outfit(
-                                              color: AppColors.textMuted,
+                                              color: Theme.of(context).brightness == Brightness.dark 
+                                                  ? AppColors.textMuted 
+                                                  : AppColors.textMutedDark,
                                               fontSize: 12,
                                             ),
                                           ),

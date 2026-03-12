@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:provider/provider.dart';
+import '../../../../core/services/theme_service.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -237,7 +239,7 @@ class _ProfileTabState extends State<ProfileTab> {
             Text(
               _profile?.name ?? 'Atleta',
               style: GoogleFonts.outfit(
-                color: AppColors.textLight,
+                color: Theme.of(context).colorScheme.onSurface,
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
               ),
@@ -277,7 +279,7 @@ class _ProfileTabState extends State<ProfileTab> {
                           Text(
                             'Seu IMC: ${_profile!.bmi.toStringAsFixed(1)}',
                             style: GoogleFonts.outfit(
-                              color: AppColors.textLight,
+                              color: Theme.of(context).colorScheme.onSurface,
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                             ),
@@ -310,6 +312,26 @@ class _ProfileTabState extends State<ProfileTab> {
                   _buildProfileTile(context, LucideIcons.lock, 'Privacidade'),
                   const Divider(color: AppColors.cardBorder, height: 1),
                   _buildProfileTile(context, LucideIcons.helpCircle, 'Ajuda e Suporte'),
+                  const Divider(color: AppColors.cardBorder, height: 1),
+                  Consumer<ThemeService>(
+                    builder: (context, themeService, child) {
+                      return ListTile(
+                        leading: Icon(
+                          themeService.isDarkMode ? LucideIcons.moon : LucideIcons.sun,
+                          color: AppColors.primaryNeon,
+                        ),
+                        title: Text(
+                          'Modo Escuro',
+                          style: GoogleFonts.outfit(color: AppColors.textLight),
+                        ),
+                        trailing: Switch(
+                          value: themeService.isDarkMode,
+                          onChanged: (_) => themeService.toggleTheme(),
+                          activeThumbColor: AppColors.primaryNeon,
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
@@ -364,7 +386,7 @@ class _ProfileTabState extends State<ProfileTab> {
       leading: Icon(icon, color: AppColors.primaryNeon),
       title: Text(
         title,
-        style: GoogleFonts.outfit(color: AppColors.textLight),
+        style: GoogleFonts.outfit(color: Theme.of(context).colorScheme.onSurface),
       ),
       trailing: const Icon(LucideIcons.chevronRight, color: AppColors.textMuted),
       onTap: onTap ?? () {},

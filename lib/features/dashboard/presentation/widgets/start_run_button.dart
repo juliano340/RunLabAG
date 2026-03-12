@@ -63,10 +63,12 @@ class _StartRunButtonState extends State<StartRunButton>
                   ),
                 ],
               ),
-              child: const Center(
+              child: Center(
                 child: Icon(
                   LucideIcons.play,
-                  color: AppColors.background,
+                  color: Theme.of(context).brightness == Brightness.dark 
+                      ? Colors.black 
+                      : Colors.white,
                   size: 48,
                 ),
               ),

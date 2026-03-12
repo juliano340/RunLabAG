@@ -5,63 +5,85 @@ import 'app_colors.dart';
 class AppTheme {
   static ThemeData get darkTheme {
     return ThemeData(
+      useMaterial3: true,
       brightness: Brightness.dark,
-      scaffoldBackgroundColor: AppColors.background,
       primaryColor: AppColors.primaryNeon,
-      colorScheme: ColorScheme.dark(
+      scaffoldBackgroundColor: AppColors.background,
+      colorScheme: const ColorScheme.dark(
         primary: AppColors.primaryNeon,
         secondary: AppColors.primaryNeonLight,
         surface: AppColors.background,
         onSurface: AppColors.textLight,
-        error: AppColors.error,
-        onPrimary: AppColors.background,
       ),
-      textTheme: GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme).copyWith(
-        displayLarge: GoogleFonts.outfit(
-          color: AppColors.textLight,
-          fontWeight: FontWeight.bold,
-        ),
-        displayMedium: GoogleFonts.outfit(
-          color: AppColors.textLight,
-          fontWeight: FontWeight.bold,
-        ),
-        bodyLarge: GoogleFonts.outfit(
-          color: AppColors.textLight,
-        ),
-        bodyMedium: GoogleFonts.outfit(
-          color: AppColors.textMuted,
+      textTheme: GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme),
+      inputDecorationTheme: _inputDecorationTheme(isDark: true),
+      cardTheme: CardThemeData(
+        color: AppColors.cardBackground,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppColors.cardBorder),
         ),
       ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primaryNeon,
-          foregroundColor: AppColors.background,
-          textStyle: GoogleFonts.outfit(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+      dividerColor: AppColors.cardBorder.withValues(alpha: 0.2),
+    );
+  }
+
+  static ThemeData get lightTheme {
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.light,
+      primaryColor: AppColors.accentEmerald,
+      scaffoldBackgroundColor: AppColors.backgroundLight,
+      colorScheme: const ColorScheme.light(
+        primary: AppColors.accentEmerald,
+        secondary: AppColors.primaryNeon,
+        surface: AppColors.cardLight,
+        onSurface: AppColors.textDark,
+      ),
+      textTheme: GoogleFonts.outfitTextTheme(ThemeData.light().textTheme),
+      inputDecorationTheme: _inputDecorationTheme(isDark: false),
+      cardTheme: CardThemeData(
+        color: AppColors.cardLight,
+        elevation: 0, // Elevation is handled by custom shadows in containers
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide.none, // Pure White aesthetic uses shadows over borders
         ),
       ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: AppColors.cardBackground,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.cardBorder),
+      dividerColor: AppColors.borderLight,
+    );
+  }
+
+  static InputDecorationTheme _inputDecorationTheme({required bool isDark}) {
+    return InputDecorationTheme(
+      filled: true,
+      fillColor: isDark 
+          ? AppColors.cardBackground.withValues(alpha: 0.5) 
+          : AppColors.borderLight.withValues(alpha: 0.3),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(
+          color: isDark ? AppColors.cardBorder.withValues(alpha: 0.5) : AppColors.borderLight
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.cardBorder.withValues(alpha: 0.5)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(
+          color: isDark ? AppColors.cardBorder.withValues(alpha: 0.3) : AppColors.borderLight
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.primaryNeon, width: 2),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(
+          color: isDark ? AppColors.primaryNeon : AppColors.accentEmerald, 
+          width: 2
         ),
-        hintStyle: GoogleFonts.outfit(color: AppColors.textMuted),
-        labelStyle: GoogleFonts.outfit(color: AppColors.textLight),
+      ),
+      labelStyle: TextStyle(
+        color: isDark ? AppColors.textMuted : AppColors.textMutedDark
+      ),
+      hintStyle: TextStyle(
+        color: isDark ? AppColors.textMuted.withValues(alpha: 0.5) : AppColors.textMutedDark.withValues(alpha: 0.5)
       ),
     );
   }

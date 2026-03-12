@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'core/theme/app_theme.dart';
+import 'core/services/theme_service.dart';
 import 'features/auth/presentation/screens/login_screen.dart';
 import 'features/auth/presentation/screens/register_screen.dart';
 import 'features/dashboard/presentation/screens/main_screen.dart';
 import 'features/profile/presentation/screens/onboarding_screen.dart';
-
-import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,10 +14,17 @@ void main() async {
   final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
   final hasCompletedOnboarding = prefs.getBool('hasCompletedOnboarding') ?? false;
   
-  runApp(RunLabApp(
-    isLoggedIn: isLoggedIn,
-    hasCompletedOnboarding: hasCompletedOnboarding,
-  ));
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeService()),
+      ],
+      child: RunLabApp(
+        isLoggedIn: isLoggedIn,
+        hasCompletedOnboarding: hasCompletedOnboarding,
+      ),
+    ),
+  );
 }
 
 class RunLabApp extends StatelessWidget {
@@ -36,10 +44,14 @@ class RunLabApp extends StatelessWidget {
       initialRoute = hasCompletedOnboarding ? '/dashboard' : '/onboarding';
     }
 
+    final themeService = Provider.of<ThemeService>(context);
+
     return MaterialApp(
       title: 'RunLab',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: themeService.themeMode,
       initialRoute: initialRoute,
       routes: {
         '/login': (context) => const LoginScreen(),

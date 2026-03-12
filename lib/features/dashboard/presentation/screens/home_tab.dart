@@ -76,7 +76,7 @@ class _HomeTabState extends State<HomeTab> {
       child: RefreshIndicator(
         onRefresh: _loadData,
         color: AppColors.primaryNeon,
-        backgroundColor: AppColors.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -110,14 +110,16 @@ class _HomeTabState extends State<HomeTab> {
                           Text(
                             _getGreeting(),
                             style: GoogleFonts.outfit(
-                              color: AppColors.textMuted,
+                              color: Theme.of(context).brightness == Brightness.dark 
+                                  ? AppColors.textMuted 
+                                  : AppColors.textMutedDark,
                               fontSize: 14,
                             ),
                           ),
                           Text(
                             _profile?.name ?? 'Atleta',
                             style: GoogleFonts.outfit(
-                              color: AppColors.textLight,
+                              color: Theme.of(context).colorScheme.onSurface,
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
                             ),
@@ -128,7 +130,7 @@ class _HomeTabState extends State<HomeTab> {
                   ),
                   IconButton(
                     onPressed: () {},
-                    icon: const Icon(LucideIcons.bell, color: AppColors.textLight),
+                    icon: Icon(LucideIcons.bell, color: Theme.of(context).colorScheme.onSurface),
                   ),
                 ],
               ),
@@ -151,7 +153,7 @@ class _HomeTabState extends State<HomeTab> {
               Text(
                 'Suas Estatísticas',
                 style: GoogleFonts.outfit(
-                  color: AppColors.textLight,
+                  color: Theme.of(context).colorScheme.onSurface,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -197,7 +199,7 @@ class _HomeTabState extends State<HomeTab> {
               Text(
                 'Progresso Semanal',
                 style: GoogleFonts.outfit(
-                  color: AppColors.textLight,
+                  color: Theme.of(context).colorScheme.onSurface,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -213,7 +215,7 @@ class _HomeTabState extends State<HomeTab> {
                     barTouchData: BarTouchData(
                       enabled: true,
                       touchTooltipData: BarTouchTooltipData(
-                        getTooltipColor: (_) => AppColors.background.withValues(alpha: 0.8),
+                        getTooltipColor: (_) => Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
                         tooltipBorderRadius: BorderRadius.circular(8),
                         getTooltipItem: (group, groupIndex, rod, rodIndex) {
                           return BarTooltipItem(
@@ -229,7 +231,12 @@ class _HomeTabState extends State<HomeTab> {
                         sideTitles: SideTitles(
                           showTitles: true,
                           getTitlesWidget: (double value, TitleMeta meta) {
-                            const style = TextStyle(color: AppColors.textMuted, fontSize: 10);
+                            final style = TextStyle(
+                              color: Theme.of(context).brightness == Brightness.dark 
+                                  ? AppColors.textMuted 
+                                  : AppColors.textMutedDark, 
+                              fontSize: 10
+                            );
                             String text;
                             switch (value.toInt()) {
                               case 0: text = 'Seg'; break;
@@ -268,7 +275,9 @@ class _HomeTabState extends State<HomeTab> {
                               backDrawRodData: BackgroundBarChartRodData(
                                 show: true,
                                 toY: _getMaxY(),
-                                color: AppColors.primaryNeon.withValues(alpha: 0.05),
+                                color: Theme.of(context).brightness == Brightness.dark 
+                                    ? AppColors.primaryNeon.withValues(alpha: 0.05) 
+                                    : AppColors.borderLight.withValues(alpha: 0.5),
                               ),
                             )
                           ],

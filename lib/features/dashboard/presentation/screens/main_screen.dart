@@ -18,7 +18,7 @@ class _MainScreenState extends State<MainScreen> {
 
   final List<Widget> _tabs = [
     const HomeTab(),
-    const Center(child: Text('Por favor, use o botão INICIAR CORRIDA no Início', style: TextStyle(color: Colors.white))),
+    const Center(child: Text('Por favor, use o botão INICIAR CORRIDA no Início')),
     const HistoryTab(),
     const AchievementsTab(),
     const ProfileTab(),
@@ -30,8 +30,10 @@ class _MainScreenState extends State<MainScreen> {
       body: _tabs[_currentIndex],
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          border: const Border(top: BorderSide(color: AppColors.cardBorder, width: 1)),
-          color: AppColors.backgroundDarkGreen,
+          border: Border(top: BorderSide(color: Theme.of(context).dividerColor, width: 1)),
+          color: Theme.of(context).brightness == Brightness.dark 
+              ? AppColors.backgroundDarkGreen 
+              : AppColors.cardLight,
         ),
         child: Theme(
           data: Theme.of(context).copyWith(
@@ -41,10 +43,12 @@ class _MainScreenState extends State<MainScreen> {
           child: BottomNavigationBar(
             currentIndex: _currentIndex,
             onTap: (index) => setState(() => _currentIndex = index),
-            backgroundColor: AppColors.backgroundDarkGreen,
+            backgroundColor: Colors.transparent, // Uses container background
             type: BottomNavigationBarType.fixed,
-            selectedItemColor: AppColors.primaryNeon,
-            unselectedItemColor: AppColors.textMuted,
+            selectedItemColor: Theme.of(context).colorScheme.primary,
+            unselectedItemColor: Theme.of(context).brightness == Brightness.dark 
+                ? AppColors.textMuted 
+                : AppColors.textMutedDark,
             showSelectedLabels: false,
             showUnselectedLabels: false,
             items: const [

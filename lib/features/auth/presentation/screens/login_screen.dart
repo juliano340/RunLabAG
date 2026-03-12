@@ -49,10 +49,9 @@ class _LoginScreenState extends State<LoginScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              AppColors.backgroundDarkGreen,
-              AppColors.background,
-            ],
+            colors: Theme.of(context).brightness == Brightness.dark 
+              ? [AppColors.backgroundDarkGreen, AppColors.background]
+              : [AppColors.borderLight, AppColors.backgroundLight],
           ),
         ),
         child: SafeArea(
@@ -73,7 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: GoogleFonts.outfit(
                       fontSize: 40,
                       fontWeight: FontWeight.w900,
-                      color: Colors.white,
+                      color: Theme.of(context).colorScheme.onSurface,
                       letterSpacing: 2,
                     ),
                   ),
@@ -82,7 +81,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     'Monitore seu progresso.',
                     style: GoogleFonts.outfit(
                       fontSize: 16,
-                      color: Colors.grey.shade400,
+                      color: Theme.of(context).brightness == Brightness.dark 
+                          ? Colors.grey.shade400 
+                          : AppColors.textMutedDark,
                     ),
                   ),
                   const SizedBox(height: 48),
@@ -134,7 +135,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             children: [
                               Text(
                                 'Novo aqui? ',
-                                style: TextStyle(color: Colors.grey.shade400),
+                                style: TextStyle(
+                                  color: Theme.of(context).brightness == Brightness.dark 
+                                      ? Colors.grey.shade400 
+                                      : AppColors.textMutedDark,
+                                ),
                               ),
                               GestureDetector(
                                 onTap: () => Navigator.pushNamed(context, '/register'),

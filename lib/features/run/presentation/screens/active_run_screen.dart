@@ -217,8 +217,60 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     });
   }
 
-  void _stopRun() {
+  void _stopRun() async {
     _pauseRun();
+    
+    final bool? shouldStop = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).brightness == Brightness.dark 
+            ? AppColors.backgroundDarkGreen 
+            : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: Colors.redAccent, width: 1),
+        ),
+        title: Text(
+          'Parar Treino?',
+          style: GoogleFonts.outfit(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'Deseja realmente encerrar este treino? Uma vez encerrado, não será possível retomá-lo.',
+          style: GoogleFonts.outfit(
+            color: Theme.of(context).brightness == Brightness.dark 
+                ? AppColors.textMuted 
+                : AppColors.textMutedDark,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('CONTINUAR', style: GoogleFonts.outfit(color: Colors.white)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              'ENCERRAR',
+              style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldStop == true) {
+      _finalizeRun();
+    } else {
+      _resumeRun();
+    }
+  }
+
+  void _finalizeRun() {
     _positionStream?.cancel();
 
     // Check for short run: less than 100m or 30s
@@ -237,7 +289,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: AppColors.backgroundDarkGreen,
+        backgroundColor: Theme.of(context).brightness == Brightness.dark 
+            ? AppColors.backgroundDarkGreen 
+            : Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
           side: const BorderSide(color: Colors.orangeAccent, width: 1),
@@ -248,13 +302,17 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             const SizedBox(width: 10),
             Text(
               'Treino Curto',
-              style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold),
+              style: GoogleFonts.outfit(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.bold),
             ),
           ],
         ),
         content: Text(
           'Este treino parece muito curto (${(_distanceKm * 1000).toInt()}m em $_secondsElapsed s). Deseja descartá-lo ou salvar assim mesmo?',
-          style: GoogleFonts.outfit(color: AppColors.textMuted),
+          style: GoogleFonts.outfit(
+            color: Theme.of(context).brightness == Brightness.dark 
+                ? AppColors.textMuted 
+                : AppColors.textMutedDark,
+          ),
         ),
         actions: [
           TextButton(
@@ -299,9 +357,14 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppColors.backgroundDarkGreen,
+        backgroundColor: Theme.of(context).brightness == Brightness.dark 
+            ? AppColors.backgroundDarkGreen 
+            : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Definir Meta de Distância', style: TextStyle(color: Colors.white)),
+        title: Text(
+          'Definir Meta de Distância', 
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface)
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -345,9 +408,17 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     return showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppColors.backgroundDarkGreen,
-        title: const Text('Sair da Corrida?', style: TextStyle(color: Colors.white)),
-        content: const Text('Tem certeza que deseja sair? O progresso não salvo será perdido.', style: TextStyle(color: Colors.white70)),
+        backgroundColor: Theme.of(context).brightness == Brightness.dark 
+            ? AppColors.backgroundDarkGreen 
+            : Colors.white,
+        title: Text('Sair da Corrida?', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+        content: Text('Tem certeza que deseja sair? O progresso não salvo será perdido.', 
+            style: TextStyle(
+              color: Theme.of(context).brightness == Brightness.dark 
+                  ? Colors.white70 
+                  : AppColors.textMutedDark
+            )
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -427,14 +498,14 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   CircleAvatar(
-                    backgroundColor: AppColors.background.withValues(alpha: 0.8),
+                    backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
                     child: IconButton(
-                      icon: const Icon(LucideIcons.arrowLeft, color: Colors.white),
+                      icon: Icon(LucideIcons.arrowLeft, color: Theme.of(context).colorScheme.onSurface),
                       onPressed: _handleBackPress,
                     ),
                   ),
                   CircleAvatar(
-                    backgroundColor: AppColors.background.withValues(alpha: 0.8),
+                    backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
                     child: IconButton(
                       icon: Icon(
                         _showMinimalMap ? LucideIcons.eyeOff : LucideIcons.eye, 
@@ -461,14 +532,23 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                 margin: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: AppColors.backgroundDarkGreen.withValues(alpha: 0.95),
+                  color: Theme.of(context).brightness == Brightness.dark 
+                      ? AppColors.backgroundDarkGreen.withValues(alpha: 0.95) 
+                      : Colors.white.withValues(alpha: 0.9),
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(color: AppColors.primaryNeon.withValues(alpha: 0.3)),
                   boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      blurRadius: 20,
-                    ),
+                    if (Theme.of(context).brightness == Brightness.dark)
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        blurRadius: 20,
+                      )
+                    else
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
                   ],
                 ),
                 child: Column(

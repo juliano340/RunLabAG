@@ -22,7 +22,9 @@ class MetricCard extends StatelessWidget {
         Text(
           label.toUpperCase(),
           style: GoogleFonts.outfit(
-            color: AppColors.textMuted,
+            color: Theme.of(context).brightness == Brightness.dark 
+                ? AppColors.textMuted 
+                : AppColors.textMutedDark,
             fontSize: 12,
             letterSpacing: 1.2,
           ),
@@ -38,7 +40,7 @@ class MetricCard extends StatelessWidget {
               Text(
                 value,
                 style: GoogleFonts.outfit(
-                  color: AppColors.textLight,
+                  color: Theme.of(context).colorScheme.onSurface,
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
                 ),

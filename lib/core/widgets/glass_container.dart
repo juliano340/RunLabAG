@@ -26,26 +26,39 @@ class GlassContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     Widget container = Container(
       width: width,
       height: height,
       margin: margin,
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: isDark 
+            ? AppColors.cardBackground 
+            : Colors.white.withValues(alpha: 0.8),
         borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(
-          color: hasNeonBorder ? AppColors.primaryNeon : AppColors.cardBorder,
-          width: hasNeonBorder ? 1.5 : 1.0,
-        ),
-        boxShadow: hasNeonBorder
-            ? [
-                BoxShadow(
-                  color: AppColors.primaryNeon.withValues(alpha: 0.3),
-                  blurRadius: 10,
-                  spreadRadius: 1,
-                ),
-              ]
+        border: hasNeonBorder || isDark
+            ? Border.all(
+                color: hasNeonBorder 
+                    ? AppColors.primaryNeon 
+                    : AppColors.cardBorder,
+                width: hasNeonBorder ? 1.5 : 1.0,
+              )
             : null,
+        boxShadow: [
+          if (hasNeonBorder)
+            BoxShadow(
+              color: AppColors.primaryNeon.withValues(alpha: 0.3),
+              blurRadius: 10,
+              spreadRadius: 1,
+            ),
+          if (!isDark && !hasNeonBorder)
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+        ],
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius - 1),
