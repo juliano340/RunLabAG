@@ -311,7 +311,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   const Divider(color: AppColors.cardBorder, height: 1),
                   _buildProfileTile(context, LucideIcons.bell, 'Notificações'),
                   const Divider(color: AppColors.cardBorder, height: 1),
-                  _buildProfileTile(context, LucideIcons.lock, 'Privacidade'),
+                  _buildProfileTile(context, LucideIcons.lock, 'Privacidade', onTap: () => Navigator.pushNamed(context, '/privacy')),
                   const Divider(color: AppColors.cardBorder, height: 1),
                   _buildProfileTile(context, LucideIcons.helpCircle, 'Ajuda e Suporte'),
                   const Divider(color: AppColors.cardBorder, height: 1),

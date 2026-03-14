@@ -5,10 +5,12 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/database_service.dart';
 import '../widgets/metric_card.dart';
+import '../../../../core/widgets/ad_banner_widget.dart';
 
 class ActiveRunScreen extends StatefulWidget {
   const ActiveRunScreen({super.key});
@@ -494,32 +496,49 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  CircleAvatar(
-                    backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                    child: IconButton(
-                      icon: Icon(LucideIcons.arrowLeft, color: Theme.of(context).colorScheme.onSurface),
-                      onPressed: _handleBackPress,
-                    ),
-                  ),
-                  CircleAvatar(
-                    backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                    child: IconButton(
-                      icon: Icon(
-                        _showMinimalMap ? LucideIcons.eyeOff : LucideIcons.eye, 
-                        color: AppColors.primaryNeon,
+              child: SizedBox(
+                height: 50, // Altura padrão do banner AdMob
+                child: Stack(
+                  children: [
+                    // Botão Voltar (Esquerda)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: CircleAvatar(
+                        backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                        child: IconButton(
+                          icon: Icon(LucideIcons.arrowLeft, color: Theme.of(context).colorScheme.onSurface),
+                          onPressed: _handleBackPress,
+                        ),
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _showMinimalMap = !_showMinimalMap;
-                        });
-                      },
-                      tooltip: 'Alternar Mapa Minimalista',
                     ),
-                  ),
-                ],
+                    // Anúncio Centralizado (Reduzido para não sobrepor ícones)
+                    Align(
+                      alignment: Alignment.center,
+                      child: AdBannerWidget(
+                        adSize: AdSize(width: 200, height: 50),
+                      ),
+                    ),
+                    // Botão Visibilidade (Direita)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: CircleAvatar(
+                        backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                        child: IconButton(
+                          icon: Icon(
+                            _showMinimalMap ? LucideIcons.eyeOff : LucideIcons.eye, 
+                            color: AppColors.primaryNeon,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _showMinimalMap = !_showMinimalMap;
+                            });
+                          },
+                          tooltip: 'Alternar Mapa Minimalista',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

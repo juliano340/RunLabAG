@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
-        android:label="RunLab"
+        android:label="RunLab: Performance e Treino"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         
@@ -21,6 +21,10 @@
             android:name="io.flutter.app.notification.default_icon"
             android:resource="@drawable/ic_stat_runlab" />
         
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713"/>
+
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="${MAPS_API_KEY}" />

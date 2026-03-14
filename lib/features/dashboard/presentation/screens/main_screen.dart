@@ -5,6 +5,7 @@ import '../../../../features/dashboard/presentation/screens/home_tab.dart';
 import '../../../../features/history/presentation/screens/history_tab.dart';
 import '../../../../features/profile/presentation/screens/achievements_tab.dart';
 import '../../../../features/profile/presentation/screens/profile_tab.dart';
+import '../../../../core/widgets/ad_banner_widget.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -27,7 +28,12 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _tabs[_currentIndex],
+      body: Column(
+        children: [
+          Expanded(child: _tabs[_currentIndex]),
+          const AdBannerWidget(),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           border: Border(top: BorderSide(color: Theme.of(context).dividerColor, width: 1)),

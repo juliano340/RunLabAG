@@ -6,9 +6,14 @@ import 'core/services/theme_service.dart';
 import 'features/onboarding/presentation/screens/welcome_screen.dart';
 import 'features/dashboard/presentation/screens/main_screen.dart';
 import 'features/profile/presentation/screens/onboarding_screen.dart';
+import 'features/profile/presentation/screens/privacy_screen.dart';
+import 'core/services/ad_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Inicialização de serviços
+  await AdService().init();
   final prefs = await SharedPreferences.getInstance();
   final hasCompletedOnboarding = prefs.getBool('hasCompletedOnboarding') ?? false;
   
@@ -49,6 +54,7 @@ class RunLabApp extends StatelessWidget {
         '/welcome': (context) => const WelcomeScreen(),
         '/onboarding': (context) => const OnboardingScreen(),
         '/dashboard': (context) => const MainScreen(),
+        '/privacy': (context) => const PrivacyScreen(),
       },
     );
   }
