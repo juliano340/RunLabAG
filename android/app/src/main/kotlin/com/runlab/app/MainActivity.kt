@@ -1,4 +1,4 @@
-package com.example.runlabag
+package com.runlab.app
 
 import io.flutter.embedding.android.FlutterActivity
 

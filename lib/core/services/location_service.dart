@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -50,6 +51,8 @@ class LocationService {
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationText: "O RunLabAG está rastreando a sua rota em segundo plano.",
           notificationTitle: "Corrida em Andamento",
+          notificationIcon: AndroidResource(name: 'ic_stat_runlab', defType: 'drawable'),
+          color: Color(0xFFC0FF00),
           enableWakeLock: true,
         ),
       );
