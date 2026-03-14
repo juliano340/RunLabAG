@@ -5,12 +5,13 @@ import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/services/database_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 import '../../../../core/services/theme_service.dart';
+import '../../../../core/services/backup_service.dart';
+import 'package:file_picker/file_picker.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -21,6 +22,7 @@ class ProfileTab extends StatefulWidget {
 
 class _ProfileTabState extends State<ProfileTab> {
   final _dbService = DatabaseService();
+  final _backupService = BackupService();
   UserProfile? _profile;
   bool _isLoading = true;
 
@@ -336,33 +338,103 @@ class _ProfileTabState extends State<ProfileTab> {
               ),
             ),
             const SizedBox(height: 32),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.cardBackground,
-                foregroundColor: AppColors.error,
-                minimumSize: const Size(double.infinity, 56),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: const BorderSide(color: AppColors.cardBorder),
-                ),
-              ),
-              onPressed: () async {
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.remove('isLoggedIn');
-                await prefs.remove('hasCompletedOnboarding'); // Permite refazer onboarding se sair
-                if (context.mounted) {
-                  Navigator.of(context).pushReplacementNamed('/login');
-                }
-              },
-              icon: const Icon(LucideIcons.logOut),
-              label: Text(
-                'Sair',
-                style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
+            const SizedBox(height: 32),
+            
+            // Data & Backup Section
+            Text(
+              'DADOS E PRIVACIDADE',
+              style: GoogleFonts.outfit(
+                color: AppColors.textMuted,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
               ),
             ),
+            const SizedBox(height: 16),
+            GlassContainer(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  _buildBackupTile(
+                    context,
+                    LucideIcons.upload,
+                    'Exportar Meus Treinos',
+                    'Cria um arquivo de backup do seu histórico',
+                    onTap: () async {
+                      try {
+                        await _backupService.exportBackup();
+                      } catch (e) {
+                        if (mounted && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Erro ao exportar backup')),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                  const Divider(color: AppColors.cardBorder, height: 1),
+                  _buildBackupTile(
+                    context,
+                    LucideIcons.download,
+                    'Restaurar Backup',
+                    'Recupere seus dados de um arquivo .json',
+                    onTap: () async {
+                      final result = await FilePicker.platform.pickFiles(
+                        type: FileType.custom,
+                        allowedExtensions: ['json'],
+                      );
+
+                      if (result != null) {
+                        final file = File(result.files.single.path!);
+                        final content = await file.readAsString();
+                        final success = await _backupService.importBackup(content);
+                        
+                        if (mounted && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(success 
+                                ? 'Dados restaurados com sucesso!' 
+                                : 'Erro ao importar arquivo'),
+                              backgroundColor: success ? Colors.green : Colors.red,
+                            ),
+                          );
+                          if (success) _loadProfile();
+                        }
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 48),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildBackupTile(BuildContext context, IconData icon, String title, String subtitle, {required VoidCallback onTap}) {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: AppColors.primaryNeon.withValues(alpha: 0.1),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: AppColors.primaryNeon, size: 20),
+      ),
+      title: Text(
+        title,
+        style: GoogleFonts.outfit(
+          color: Theme.of(context).colorScheme.onSurface,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+      ),
+      onTap: onTap,
     );
   }
 
