@@ -48,7 +48,102 @@ class _HomeTabState extends State<HomeTab> {
         _profile = profile;
         _isLoading = false;
       });
+      _checkForActiveRun();
     }
+  }
+
+  Future<void> _checkForActiveRun() async {
+    final activeRun = await _dbService.getActiveRun();
+    if (activeRun != null && mounted) {
+      _showRecoveryBottomSheet(activeRun);
+    }
+  }
+
+  void _showRecoveryBottomSheet(Map<String, dynamic> activeRun) {
+    showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: AppColors.backgroundDarkGreen,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+          border: Border.all(color: AppColors.primaryNeon.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textMuted,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Icon(LucideIcons.undo2, color: AppColors.primaryNeon, size: 48),
+            const SizedBox(height: 16),
+            Text(
+              'Treino não Finalizado!',
+              style: GoogleFonts.outfit(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Encontramos um treino que foi interrompido. Deseja retomar de onde parou?',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(color: AppColors.textMuted),
+            ),
+            const SizedBox(height: 32),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      side: const BorderSide(color: Colors.redAccent),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                    ),
+                    onPressed: () async {
+                      await _dbService.clearActiveRun();
+                      if (context.mounted) Navigator.pop(context);
+                    },
+                    child: const Text('DESCARTAR', style: TextStyle(color: Colors.redAccent)),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      backgroundColor: AppColors.primaryNeon,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ActiveRunScreen(restoredState: activeRun),
+                        ),
+                      ).then((_) => _loadData());
+                    },
+                    child: const Text('RETOMAR', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
   }
 
   String _getGreeting() {

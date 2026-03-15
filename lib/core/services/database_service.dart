@@ -111,7 +111,7 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), 'runlab_database.db');
     return await openDatabase(
       path,
-      version: 4, // Upgraded version for achievements
+      version: 5, // Upgraded version for active_run recovery
       onCreate: (db, version) async {
         await db.execute(
           'CREATE TABLE runs(id TEXT PRIMARY KEY, date TEXT, distanceKm REAL, durationSeconds INTEGER, pace TEXT, calories INTEGER, route TEXT)',
@@ -121,6 +121,9 @@ class DatabaseService {
         );
         await db.execute(
           'CREATE TABLE achievements(id TEXT PRIMARY KEY, title TEXT, description TEXT, iconCode INTEGER, earnedDate TEXT)',
+        );
+        await db.execute(
+          'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER)',
         );
       },
       onUpgrade: (db, oldVersion, newVersion) async {
@@ -135,6 +138,11 @@ class DatabaseService {
         if (oldVersion < 4) {
           await db.execute(
             'CREATE TABLE achievements(id TEXT PRIMARY KEY, title TEXT, description TEXT, iconCode INTEGER, earnedDate TEXT)',
+          );
+        }
+        if (oldVersion < 5) {
+          await db.execute(
+            'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER)',
           );
         }
       },
@@ -160,6 +168,28 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> getEarnedAchievements() async {
     final db = await database;
     return await db.query('achievements');
+  }
+
+  // Active Run Persistence (for recovery)
+  Future<void> saveActiveRun(Map<String, dynamic> data) async {
+    final db = await database;
+    await db.insert(
+      'active_run',
+      {...data, 'id': 1},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<Map<String, dynamic>?> getActiveRun() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('active_run', where: 'id = 1');
+    if (maps.isEmpty) return null;
+    return maps.first;
+  }
+
+  Future<void> clearActiveRun() async {
+    final db = await database;
+    await db.delete('active_run', where: 'id = 1');
   }
 
   Future<void> saveRun(RunModel run) async {

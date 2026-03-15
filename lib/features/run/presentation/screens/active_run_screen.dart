@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -15,7 +16,8 @@ import '../../../../core/utils/time_utils.dart';
 import '../../../../core/services/achievement_service.dart';
 
 class ActiveRunScreen extends StatefulWidget {
-  const ActiveRunScreen({super.key});
+  final Map<String, dynamic>? restoredState;
+  const ActiveRunScreen({super.key, this.restoredState});
 
   @override
   State<ActiveRunScreen> createState() => _ActiveRunScreenState();
@@ -58,6 +60,46 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     _loadMapStyle();
     _initLocation();
     _loadUserProfile();
+    if (widget.restoredState != null) {
+      _restoreState(widget.restoredState!);
+    }
+  }
+
+  void _restoreState(Map<String, dynamic> state) {
+    setState(() {
+      _distanceKm = state['distanceKm'] ?? 0.0;
+      _secondsElapsed = state['secondsElapsed'] ?? 0;
+      _lastKmNotified = state['lastKmNotified'] ?? 0;
+      _distanceGoal = state['distanceGoal'];
+      _isPaused = (state['isPaused'] ?? 0) == 1;
+      
+      final routeJson = state['route'];
+      if (routeJson != null) {
+        final List<dynamic> decoded = jsonDecode(routeJson);
+        _routePoints = decoded.map((p) => LatLng(p['lat'], p['lng'])).toList();
+      }
+      
+      _isRunning = true;
+    });
+    
+    // Resume core logic
+    if (!_isPaused) {
+      _startTimersAndStreams(isNew: false);
+    }
+  }
+
+  void _persistState() {
+    if (!_isRunning || _isFinished) return;
+    
+    DatabaseService().saveActiveRun({
+      'startTime': DateTime.now().toIso8601String(),
+      'distanceKm': _distanceKm,
+      'secondsElapsed': _secondsElapsed,
+      'lastKmNotified': _lastKmNotified,
+      'distanceGoal': _distanceGoal,
+      'isPaused': _isPaused ? 1 : 0,
+      'route': jsonEncode(_routePoints.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList()),
+    });
   }
 
   Future<void> _loadUserProfile() async {
@@ -124,11 +166,24 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _isFinished = false;
     });
     
+    _startTimersAndStreams(isNew: true);
+  }
+
+  void _startTimersAndStreams({required bool isNew}) {
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
         _secondsElapsed++;
       });
+      // Save state every 5 seconds
+      if (_secondsElapsed % 5 == 0) {
+        _persistState();
+      }
     });
+
+    if (isNew) {
+      _persistState(); // Initial save
+    }
 
     try {
       _positionStream = _locationService.getLocationStream().listen((Position position) {
@@ -170,7 +225,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             int currentKm = _distanceKm.floor();
             if (currentKm > _lastKmNotified) {
               _lastKmNotified = currentKm;
-              HapticFeedback.vibrate(); // Vibração simples primeiro
+              _persistState(); // Persist on milestone
+              HapticFeedback.vibrate(); 
               HapticFeedback.heavyImpact(); // Impacto forte para o milestone
               
               if (mounted) {
@@ -241,17 +297,15 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _isPaused = true;
     });
     _timer?.cancel();
+    _persistState(); // Persist pause state
   }
 
   void _resumeRun() {
     setState(() {
       _isPaused = false;
     });
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        _secondsElapsed++;
-      });
-    });
+    _startTimersAndStreams(isNew: false);
+    _persistState(); // Persist resume state
   }
 
   void _stopRun() async {
@@ -318,6 +372,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         _isRunning = false;
         _isFinished = true;
       });
+      DatabaseService().clearActiveRun();
     }
   }
 
@@ -356,6 +411,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             onPressed: () {
               Navigator.pop(context); // Close dialog
               _stopRunInternals();
+              DatabaseService().clearActiveRun();
               Navigator.pop(context); // Return home (discarded)
             },
             child: Text(
