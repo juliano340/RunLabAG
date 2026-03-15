@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:screenshot/screenshot.dart';
 import 'package:share_plus/share_plus.dart';
@@ -25,8 +26,8 @@ class _RunShareScreenState extends State<RunShareScreen> {
   final ImagePicker _picker = ImagePicker();
   bool _isSharing = false;
 
-  Future<void> _pickImage() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+  Future<void> _pickImage(ImageSource source) async {
+    final XFile? image = await _picker.pickImage(source: source);
     if (image != null) {
       setState(() {
         _backgroundImage = File(image.path);
@@ -82,7 +83,7 @@ class _RunShareScreenState extends State<RunShareScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Column(
+           body: Column(
         children: [
           Expanded(
             child: Center(
@@ -94,37 +95,45 @@ class _RunShareScreenState extends State<RunShareScreen> {
                     controller: _screenshotController,
                     child: Container(
                       decoration: BoxDecoration(
-                        color: AppColors.cardBackground,
-                        borderRadius: BorderRadius.circular(16),
-                        image: _backgroundImage != null
-                            ? DecorationImage(
-                                image: FileImage(_backgroundImage!),
-                                fit: BoxFit.cover,
-                              )
-                            : null,
+                        color: AppColors.backgroundDarkGreen,
+                        // Blurred background fallback for the square area
+                        image: _backgroundImage != null ? DecorationImage(
+                          image: FileImage(_backgroundImage!),
+                          fit: BoxFit.cover,
+                          opacity: 0.25,
+                        ) : null,
                       ),
                       child: Stack(
                         children: [
-                          // Overlay to ensure text readability
-                          Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.black.withValues(alpha: 0.2),
-                                  Colors.transparent,
-                                  Colors.black.withValues(alpha: 0.7),
-                                ],
+                          // Main Photo (Full Bleed)
+                          if (_backgroundImage != null)
+                            Positioned.fill(
+                              child: Image.file(
+                                _backgroundImage!,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          // Dark Gradient Overlay for readability
+                          Positioned.fill(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.black.withValues(alpha: 0.3),
+                                    Colors.transparent,
+                                    Colors.black.withValues(alpha: 0.85),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                          
-                          // RunLab Watermark (Top Right)
+
+                          // Watermark
                           Positioned(
-                            top: 16,
-                            right: 16,
+                            top: 20,
+                            right: 20,
                             child: Row(
                               children: [
                                 const Icon(LucideIcons.zap, color: AppColors.primaryNeon, size: 16),
@@ -135,20 +144,20 @@ class _RunShareScreenState extends State<RunShareScreen> {
                                     color: Colors.white,
                                     fontWeight: FontWeight.w900,
                                     letterSpacing: 2,
-                                    fontSize: 16,
                                   ),
                                 ),
                               ],
                             ),
                           ),
 
-                          // Main Stats (Bottom Left)
+                          // User Stats Footer
                           Positioned(
-                            bottom: 16,
-                            left: 16,
-                            right: 16,
+                            bottom: 24,
+                            left: 20,
+                            right: 20,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
                                   widget.run.distanceKm.toStringAsFixed(2),
@@ -156,7 +165,7 @@ class _RunShareScreenState extends State<RunShareScreen> {
                                     color: AppColors.primaryNeon,
                                     fontSize: 64,
                                     fontWeight: FontWeight.bold,
-                                    height: 1,
+                                    height: 0.9,
                                   ),
                                 ),
                                 Text(
@@ -168,7 +177,7 @@ class _RunShareScreenState extends State<RunShareScreen> {
                                     letterSpacing: 1,
                                   ),
                                 ),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 16),
                                 Row(
                                   children: [
                                     _buildSmallStat(LucideIcons.clock, widget.run.pace, '/km'),
@@ -180,8 +189,8 @@ class _RunShareScreenState extends State<RunShareScreen> {
                                 Text(
                                   _formatDate(widget.run.date),
                                   style: GoogleFonts.outfit(
-                                    color: Colors.white.withValues(alpha: 0.6),
-                                    fontSize: 12,
+                                    color: Colors.white.withValues(alpha: 0.5),
+                                    fontSize: 10,
                                   ),
                                 ),
                               ],
@@ -198,7 +207,12 @@ class _RunShareScreenState extends State<RunShareScreen> {
           
           // Action Buttons
           Container(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.fromLTRB(
+              24, 
+              24, 
+              24, 
+              24 + MediaQuery.of(context).padding.bottom
+            ),
             decoration: const BoxDecoration(
               color: AppColors.backgroundDarkGreen,
               borderRadius: BorderRadius.only(
@@ -208,17 +222,36 @@ class _RunShareScreenState extends State<RunShareScreen> {
             ),
             child: Column(
               children: [
-                OutlinedButton.icon(
-                  onPressed: _pickImage,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white24),
-                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    minimumSize: const Size(double.infinity, 50),
-                  ),
-                  icon: const Icon(LucideIcons.image),
-                  label: const Text('ESCOLHER FOTO'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _pickImage(ImageSource.gallery),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white24),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        icon: const Icon(LucideIcons.image),
+                        label: const Text('GALERIA'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _pickImage(ImageSource.camera),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white24),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        icon: const Icon(LucideIcons.camera),
+                        label: const Text('CÂMERA'),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
@@ -274,4 +307,82 @@ class _RunShareScreenState extends State<RunShareScreen> {
   String _formatDuration(int seconds) {
     return TimeUtils.formatDuration(seconds);
   }
+}
+
+class RoutePainter extends CustomPainter {
+  final List<LatLng> route;
+  final Color color;
+
+  RoutePainter({required this.route, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (route.isEmpty) return;
+
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 5.0
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    // Add a glow effect
+    final glowPaint = Paint()
+      ..color = color.withValues(alpha: 0.5)
+      ..strokeWidth = 10.0
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.0);
+
+    // 1. Encontrar limites
+    double minLat = route[0].latitude;
+    double maxLat = route[0].latitude;
+    double minLng = route[0].longitude;
+    double maxLng = route[0].longitude;
+
+    for (var p in route) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+
+    // 2. Normalizar e desenhar
+    final path = Path();
+    for (int i = 0; i < route.length; i++) {
+      final p = route[i];
+      final offset = _getOffset(p, minLat, maxLat, minLng, maxLng, size);
+
+      if (i == 0) {
+        path.moveTo(offset.dx, offset.dy);
+      } else {
+        path.lineTo(offset.dx, offset.dy);
+      }
+    }
+
+    canvas.drawPath(path, glowPaint);
+    canvas.drawPath(path, paint);
+
+    // 3. Draw Start/End points for clarity (even in short or single-point runs)
+    final startPoint = _getOffset(route.first, minLat, maxLat, minLng, maxLng, size);
+    final endPoint = _getOffset(route.last, minLat, maxLat, minLng, maxLng, size);
+
+    // Start Dot
+    canvas.drawCircle(startPoint, 8.0, Paint()..color = Colors.greenAccent..style = PaintingStyle.fill);
+    
+    // Only draw end dot if it's different from start or if we have movement
+    if (route.length > 1) {
+      canvas.drawCircle(endPoint, 8.0, Paint()..color = AppColors.primaryNeon..style = PaintingStyle.fill);
+    }
+  }
+
+  Offset _getOffset(LatLng p, double minLat, double maxLat, double minLng, double maxLng, Size size) {
+    final double latRange = (maxLat - minLat).abs() + 0.0001;
+    final double lngRange = (maxLng - minLng).abs() + 0.0001;
+    double x = lngRange == 0 ? size.width / 2 : ((p.longitude - minLng) / lngRange) * size.width;
+    double y = latRange == 0 ? size.height / 2 : (1 - (p.latitude - minLat) / latRange) * size.height;
+    return Offset(x, y);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

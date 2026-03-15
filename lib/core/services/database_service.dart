@@ -111,13 +111,16 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), 'runlab_database.db');
     return await openDatabase(
       path,
-      version: 3, // Upgraded version
+      version: 4, // Upgraded version for achievements
       onCreate: (db, version) async {
         await db.execute(
           'CREATE TABLE runs(id TEXT PRIMARY KEY, date TEXT, distanceKm REAL, durationSeconds INTEGER, pace TEXT, calories INTEGER, route TEXT)',
         );
         await db.execute(
           'CREATE TABLE user_profile(id TEXT PRIMARY KEY, name TEXT, age INTEGER, weight REAL, height REAL, profilePicturePath TEXT)',
+        );
+        await db.execute(
+          'CREATE TABLE achievements(id TEXT PRIMARY KEY, title TEXT, description TEXT, iconCode INTEGER, earnedDate TEXT)',
         );
       },
       onUpgrade: (db, oldVersion, newVersion) async {
@@ -129,8 +132,34 @@ class DatabaseService {
             'CREATE TABLE user_profile(id TEXT PRIMARY KEY, name TEXT, age INTEGER, weight REAL, height REAL, profilePicturePath TEXT)',
           );
         }
+        if (oldVersion < 4) {
+          await db.execute(
+            'CREATE TABLE achievements(id TEXT PRIMARY KEY, title TEXT, description TEXT, iconCode INTEGER, earnedDate TEXT)',
+          );
+        }
       },
     );
+  }
+
+  // Achievement Methods
+  Future<void> saveAchievement(String id, String title, String desc, int iconCode) async {
+    final db = await database;
+    await db.insert(
+      'achievements',
+      {
+        'id': id,
+        'title': title,
+        'description': desc,
+        'iconCode': iconCode,
+        'earnedDate': DateTime.now().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getEarnedAchievements() async {
+    final db = await database;
+    return await db.query('achievements');
   }
 
   Future<void> saveRun(RunModel run) async {

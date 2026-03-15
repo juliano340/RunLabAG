@@ -4,19 +4,50 @@ import '../../../../core/widgets/glass_container.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
-class AchievementsTab extends StatelessWidget {
+import '../../../../core/services/database_service.dart';
+
+class AchievementsTab extends StatefulWidget {
   const AchievementsTab({super.key});
+
+  @override
+  State<AchievementsTab> createState() => _AchievementsTabState();
+}
+
+class _AchievementsTabState extends State<AchievementsTab> {
+  final DatabaseService _dbService = DatabaseService();
+  List<String> _earnedIds = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAchievements();
+  }
+
+  Future<void> _loadAchievements() async {
+    final earnedList = await _dbService.getEarnedAchievements();
+    if (mounted) {
+      setState(() {
+        _earnedIds = earnedList.map((e) => e['id'] as String).toList();
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final achievements = [
-      {'title': 'Primeiro Passo', 'desc': 'Complete sua primeira corrida', 'icon': LucideIcons.footprints, 'earned': true},
-      {'title': 'Coruja Noturna', 'desc': 'Corra após as 20h', 'icon': LucideIcons.moon, 'earned': true},
-      {'title': 'Finalizador 5K', 'desc': 'Corra 5 quilômetros em uma sessão', 'icon': LucideIcons.medal, 'earned': true},
-      {'title': 'Mestre 10K', 'desc': 'Corra 10 quilômetros em uma sessão', 'icon': LucideIcons.trophy, 'earned': false},
-      {'title': 'Treino de Maratona', 'desc': 'Corra 100km de distância total', 'icon': LucideIcons.target, 'earned': false},
-      {'title': 'Demônio da Velocidade', 'desc': 'Ritmo abaixo de 4:30/km por 1km', 'icon': LucideIcons.zap, 'earned': false},
+      {'id': 'first_run', 'title': 'Primeiro Passo', 'desc': 'Complete sua primeira corrida', 'icon': LucideIcons.footprints},
+      {'id': 'night_owl', 'title': 'Coruja Noturna', 'desc': 'Corra após as 20h', 'icon': LucideIcons.moon},
+      {'id': 'finisher_5k', 'title': 'Finalizador 5K', 'desc': 'Corra 5 quilômetros em uma sessão', 'icon': LucideIcons.medal},
+      {'id': 'master_10k', 'title': 'Mestre 10K', 'desc': 'Corra 10 quilômetros em uma sessão', 'icon': LucideIcons.trophy},
+      {'id': 'marathon_training', 'title': 'Treino de Maratona', 'desc': 'Corra 100km de distância total', 'icon': LucideIcons.target},
+      {'id': 'speed_demon', 'title': 'Demônio da Velocidade', 'desc': 'Ritmo abaixo de 4:30/km por 1km', 'icon': LucideIcons.zap},
     ];
+
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator(color: AppColors.primaryNeon));
+    }
 
     return SafeArea(
       child: Padding(
@@ -34,7 +65,7 @@ class AchievementsTab extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '3 / 6 Desbloqueado',
+              '${_earnedIds.length} / ${achievements.length} Desbloqueado',
               style: GoogleFonts.outfit(
                 color: AppColors.textMuted,
                 fontSize: 16,
@@ -52,7 +83,7 @@ class AchievementsTab extends StatelessWidget {
                 itemCount: achievements.length,
                 itemBuilder: (context, index) {
                   final badge = achievements[index];
-                  final bool earned = badge['earned'] as bool;
+                  final bool earned = _earnedIds.contains(badge['id']);
                   
                   return GlassContainer(
                     hasNeonBorder: earned,

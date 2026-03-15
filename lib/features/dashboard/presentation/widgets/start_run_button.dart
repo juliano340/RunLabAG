@@ -17,6 +17,7 @@ class _StartRunButtonState extends State<StartRunButton>
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
   late Animation<double> _rotationAnimation;
+  late Animation<double> _glowAnimation;
 
   @override
   void initState() {
@@ -46,8 +47,6 @@ class _StartRunButtonState extends State<StartRunButton>
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {

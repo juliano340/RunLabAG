@@ -12,6 +12,7 @@ import '../../../../core/services/database_service.dart';
 import '../widgets/metric_card.dart';
 import '../../../../core/widgets/ad_banner_widget.dart';
 import '../../../../core/utils/time_utils.dart';
+import '../../../../core/services/achievement_service.dart';
 
 class ActiveRunScreen extends StatefulWidget {
   const ActiveRunScreen({super.key});
@@ -37,8 +38,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   double _distanceKm = 0.0;
   double? _distanceGoal;
   int _secondsElapsed = 0;
+  int _lastKmNotified = 0;
   Timer? _timer;
   UserProfile? _userProfile;
+  final AchievementService _achievementService = AchievementService();
   
   // Smoothing fields
   List<Position> _paceBuffer = [];
@@ -162,6 +165,37 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             });
             
             _updateCamera(newPoint);
+
+            // 4. Notificação de Milestone (a cada 1km)
+            int currentKm = _distanceKm.floor();
+            if (currentKm > _lastKmNotified) {
+              _lastKmNotified = currentKm;
+              HapticFeedback.vibrate(); // Vibração simples primeiro
+              HapticFeedback.heavyImpact(); // Impacto forte para o milestone
+              
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        const Icon(LucideIcons.trophy, color: AppColors.primaryNeon),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            AchievementService.getIncentiveMessage(currentKm),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    backgroundColor: AppColors.backgroundDarkGreen,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    duration: const Duration(seconds: 4),
+                  ),
+                );
+              }
+            }
           }
         } else {
           setState(() {
@@ -668,7 +702,21 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                 route: List.from(_routePoints), // Salva o percurso
                               );
                               await dbService.saveRun(run);
+                              
+                              // Verificar novas conquistas
+                              final newAwards = await _achievementService.checkAwards(run);
+                              
                               if (context.mounted) {
+                                if (newAwards.isNotEmpty) {
+                                  // Mostrar feedback de conquistas ganhas
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('PARABÉNS! Você ganhou ${newAwards.length} novas conquistas! 🏆'),
+                                      backgroundColor: AppColors.primaryNeon,
+                                      duration: const Duration(seconds: 5),
+                                    ),
+                                  );
+                                }
                                 Navigator.of(context).pop();
                               }
                             },
