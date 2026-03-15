@@ -104,23 +104,34 @@ class _HistoryTabState extends State<HistoryTab> {
                                   padding: const EdgeInsets.all(16),
                                   child: Row(
                                     children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: Theme.of(context).brightness == Brightness.dark 
-                                                ? AppColors.cardBorder.withValues(alpha: 0.3) 
-                                                : AppColors.borderLight,
-                                          borderRadius: BorderRadius.circular(12),
+                                        Container(
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            color: Theme.of(context).brightness == Brightness.dark 
+                                                  ? AppColors.cardBorder.withValues(alpha: 0.3) 
+                                                  : AppColors.borderLight,
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Icon(
+                                            run.type == 'Caminhada' 
+                                                ? LucideIcons.footprints 
+                                                : run.type == 'Corrida/Caminhada' 
+                                                    ? LucideIcons.timer 
+                                                    : LucideIcons.zap, 
+                                            color: run.type == 'Caminhada' 
+                                                ? Colors.blueAccent 
+                                                : run.type == 'Corrida/Caminhada' 
+                                                    ? Colors.orangeAccent 
+                                                    : AppColors.primaryNeon
+                                          ),
                                         ),
-                                        child: const Icon(LucideIcons.mapPin, color: AppColors.primaryNeon),
-                                      ),
                                       const SizedBox(width: 16),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              'Corrida de ${run.distanceKm.toStringAsFixed(2)} km',
+                                              '${run.type} de ${run.distanceKm.toStringAsFixed(2)} km',
                                               style: GoogleFonts.outfit(
                                                 color: Theme.of(context).colorScheme.onSurface,
                                                 fontSize: 18,

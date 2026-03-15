@@ -178,7 +178,58 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                Row(
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: (widget.run.type == 'Caminhada' 
+                          ? Colors.blueAccent 
+                          : widget.run.type == 'Corrida/Caminhada' 
+                              ? Colors.orangeAccent 
+                              : AppColors.primaryNeon).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: (widget.run.type == 'Caminhada' 
+                            ? Colors.blueAccent 
+                            : widget.run.type == 'Corrida/Caminhada' 
+                                ? Colors.orangeAccent 
+                                : AppColors.primaryNeon).withValues(alpha: 0.5)
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          widget.run.type == 'Caminhada' 
+                              ? LucideIcons.footprints 
+                              : widget.run.type == 'Corrida/Caminhada' 
+                                  ? LucideIcons.timer 
+                                  : LucideIcons.zap, 
+                          color: widget.run.type == 'Caminhada' 
+                              ? Colors.blueAccent 
+                              : widget.run.type == 'Corrida/Caminhada' 
+                                  ? Colors.orangeAccent 
+                                  : AppColors.primaryNeon,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          widget.run.type.toUpperCase(),
+                          style: GoogleFonts.outfit(
+                            color: widget.run.type == 'Caminhada' 
+                                ? Colors.blueAccent 
+                                : widget.run.type == 'Corrida/Caminhada' 
+                                    ? Colors.orangeAccent 
+                                    : AppColors.primaryNeon,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     Expanded(

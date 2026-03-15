@@ -448,6 +448,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             ),
             onPressed: () {
               Navigator.pop(context);
+              DatabaseService().clearActiveRun(); // Mark as finalized so recovery modal won't show
               setState(() {
                 _isRunning = false;
                 _isFinished = true;
@@ -804,6 +805,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                   ),
                                 ),
                                 onPressed: () async {
+                                  final String? selectedType = await _showTrainingTypePicker();
+                                  if (selectedType == null) return;
+
                                   final dbService = DatabaseService();
                                   final run = RunModel(
                                     id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -813,8 +817,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                     pace: _calculatePace(),
                                     calories: _calculateCalories(),
                                     route: List.from(_routePoints),
+                                    type: selectedType,
                                   );
                                   await dbService.saveRun(run);
+                                  await dbService.clearActiveRun(); // Ensure recovery modal won't appear
                                   final newAwards = await _achievementService.checkAwards(run);
                                   if (context.mounted) {
                                     if (newAwards.isNotEmpty) {
@@ -1021,5 +1027,143 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
 
   String _formatTime() {
     return TimeUtils.formatDuration(_secondsElapsed);
+  }
+
+  Future<String?> _showTrainingTypePicker() async {
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).brightness == Brightness.dark 
+              ? AppColors.backgroundDarkGreen 
+              : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Como foi seu treino?',
+              style: GoogleFonts.outfit(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Classifique sua atividade para melhor acompanhamento.',
+              style: GoogleFonts.outfit(
+                color: Theme.of(context).brightness == Brightness.dark 
+                    ? AppColors.textMuted 
+                    : AppColors.textMutedDark,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 32),
+            _typeOption(
+              context: context,
+              type: 'Corrida',
+              icon: LucideIcons.zap,
+              color: AppColors.primaryNeon,
+              description: 'Treino contínuo em ritmo de corrida.',
+            ),
+            const SizedBox(height: 16),
+            _typeOption(
+              context: context,
+              type: 'Caminhada',
+              icon: LucideIcons.footprints,
+              color: Colors.blueAccent,
+              description: 'Caminhada leve ou vigorosa.',
+            ),
+            const SizedBox(height: 16),
+            _typeOption(
+              context: context,
+              type: 'Corrida/Caminhada',
+              icon: LucideIcons.timer,
+              color: Colors.orangeAccent,
+              description: 'Alternância entre corrida e caminhada.',
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  'CANCELAR',
+                  style: GoogleFonts.outfit(
+                    color: Colors.redAccent,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _typeOption({
+    required BuildContext context,
+    required String type,
+    required IconData icon,
+    required Color color,
+    required String description,
+  }) {
+    return InkWell(
+      onTap: () => Navigator.pop(context, type),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+          color: color.withValues(alpha: 0.05),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    type,
+                    style: GoogleFonts.outfit(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    description,
+                    style: GoogleFonts.outfit(
+                      color: Theme.of(context).brightness == Brightness.dark 
+                          ? AppColors.textMuted 
+                          : AppColors.textMutedDark,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(LucideIcons.chevronRight, color: color.withValues(alpha: 0.5)),
+          ],
+        ),
+      ),
+    );
   }
 }
