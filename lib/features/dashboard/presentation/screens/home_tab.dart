@@ -29,6 +29,8 @@ class _HomeTabState extends State<HomeTab> {
   };
   List<double> _weeklyProgress = List.filled(7, 0.0);
   UserProfile? _profile;
+  RunModel? _lastRun;
+  Map<String, dynamic>? _lastAchievement;
   bool _isLoading = true;
 
   @override
@@ -41,11 +43,16 @@ class _HomeTabState extends State<HomeTab> {
     final stats = await _dbService.getUserStats();
     final progress = await _dbService.getWeeklyProgress();
     final profile = await _dbService.getUserProfile();
+    final lastRun = await _dbService.getLastRun();
+    final lastAchievement = await _dbService.getLastAchievement();
+    
     if (mounted) {
       setState(() {
         _stats = stats;
         _weeklyProgress = progress;
         _profile = profile;
+        _lastRun = lastRun;
+        _lastAchievement = lastAchievement;
         _isLoading = false;
       });
       _checkForActiveRun();
@@ -161,13 +168,15 @@ class _HomeTabState extends State<HomeTab> {
       if (dist > maxDist) maxDist = dist;
     }
     return maxDist > 10 ? maxDist + 2 : 10;
-  }
-
-  @override
+  }  @override
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator(color: AppColors.primaryNeon));
     }
+
+    double weeklyTotal = _weeklyProgress.fold(0, (sum, item) => sum + item);
+    double weeklyGoal = _profile?.weeklyGoal ?? 20.0;
+    double goalProgress = (weeklyTotal / weeklyGoal).clamp(0.0, 1.0);
 
     return SafeArea(
       child: RefreshIndicator(
@@ -179,26 +188,39 @@ class _HomeTabState extends State<HomeTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header Profile
+              // Header Profile with Goal Progress
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(
                     children: [
-                      GestureDetector(
-                        onTap: () {
-                          // Opcional: Navegar para a tab de perfil
-                        },
-                        child: CircleAvatar(
-                          radius: 24,
-                          backgroundColor: AppColors.cardBackground,
-                          backgroundImage: _profile?.profilePicturePath != null
-                              ? FileImage(File(_profile!.profilePicturePath!))
-                              : null,
-                          child: _profile?.profilePicturePath == null
-                              ? const Icon(LucideIcons.user, color: AppColors.primaryNeon)
-                              : null,
-                        ),
+                      Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox(
+                            width: 60,
+                            height: 60,
+                            child: CircularProgressIndicator(
+                              value: goalProgress,
+                              strokeWidth: 4,
+                              backgroundColor: AppColors.primaryNeon.withValues(alpha: 0.1),
+                              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primaryNeon),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () {},
+                            child: CircleAvatar(
+                              radius: 24,
+                              backgroundColor: AppColors.cardBackground,
+                              backgroundImage: _profile?.profilePicturePath != null
+                                  ? FileImage(File(_profile!.profilePicturePath!))
+                                  : null,
+                              child: _profile?.profilePicturePath == null
+                                  ? const Icon(LucideIcons.user, color: AppColors.primaryNeon)
+                                  : null,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(width: 16),
                       Column(
@@ -225,9 +247,25 @@ class _HomeTabState extends State<HomeTab> {
                       ),
                     ],
                   ),
-                  IconButton(
-                    onPressed: () {},
-                    icon: Icon(LucideIcons.bell, color: Theme.of(context).colorScheme.onSurface),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        'Meta Semanal',
+                        style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                      Text(
+                        '${weeklyTotal.toStringAsFixed(1)} / ${weeklyGoal.toInt()} km',
+                        style: GoogleFonts.outfit(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primaryNeon,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -240,15 +278,68 @@ class _HomeTabState extends State<HomeTab> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const ActiveRunScreen()),
-                    ).then((_) => _loadData()); // Refresh on return
+                    ).then((_) => _loadData());
                   },
                 ),
               ),
               const SizedBox(height: 32),
+
+              // Last Training Summary
+              if (_lastRun != null) ...[
+                Text(
+                  'Último Treino',
+                  style: GoogleFonts.outfit(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                GlassContainer(
+                  padding: const EdgeInsets.all(20),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryNeon.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(LucideIcons.navigation, color: AppColors.primaryNeon),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${_lastRun!.distanceKm.toStringAsFixed(2)} km em ${_formatRunDuration(_lastRun!.durationSeconds)}',
+                              style: GoogleFonts.outfit(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            Text(
+                              'Ritmo: ${_lastRun!.pace}/km | Calorias: ${_lastRun!.calories} kcal',
+                              style: GoogleFonts.outfit(
+                                color: AppColors.textMuted,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(LucideIcons.chevronRight, color: AppColors.textMuted),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 32),
+              ],
   
               // Stats Grid
               Text(
-                'Suas Estatísticas',
+                'Visão Geral',
                 style: GoogleFonts.outfit(
                   color: Theme.of(context).colorScheme.onSurface,
                   fontSize: 18,
@@ -265,15 +356,15 @@ class _HomeTabState extends State<HomeTab> {
                 childAspectRatio: 1.5,
                 children: [
                   StatCard(
-                    title: 'Distância Total',
+                    title: 'Km Total',
                     value: _stats['totalDistance'],
                     unit: 'km',
                     icon: LucideIcons.map,
                   ),
                   StatCard(
-                    title: 'Total de Corridas',
+                    title: 'Total Treinos',
                     value: _stats['totalRuns'],
-                    unit: 'treinos',
+                    unit: 'sessões',
                     icon: LucideIcons.activity,
                   ),
                   StatCard(
@@ -283,7 +374,7 @@ class _HomeTabState extends State<HomeTab> {
                     icon: LucideIcons.timer,
                   ),
                   StatCard(
-                    title: 'Calorias',
+                    title: 'Kcal Total',
                     value: _stats['totalCalories'],
                     unit: 'kcal',
                     icon: LucideIcons.flame,
@@ -292,102 +383,153 @@ class _HomeTabState extends State<HomeTab> {
               ),
               const SizedBox(height: 32),
   
-              // Progress Chart (Mock fl_chart)
-              Text(
-                'Progresso Semanal',
-                style: GoogleFonts.outfit(
-                  color: Theme.of(context).colorScheme.onSurface,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+              // Progress Chart
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Desempenho Semanal',
+                    style: GoogleFonts.outfit(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Icon(LucideIcons.trendingUp, color: AppColors.primaryNeon, size: 20),
+                ],
               ),
               const SizedBox(height: 16),
               GlassContainer(
-                height: 200,
-                padding: const EdgeInsets.only(top: 24, bottom: 16, left: 16, right: 16),
-                child: BarChart(
-                  BarChartData(
-                    alignment: BarChartAlignment.spaceAround,
-                    maxY: _getMaxY(),
-                    barTouchData: BarTouchData(
-                      enabled: true,
-                      touchTooltipData: BarTouchTooltipData(
-                        getTooltipColor: (_) => Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
-                        tooltipBorderRadius: BorderRadius.circular(8),
-                        getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                          return BarTooltipItem(
-                            '${rod.toY.toStringAsFixed(1)} km',
-                            const TextStyle(color: AppColors.primaryNeon, fontWeight: FontWeight.bold),
-                          );
-                        },
+                height: 220,
+                padding: const EdgeInsets.only(top: 24, bottom: 8, left: 16, right: 24),
+                child: LineChart(
+                  LineChartData(
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: false,
+                      getDrawingHorizontalLine: (value) => FlLine(
+                        color: Colors.white10,
+                        strokeWidth: 1,
                       ),
                     ),
                     titlesData: FlTitlesData(
                       show: true,
+                      rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                       bottomTitles: AxisTitles(
                         sideTitles: SideTitles(
                           showTitles: true,
-                          getTitlesWidget: (double value, TitleMeta meta) {
-                            final style = TextStyle(
-                              color: Theme.of(context).brightness == Brightness.dark 
-                                  ? AppColors.textMuted 
-                                  : AppColors.textMutedDark, 
-                              fontSize: 10
-                            );
-                            String text;
+                          reservedSize: 30,
+                          interval: 1,
+                          getTitlesWidget: (value, meta) {
+                            const style = TextStyle(color: Colors.white54, fontSize: 10);
                             switch (value.toInt()) {
-                              case 0: text = 'Seg'; break;
-                              case 1: text = 'Ter'; break;
-                              case 2: text = 'Qua'; break;
-                              case 3: text = 'Qui'; break;
-                              case 4: text = 'Sex'; break;
-                              case 5: text = 'Sáb'; break;
-                              case 6: text = 'Dom'; break;
-                              default: text = ''; break;
+                              case 0: return const Text('Seg', style: style);
+                              case 1: return const Text('Ter', style: style);
+                              case 2: return const Text('Qua', style: style);
+                              case 3: return const Text('Qui', style: style);
+                              case 4: return const Text('Sex', style: style);
+                              case 5: return const Text('Sáb', style: style);
+                              case 6: return const Text('Dom', style: style);
                             }
-                            return SideTitleWidget(
-                              meta: meta,
-                              space: 4, 
-                              child: Text(text, style: style)
-                            );
+                            return const Text('');
                           },
                         ),
                       ),
-                      leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                     ),
-                    gridData: const FlGridData(show: false),
                     borderData: FlBorderData(show: false),
-                    barGroups: [
-                      for (int i = 0; i < 7; i++)
-                        BarChartGroupData(
-                          x: i,
-                          barRods: [
-                            BarChartRodData(
-                              toY: _weeklyProgress[i],
-                              color: AppColors.primaryNeon,
-                              width: 14,
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
-                              backDrawRodData: BackgroundBarChartRodData(
-                                show: true,
-                                toY: _getMaxY(),
-                                color: Theme.of(context).brightness == Brightness.dark 
-                                    ? AppColors.primaryNeon.withValues(alpha: 0.05) 
-                                    : AppColors.borderLight.withValues(alpha: 0.5),
-                              ),
-                            )
-                          ],
+                    minX: 0,
+                    maxX: 6,
+                    minY: 0,
+                    maxY: _getMaxY(),
+                    lineBarsData: [
+                      LineChartBarData(
+                        spots: [
+                          for (int i = 0; i < 7; i++)
+                            FlSpot(i.toDouble(), _weeklyProgress[i]),
+                        ],
+                        isCurved: true,
+                        color: AppColors.primaryNeon,
+                        barWidth: 3,
+                        isStrokeCapRound: true,
+                        dotData: const FlDotData(show: false),
+                        belowBarData: BarAreaData(
+                          show: true,
+                          gradient: LinearGradient(
+                            colors: [
+                              AppColors.primaryNeon.withValues(alpha: 0.3),
+                              AppColors.primaryNeon.withValues(alpha: 0.0),
+                            ],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                          ),
                         ),
+                      ),
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: 32),
+
+              // Achievement Spotlight
+              if (_lastAchievement != null) ...[
+                Text(
+                  'Conquista Recente',
+                  style: GoogleFonts.outfit(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryNeon.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.primaryNeon.withValues(alpha: 0.1)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(LucideIcons.trophy, color: Colors.orange, size: 32),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _lastAchievement!['title'],
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            ),
+                            Text(
+                              _lastAchievement!['description'],
+                              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 32),
+              ],
             ],
           ),
         ),
       ),
     );
+  }
+
+  String _formatRunDuration(int seconds) {
+    if (seconds >= 3600) {
+      final h = seconds ~/ 3600;
+      final m = (seconds % 3600) ~/ 60;
+      return '${h}h ${m}m';
+    } else {
+      final m = seconds ~/ 60;
+      final s = seconds % 60;
+      return '${m}m ${s.toString().padLeft(2, '0')}s';
+    }
   }
 }

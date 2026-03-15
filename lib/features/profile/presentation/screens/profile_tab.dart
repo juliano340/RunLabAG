@@ -62,6 +62,7 @@ class _ProfileTabState extends State<ProfileTab> {
         weight: _profile!.weight,
         height: _profile!.height,
         profilePicturePath: savedImage.path,
+        weeklyGoal: _profile!.weeklyGoal,
       );
 
       await _dbService.saveUserProfile(updatedProfile);
@@ -81,6 +82,7 @@ class _ProfileTabState extends State<ProfileTab> {
     final ageController = TextEditingController(text: _profile!.age.toString());
     final weightController = TextEditingController(text: _profile!.weight.toString().replaceAll('.', ','));
     final heightController = TextEditingController(text: _profile!.height.toInt().toString());
+    final weeklyGoalController = TextEditingController(text: _profile!.weeklyGoal.toString().replaceAll('.', ','));
     final formKey = GlobalKey<FormState>();
 
     showDialog(
@@ -101,6 +103,8 @@ class _ProfileTabState extends State<ProfileTab> {
                 _buildEditField(weightController, 'Peso (kg)', LucideIcons.scale, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
                 const SizedBox(height: 16),
                 _buildEditField(heightController, 'Altura (cm)', LucideIcons.ruler, keyboardType: TextInputType.number),
+                const SizedBox(height: 16),
+                _buildEditField(weeklyGoalController, 'Meta Semanal (km)', LucideIcons.target, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
               ],
             ),
           ),
@@ -120,6 +124,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   weight: _parseNumber(weightController.text),
                   height: _parseNumber(heightController.text),
                   profilePicturePath: _profile!.profilePicturePath,
+                  weeklyGoal: _parseNumber(weeklyGoalController.text),
                 );
                 await _dbService.saveUserProfile(updatedProfile);
                 if (context.mounted) {
@@ -255,6 +260,8 @@ class _ProfileTabState extends State<ProfileTab> {
                 _buildInfoBadge('${_profile?.weight.toStringAsFixed(1) ?? 0} kg'),
                 const SizedBox(width: 8),
                 _buildInfoBadge('${_profile?.height.toInt() ?? 0} cm'),
+                const SizedBox(width: 8),
+                _buildInfoBadge('Meta: ${_profile?.weeklyGoal.toStringAsFixed(1) ?? 20} km'),
               ],
             ),
             const SizedBox(height: 24),

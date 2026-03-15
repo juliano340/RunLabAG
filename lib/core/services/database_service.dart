@@ -54,6 +54,7 @@ class UserProfile {
   final double weight;
   final double height;
   final String? profilePicturePath;
+  final double weeklyGoal;
 
   UserProfile({
     required this.name,
@@ -61,6 +62,7 @@ class UserProfile {
     required this.weight,
     required this.height,
     this.profilePicturePath,
+    this.weeklyGoal = 20.0,
   });
 
   Map<String, dynamic> toMap() {
@@ -71,6 +73,7 @@ class UserProfile {
       'weight': weight,
       'height': height,
       'profilePicturePath': profilePicturePath,
+      'weeklyGoal': weeklyGoal,
     };
   }
 
@@ -81,6 +84,7 @@ class UserProfile {
       weight: map['weight'] ?? 0.0,
       height: map['height'] ?? 0.0,
       profilePicturePath: map['profilePicturePath'],
+      weeklyGoal: map['weeklyGoal'] ?? 20.0,
     );
   }
 
@@ -111,13 +115,13 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), 'runlab_database.db');
     return await openDatabase(
       path,
-      version: 5, // Upgraded version for active_run recovery
+      version: 6, // Upgraded version for weekly goal
       onCreate: (db, version) async {
         await db.execute(
           'CREATE TABLE runs(id TEXT PRIMARY KEY, date TEXT, distanceKm REAL, durationSeconds INTEGER, pace TEXT, calories INTEGER, route TEXT)',
         );
         await db.execute(
-          'CREATE TABLE user_profile(id TEXT PRIMARY KEY, name TEXT, age INTEGER, weight REAL, height REAL, profilePicturePath TEXT)',
+          'CREATE TABLE user_profile(id TEXT PRIMARY KEY, name TEXT, age INTEGER, weight REAL, height REAL, profilePicturePath TEXT, weeklyGoal REAL)',
         );
         await db.execute(
           'CREATE TABLE achievements(id TEXT PRIMARY KEY, title TEXT, description TEXT, iconCode INTEGER, earnedDate TEXT)',
@@ -145,6 +149,9 @@ class DatabaseService {
             'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER)',
           );
         }
+        if (oldVersion < 6) {
+          await db.execute('ALTER TABLE user_profile ADD COLUMN weeklyGoal REAL');
+        }
       },
     );
   }
@@ -168,6 +175,13 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> getEarnedAchievements() async {
     final db = await database;
     return await db.query('achievements');
+  }
+
+  Future<Map<String, dynamic>?> getLastAchievement() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('achievements', orderBy: 'earnedDate DESC', limit: 1);
+    if (maps.isEmpty) return null;
+    return maps.first;
   }
 
   // Active Run Persistence (for recovery)
@@ -207,6 +221,13 @@ class DatabaseService {
     return List.generate(maps.length, (i) {
       return RunModel.fromMap(maps[i]);
     });
+  }
+
+  Future<RunModel?> getLastRun() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('runs', orderBy: 'date DESC', limit: 1);
+    if (maps.isEmpty) return null;
+    return RunModel.fromMap(maps.first);
   }
 
   Future<void> deleteRun(String id) async {

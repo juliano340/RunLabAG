@@ -20,9 +20,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _ageController = TextEditingController();
   final _weightController = TextEditingController();
   final _heightController = TextEditingController();
+  final _weeklyGoalController = TextEditingController(text: '20');
 
   int _currentPage = 0;
-  final int _totalPages = 4;
+  final int _totalPages = 5;
 
   @override
   void dispose() {
@@ -31,6 +32,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _ageController.dispose();
     _weightController.dispose();
     _heightController.dispose();
+    _weeklyGoalController.dispose();
     super.dispose();
   }
 
@@ -68,6 +70,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       age: int.tryParse(_ageController.text) ?? 0,
       weight: _parseNumber(_weightController.text),
       height: _parseNumber(_heightController.text),
+      weeklyGoal: _parseNumber(_weeklyGoalController.text),
     );
 
     final dbService = DatabaseService();
@@ -145,22 +148,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       ),
                     ),
                     _buildStep(
-                      title: 'Quanto você pesa?',
-                      subtitle: 'Cálculo de calorias depende do seu peso.',
-                      child: _buildTextField(
-                        controller: _weightController,
-                        label: 'Peso (kg)',
-                        icon: LucideIcons.scale,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        hint: 'Ex: 75,5',
-                        validator: (v) {
-                          if (v == null || v.isEmpty) return 'Peso é obrigatório';
-                          if (_parseNumber(v) <= 0) return 'Peso inválido';
-                          return null;
-                        },
-                      ),
-                    ),
-                    _buildStep(
                       title: 'Qual a sua altura?',
                       subtitle: 'Precisamos disso para calcular o seu IMC.',
                       child: _buildTextField(
@@ -172,6 +159,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Altura é obrigatória';
                           if (_parseNumber(v) <= 0) return 'Altura inválida';
+                          return null;
+                        },
+                      ),
+                    ),
+                    _buildStep(
+                      title: 'Qual a sua meta?',
+                      subtitle: 'Quantos quilômetros você quer correr por semana?',
+                      child: _buildTextField(
+                        controller: _weeklyGoalController,
+                        label: 'Meta Semanal (km)',
+                        icon: LucideIcons.target,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        hint: 'Ex: 20',
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Meta é obrigatória';
+                          if (_parseNumber(v) <= 0) return 'Meta inválida';
                           return null;
                         },
                       ),
