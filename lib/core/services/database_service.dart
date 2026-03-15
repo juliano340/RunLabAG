@@ -12,6 +12,7 @@ class RunModel {
   final int calories;
   final List<LatLng> route;
   final String type;
+  final String mood;
 
   RunModel({
     required this.id,
@@ -22,6 +23,7 @@ class RunModel {
     required this.calories,
     this.route = const [],
     this.type = 'Corrida',
+    this.mood = '',
   });
 
   Map<String, dynamic> toMap() {
@@ -34,6 +36,7 @@ class RunModel {
       'calories': calories,
       'route': jsonEncode(route.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList()),
       'type': type,
+      'mood': mood,
     };
   }
 
@@ -48,6 +51,7 @@ class RunModel {
       calories: map['calories'],
       route: routeList.map((p) => LatLng(p['lat'], p['lng'])).toList(),
       type: map['type'] ?? 'Corrida',
+      mood: map['mood'] ?? '',
     );
   }
 }
@@ -119,10 +123,10 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), 'runlab_database.db');
     return await openDatabase(
       path,
-      version: 7, // Upgraded version for training type
+      version: 8, // Upgraded version for mood tracking
       onCreate: (db, version) async {
         await db.execute(
-          'CREATE TABLE runs(id TEXT PRIMARY KEY, date TEXT, distanceKm REAL, durationSeconds INTEGER, pace TEXT, calories INTEGER, route TEXT, type TEXT)',
+          'CREATE TABLE runs(id TEXT PRIMARY KEY, date TEXT, distanceKm REAL, durationSeconds INTEGER, pace TEXT, calories INTEGER, route TEXT, type TEXT, mood TEXT)',
         );
         await db.execute(
           'CREATE TABLE user_profile(id TEXT PRIMARY KEY, name TEXT, age INTEGER, weight REAL, height REAL, profilePicturePath TEXT, weeklyGoal REAL)',
@@ -158,6 +162,9 @@ class DatabaseService {
         }
         if (oldVersion < 7) {
           await db.execute('ALTER TABLE runs ADD COLUMN type TEXT');
+        }
+        if (oldVersion < 8) {
+          await db.execute('ALTER TABLE runs ADD COLUMN mood TEXT');
         }
       },
     );

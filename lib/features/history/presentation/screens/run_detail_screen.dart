@@ -229,6 +229,28 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
+                  if (widget.run.mood.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(widget.run.mood, style: const TextStyle(fontSize: 36)),
+                          const SizedBox(width: 12),
+                          Text(
+                            widget.run.mood == '😣' ? 'Ruim'
+                                : widget.run.mood == '😐' ? 'Médio'
+                                : widget.run.mood == '🙂' ? 'Bom'
+                                : 'Excelente',
+                            style: GoogleFonts.outfit(
+                              color: Theme.of(context).colorScheme.onSurface,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [

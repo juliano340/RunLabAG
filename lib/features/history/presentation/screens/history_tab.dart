@@ -151,28 +151,30 @@ class _HistoryTabState extends State<HistoryTab> {
                                           ],
                                         ),
                                       ),
-                                      Column(
-                                        crossAxisAlignment: CrossAxisAlignment.end,
-                                        children: [
-                                          Text(
-                                             run.pace,
-                                            style: GoogleFonts.outfit(
-                                              color: AppColors.primaryNeonLight,
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                          Text(
-                                            '/km',
-                                            style: GoogleFonts.outfit(
-                                              color: Theme.of(context).brightness == Brightness.dark 
-                                                  ? AppColors.textMuted 
-                                                  : AppColors.textMutedDark,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                       Column(
+                                         crossAxisAlignment: CrossAxisAlignment.end,
+                                         children: [
+                                           if (run.mood.isNotEmpty)
+                                             Text(run.mood, style: const TextStyle(fontSize: 22)),
+                                           Text(
+                                              run.pace,
+                                             style: GoogleFonts.outfit(
+                                               color: AppColors.primaryNeonLight,
+                                               fontSize: 16,
+                                               fontWeight: FontWeight.w600,
+                                             ),
+                                           ),
+                                           Text(
+                                             '/km',
+                                             style: GoogleFonts.outfit(
+                                               color: Theme.of(context).brightness == Brightness.dark 
+                                                   ? AppColors.textMuted 
+                                                   : AppColors.textMutedDark,
+                                               fontSize: 12,
+                                             ),
+                                           ),
+                                         ],
+                                       ),
                                     ],
                                   ),
                                 ),

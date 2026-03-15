@@ -808,6 +808,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                   final String? selectedType = await _showTrainingTypePicker();
                                   if (selectedType == null) return;
 
+                                  final String selectedMood = await _showMoodPicker() ?? '';
+
                                   final dbService = DatabaseService();
                                   final run = RunModel(
                                     id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -818,6 +820,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                     calories: _calculateCalories(),
                                     route: List.from(_routePoints),
                                     type: selectedType,
+                                    mood: selectedMood,
                                   );
                                   await dbService.saveRun(run);
                                   await dbService.clearActiveRun(); // Ensure recovery modal won't appear
@@ -1034,6 +1037,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      useSafeArea: true,
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: Theme.of(context).brightness == Brightness.dark 
@@ -1041,7 +1045,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               : Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        padding: EdgeInsets.fromLTRB(24, 32, 24, 32 + MediaQuery.of(context).padding.bottom),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1161,6 +1165,100 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               ),
             ),
             Icon(LucideIcons.chevronRight, color: color.withValues(alpha: 0.5)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<String?> _showMoodPicker() async {
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).brightness == Brightness.dark
+              ? AppColors.backgroundDarkGreen
+              : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        padding: EdgeInsets.fromLTRB(24, 32, 24, 24 + MediaQuery.of(context).padding.bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(
+              'Como você se sentiu?',
+              style: GoogleFonts.outfit(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Avalie sua experiência neste treino.',
+              style: GoogleFonts.outfit(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? AppColors.textMuted
+                    : AppColors.textMutedDark,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 32),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _moodOption(context, '😣', 'Ruim'),
+                _moodOption(context, '😐', 'Médio'),
+                _moodOption(context, '🙂', 'Bom'),
+                _moodOption(context, '🤩', 'Excelente'),
+              ],
+            ),
+            const SizedBox(height: 24),
+            TextButton(
+              onPressed: () => Navigator.pop(context, ''),
+              child: Text(
+                'PULAR',
+                style: GoogleFonts.outfit(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? AppColors.textMuted
+                      : AppColors.textMutedDark,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _moodOption(BuildContext context, String emoji, String label) {
+    return InkWell(
+      onTap: () => Navigator.pop(context, emoji),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: AppColors.primaryNeon.withValues(alpha: 0.05),
+          border: Border.all(color: AppColors.primaryNeon.withValues(alpha: 0.15)),
+        ),
+        child: Column(
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 40)),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: GoogleFonts.outfit(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
       ),
