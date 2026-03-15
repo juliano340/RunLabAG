@@ -3,7 +3,7 @@ import '../../../../core/theme/app_colors.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../../../features/dashboard/presentation/screens/home_tab.dart';
 import '../../../../features/history/presentation/screens/history_tab.dart';
-import '../../../../features/profile/presentation/screens/achievements_tab.dart';
+import '../../../../features/profile/presentation/screens/records_tab.dart';
 import '../../../../features/profile/presentation/screens/profile_tab.dart';
 import '../../../../core/widgets/ad_banner_widget.dart';
 
@@ -20,7 +20,7 @@ class _MainScreenState extends State<MainScreen> {
   final List<Widget> _tabs = [
     const HomeTab(),
     const HistoryTab(),
-    const AchievementsTab(),
+    const RecordsTab(),
     const ProfileTab(),
   ];
 
@@ -59,7 +59,7 @@ class _MainScreenState extends State<MainScreen> {
             items: const [
               BottomNavigationBarItem(icon: Icon(LucideIcons.home), label: 'Início'),
               BottomNavigationBarItem(icon: Icon(LucideIcons.history), label: 'Histórico'),
-              BottomNavigationBarItem(icon: Icon(LucideIcons.award), label: 'Conquistas'),
+              BottomNavigationBarItem(icon: Icon(LucideIcons.trophy), label: 'Recordes'),
               BottomNavigationBarItem(icon: Icon(LucideIcons.user), label: 'Perfil'),
             ],
           ),

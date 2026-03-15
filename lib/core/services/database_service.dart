@@ -113,6 +113,8 @@ class UserProfile {
 class DatabaseService {
   static Database? _database;
 
+  static const _databaseVersion = 9;
+
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
@@ -123,7 +125,7 @@ class DatabaseService {
     String path = join(await getDatabasesPath(), 'runlab_database.db');
     return await openDatabase(
       path,
-      version: 8, // Upgraded version for mood tracking
+      version: _databaseVersion,
       onCreate: (db, version) async {
         await db.execute(
           'CREATE TABLE runs(id TEXT PRIMARY KEY, date TEXT, distanceKm REAL, durationSeconds INTEGER, pace TEXT, calories INTEGER, route TEXT, type TEXT, mood TEXT)',
@@ -137,6 +139,13 @@ class DatabaseService {
         await db.execute(
           'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER)',
         );
+        await db.execute(
+          'CREATE TABLE monitored_distances(distanceKm REAL PRIMARY KEY)',
+        );
+        // Pre-populate defaults
+        for (double dist in [1.0, 5.0, 10.0, 15.0]) {
+          await db.insert('monitored_distances', {'distanceKm': dist});
+        }
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -165,6 +174,15 @@ class DatabaseService {
         }
         if (oldVersion < 8) {
           await db.execute('ALTER TABLE runs ADD COLUMN mood TEXT');
+        }
+        if (oldVersion < 9) {
+          var tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='monitored_distances'");
+          if (tables.isEmpty) {
+            await db.execute('CREATE TABLE monitored_distances(distanceKm REAL PRIMARY KEY)');
+            for (double dist in [1.0, 5.0, 10.0, 15.0]) {
+              await db.insert('monitored_distances', {'distanceKm': dist}, conflictAlgorithm: ConflictAlgorithm.ignore);
+            }
+          }
         }
       },
     );
@@ -282,6 +300,144 @@ class DatabaseService {
           ? '${(totalCalories / 1000).toStringAsFixed(1)}k' 
           : totalCalories.toString(),
     };
+  }
+
+  // Monitored Distances Management
+  Future<List<double>> getMonitoredDistances() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('monitored_distances', orderBy: 'distanceKm ASC');
+    return List.generate(maps.length, (i) => maps[i]['distanceKm'] as double);
+  }
+
+  Future<void> addMonitoredDistance(double distance) async {
+    final db = await database;
+    await db.insert('monitored_distances', {'distanceKm': distance}, conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+
+  Future<void> removeMonitoredDistance(double distance) async {
+    final db = await database;
+    await db.delete('monitored_distances', where: 'distanceKm = ?', whereArgs: [distance]);
+  }
+
+  Future<Map<String, dynamic>> getPersonalRecords() async {
+    final runs = await getHistory();
+    final monitored = await getMonitoredDistances();
+    
+    Map<String, Map<String, dynamic>> records = {};
+    for (double dist in monitored) {
+      String key = dist == 21.0975 ? '21km' : dist == 42.195 ? '42km' : '${dist.toStringAsFixed(dist == dist.toInt() ? 0 : 1)}km';
+      records[key] = {'time': null, 'date': null, 'runId': null};
+    }
+
+    double longestDistance = 0;
+    DateTime? longestDistanceDate;
+    String? longestDistanceRunId;
+
+    for (final run in runs) {
+      // Logic for all-time bests for specific distances
+      for (double targetDist in monitored) {
+        if (run.distanceKm >= targetDist) {
+          // Estimate time for the exact distance based on average pace
+          final double estimatedTime = (run.durationSeconds / run.distanceKm) * targetDist;
+          
+          String key = targetDist == 21.0975 ? '21km' : targetDist == 42.195 ? '42km' : '${targetDist.toStringAsFixed(targetDist == targetDist.toInt() ? 0 : 1)}km';
+
+          if (records[key]!['time'] == null || estimatedTime < records[key]!['time']) {
+            records[key] = {
+              'time': estimatedTime,
+              'date': run.date,
+              'runId': run.id,
+            };
+          }
+        }
+      }
+
+      // Logic for longest run
+      if (run.distanceKm > longestDistance) {
+        longestDistance = run.distanceKm;
+        longestDistanceDate = run.date;
+        longestDistanceRunId = run.id;
+      }
+    }
+
+    return {
+      'bests': records,
+      'longestDistance': {
+        'value': longestDistance,
+        'date': longestDistanceDate,
+        'runId': longestDistanceRunId,
+      },
+    };
+  }
+
+  Future<List<Map<String, dynamic>>> getRecordHistory(String category) async {
+    final runs = await getHistory();
+    // Sort by date ascending to track evolution
+    final sortedRuns = runs.reversed.toList();
+    
+    double targetDist = 0;
+    if (category.endsWith('km')) {
+      targetDist = double.tryParse(category.replaceAll('km', '')) ?? 0;
+      if (category == '21km') targetDist = 21.0975;
+      if (category == '42km') targetDist = 42.195;
+    }
+
+    if (targetDist == 0) return [];
+
+    List<Map<String, dynamic>> history = [];
+    double? currentBest;
+
+    for (final run in sortedRuns) {
+      if (run.distanceKm >= targetDist) {
+        final double estimatedTime = (run.durationSeconds / run.distanceKm) * targetDist;
+        
+        if (currentBest == null || estimatedTime < currentBest) {
+          double improvement = 0;
+          if (currentBest != null) {
+            improvement = currentBest - estimatedTime;
+          }
+          
+          currentBest = estimatedTime;
+          history.add({
+            'time': estimatedTime,
+            'date': run.date,
+            'runId': run.id,
+            'improvement': improvement,
+          });
+        }
+      }
+    }
+
+    // Return descending (newest first) for UI
+    return history.reversed.toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getLongestDistanceHistory() async {
+    final runs = await getHistory();
+    // Sort by date ascending to track evolution
+    final sortedRuns = runs.reversed.toList();
+    
+    List<Map<String, dynamic>> history = [];
+    double currentMax = 0;
+
+    for (final run in sortedRuns) {
+      if (run.distanceKm > currentMax) {
+        double improvement = 0;
+        if (currentMax > 0) {
+          improvement = run.distanceKm - currentMax;
+        }
+        
+        currentMax = run.distanceKm;
+        history.add({
+          'value': run.distanceKm,
+          'date': run.date,
+          'runId': run.id,
+          'improvement': improvement,
+        });
+      }
+    }
+
+    return history.reversed.toList();
   }
 
   Future<List<double>> getWeeklyProgress() async {
