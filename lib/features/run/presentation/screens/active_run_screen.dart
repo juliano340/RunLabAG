@@ -625,76 +625,81 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             ),
 
             // Top bar: back button | ad | eye+lock column
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Botão Voltar (Esquerda)
-                    CircleAvatar(
-                      backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                      child: IconButton(
-                        icon: Icon(LucideIcons.arrowLeft, color: Theme.of(context).colorScheme.onSurface),
-                        onPressed: _handleBackPress,
-                      ),
-                    ),
-                    // Anúncio Centralizado
-                    Expanded(
-                      child: Center(
-                        child: AdBannerWidget(
-                          adSize: AdSize(width: 200, height: 50),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Botão Voltar (Esquerda)
+                      CircleAvatar(
+                        backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                        child: IconButton(
+                          icon: Icon(LucideIcons.arrowLeft, color: Theme.of(context).colorScheme.onSurface),
+                          onPressed: _handleBackPress,
                         ),
                       ),
-                    ),
-                    // Coluna direita: Olho (cima) + Cadeado (baixo)
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircleAvatar(
-                          backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                          child: IconButton(
-                            icon: Icon(
-                              _showMinimalMap ? LucideIcons.eyeOff : LucideIcons.eye, 
-                              color: AppColors.primaryNeon,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _showMinimalMap = !_showMinimalMap;
-                              });
-                              _saveMapPreference(_showMinimalMap);
-                            },
-                            tooltip: 'Alternar Mapa Minimalista',
+                      // Anúncio Centralizado
+                      Expanded(
+                        child: Center(
+                          child: AdBannerWidget(
+                            adSize: AdSize(width: 200, height: 50),
                           ),
                         ),
-                        if (_isRunning) ...[  
-                          const SizedBox(height: 8),
+                      ),
+                      // Coluna direita: Olho (cima) + Cadeado (baixo)
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
                           CircleAvatar(
                             backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
                             child: IconButton(
-                              icon: const Icon(LucideIcons.lock, color: Colors.white70),
+                              icon: Icon(
+                                _showMinimalMap ? LucideIcons.eyeOff : LucideIcons.eye, 
+                                color: AppColors.primaryNeon,
+                              ),
                               onPressed: () {
                                 setState(() {
-                                  _isScreenLocked = true;
-                                  _showLockHint = true;
+                                  _showMinimalMap = !_showMinimalMap;
                                 });
-                                HapticFeedback.heavyImpact();
-                                _lockHintTimer?.cancel();
-                                _lockHintTimer = Timer(const Duration(seconds: 3), () {
-                                  if (mounted) {
-                                    setState(() {
-                                      _showLockHint = false;
-                                    });
-                                  }
-                                });
+                                _saveMapPreference(_showMinimalMap);
                               },
-                              tooltip: 'Bloquear Tela',
+                              tooltip: 'Alternar Mapa Minimalista',
                             ),
                           ),
+                          if (_isRunning) ...[  
+                            const SizedBox(height: 8),
+                            CircleAvatar(
+                              backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                              child: IconButton(
+                                icon: const Icon(LucideIcons.lock, color: Colors.white70),
+                                onPressed: () {
+                                  setState(() {
+                                    _isScreenLocked = true;
+                                    _showLockHint = true;
+                                  });
+                                  HapticFeedback.heavyImpact();
+                                  _lockHintTimer?.cancel();
+                                  _lockHintTimer = Timer(const Duration(seconds: 3), () {
+                                    if (mounted) {
+                                      setState(() {
+                                        _showLockHint = false;
+                                      });
+                                    }
+                                  });
+                                },
+                                tooltip: 'Bloquear Tela',
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
