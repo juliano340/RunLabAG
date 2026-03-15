@@ -11,6 +11,7 @@ import '../../../../core/services/location_service.dart';
 import '../../../../core/services/database_service.dart';
 import '../widgets/metric_card.dart';
 import '../../../../core/widgets/ad_banner_widget.dart';
+import '../../../../core/utils/time_utils.dart';
 
 class ActiveRunScreen extends StatefulWidget {
   const ActiveRunScreen({super.key});
@@ -480,6 +481,22 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             onMapCreated: (GoogleMapController controller) {
               _controller.complete(controller);
             },
+            markers: {
+              if (_routePoints.isNotEmpty)
+                Marker(
+                  markerId: const MarkerId('start'),
+                  position: _routePoints.first,
+                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+                  infoWindow: const InfoWindow(title: 'Início'),
+                ),
+              if (_isFinished && _routePoints.isNotEmpty)
+                Marker(
+                  markerId: const MarkerId('finish'),
+                  position: _routePoints.last,
+                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+                  infoWindow: const InfoWindow(title: 'Chegada'),
+                ),
+            },
             polylines: {
               Polyline(
                 polylineId: const PolylineId('route'),
@@ -791,8 +808,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   }
 
   String _formatTime() {
-    int minutes = _secondsElapsed ~/ 60;
-    int seconds = _secondsElapsed % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    return TimeUtils.formatDuration(_secondsElapsed);
   }
 }

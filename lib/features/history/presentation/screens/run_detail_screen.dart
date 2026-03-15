@@ -7,6 +7,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../run/presentation/widgets/metric_card.dart';
 import '../../../run/presentation/screens/run_share_screen.dart';
+import '../../../../core/utils/time_utils.dart';
 
 class RunDetailScreen extends StatefulWidget {
   final RunModel run;
@@ -38,9 +39,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   }
 
   String _formatDuration(int seconds) {
-    int minutes = seconds ~/ 60;
-    int secs = seconds % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+    return TimeUtils.formatDuration(seconds);
   }
 
   @override
@@ -91,6 +90,22 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                         : const LatLng(-23.5505, -46.6333),
                     zoom: 15,
                   ),
+                  markers: {
+                    if (widget.run.route.isNotEmpty)
+                      Marker(
+                        markerId: const MarkerId('start'),
+                        position: widget.run.route.first,
+                        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+                        infoWindow: const InfoWindow(title: 'Início'),
+                      ),
+                    if (widget.run.route.isNotEmpty)
+                      Marker(
+                        markerId: const MarkerId('finish'),
+                        position: widget.run.route.last,
+                        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+                        infoWindow: const InfoWindow(title: 'Chegada'),
+                      ),
+                  },
                   polylines: {
                     Polyline(
                       polylineId: const PolylineId('route'),

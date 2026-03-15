@@ -5,6 +5,7 @@ import '../../../../core/services/database_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'run_detail_screen.dart';
+import '../../../../core/utils/time_utils.dart';
 
 class HistoryTab extends StatefulWidget {
   const HistoryTab({super.key});
@@ -37,9 +38,7 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   String _formatDuration(int seconds) {
-    int minutes = seconds ~/ 60;
-    int secs = seconds % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+    return TimeUtils.formatDuration(seconds);
   }
 
   @override

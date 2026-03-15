@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/database_service.dart';
+import '../../../../core/utils/time_utils.dart';
 
 class RunShareScreen extends StatefulWidget {
   final RunModel run;
@@ -271,8 +272,6 @@ class _RunShareScreenState extends State<RunShareScreen> {
   }
 
   String _formatDuration(int seconds) {
-    int minutes = seconds ~/ 60;
-    int secs = seconds % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+    return TimeUtils.formatDuration(seconds);
   }
 }
