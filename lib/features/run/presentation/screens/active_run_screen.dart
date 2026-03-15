@@ -14,6 +14,8 @@ import '../widgets/metric_card.dart';
 import '../../../../core/widgets/ad_banner_widget.dart';
 import '../../../../core/utils/time_utils.dart';
 import '../../../../core/services/achievement_service.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ActiveRunScreen extends StatefulWidget {
   final Map<String, dynamic>? restoredState;
@@ -49,6 +51,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   List<Position> _paceBuffer = [];
   String _currentSmoothedPace = '0:00';
   
+  bool _isScreenLocked = false;
+  bool _showLockHint = false;
+  Timer? _lockHintTimer;
+  
   static const CameraPosition _initialPosition = CameraPosition(
     target: LatLng(0, 0),
     zoom: 15,
@@ -57,12 +63,25 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   @override
   void initState() {
     super.initState();
+    _loadMapPreference();
     _loadMapStyle();
     _initLocation();
     _loadUserProfile();
     if (widget.restoredState != null) {
       _restoreState(widget.restoredState!);
     }
+  }
+
+  Future<void> _loadMapPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _showMinimalMap = prefs.getBool('show_minimal_map') ?? false;
+    });
+  }
+
+  Future<void> _saveMapPreference(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('show_minimal_map', value);
   }
 
   void _restoreState(Map<String, dynamic> state) {
@@ -181,6 +200,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       }
     });
 
+    WakelockPlus.enable(); // Keep screen on
+
     if (isNew) {
       _persistState(); // Initial save
     }
@@ -297,6 +318,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _isPaused = true;
     });
     _timer?.cancel();
+    WakelockPlus.disable(); // Allow screen to dim
     _persistState(); // Persist pause state
   }
 
@@ -493,6 +515,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _lockHintTimer?.cancel();
     _positionStream?.cancel();
     super.dispose();
   }
@@ -546,6 +569,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   void _stopRunInternals() {
     _timer?.cancel();
     _positionStream?.cancel();
+    WakelockPlus.disable();
   }
 
   @override
@@ -559,328 +583,412 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         _handleBackPress();
       },
       child: Scaffold(
-      body: Stack(
-        children: [
-          GoogleMap(
-            initialCameraPosition: _initialPosition,
-            myLocationEnabled: _hasPermissions,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: false,
-            mapType: MapType.normal,
-            style: _showMinimalMap ? _minimalMapStyle : null,
-            onMapCreated: (GoogleMapController controller) {
-              _controller.complete(controller);
-            },
-            markers: {
-              if (_routePoints.isNotEmpty)
-                Marker(
-                  markerId: const MarkerId('start'),
-                  position: _routePoints.first,
-                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-                  infoWindow: const InfoWindow(title: 'Início'),
+        body: Stack(
+          children: [
+            GoogleMap(
+              initialCameraPosition: _initialPosition,
+              myLocationEnabled: _hasPermissions,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              mapType: MapType.normal,
+              style: _showMinimalMap ? _minimalMapStyle : null,
+              onMapCreated: (GoogleMapController controller) {
+                _controller.complete(controller);
+              },
+              markers: {
+                if (_routePoints.isNotEmpty)
+                  Marker(
+                    markerId: const MarkerId('start'),
+                    position: _routePoints.first,
+                    icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+                    infoWindow: const InfoWindow(title: 'Início'),
+                  ),
+                if (_isFinished && _routePoints.isNotEmpty)
+                  Marker(
+                    markerId: const MarkerId('finish'),
+                    position: _routePoints.last,
+                    icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+                    infoWindow: const InfoWindow(title: 'Chegada'),
+                  ),
+              },
+              polylines: {
+                Polyline(
+                  polylineId: const PolylineId('route'),
+                  points: _routePoints,
+                  color: AppColors.primaryNeon,
+                  width: 6,
+                  startCap: Cap.roundCap,
+                  endCap: Cap.roundCap,
                 ),
-              if (_isFinished && _routePoints.isNotEmpty)
-                Marker(
-                  markerId: const MarkerId('finish'),
-                  position: _routePoints.last,
-                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-                  infoWindow: const InfoWindow(title: 'Chegada'),
-                ),
-            },
-            polylines: {
-              Polyline(
-                polylineId: const PolylineId('route'),
-                points: _routePoints,
-                color: AppColors.primaryNeon,
-                width: 6,
-                startCap: Cap.roundCap,
-                endCap: Cap.roundCap,
-              ),
-            },
-          ),
-          
-          // Back button
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: SizedBox(
-                height: 50, // Altura padrão do banner AdMob
-                child: Stack(
-                  children: [
-                    // Botão Voltar (Esquerda)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: CircleAvatar(
-                        backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                        child: IconButton(
-                          icon: Icon(LucideIcons.arrowLeft, color: Theme.of(context).colorScheme.onSurface),
-                          onPressed: _handleBackPress,
-                        ),
-                      ),
-                    ),
-                    // Anúncio Centralizado (Reduzido para não sobrepor ícones)
-                    Align(
-                      alignment: Alignment.center,
-                      child: AdBannerWidget(
-                        adSize: AdSize(width: 200, height: 50),
-                      ),
-                    ),
-                    // Botão Visibilidade (Direita)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: CircleAvatar(
-                        backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                        child: IconButton(
-                          icon: Icon(
-                            _showMinimalMap ? LucideIcons.eyeOff : LucideIcons.eye, 
-                            color: AppColors.primaryNeon,
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              _showMinimalMap = !_showMinimalMap;
-                            });
-                          },
-                          tooltip: 'Alternar Mapa Minimalista',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              },
             ),
-          ),
-          
-          // Bottom Dashboard Card
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: SafeArea(
-              child: Container(
-                margin: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).brightness == Brightness.dark 
-                      ? AppColors.backgroundDarkGreen.withValues(alpha: 0.95) 
-                      : Colors.white.withValues(alpha: 0.9),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: AppColors.primaryNeon.withValues(alpha: 0.3)),
-                  boxShadow: [
-                    if (Theme.of(context).brightness == Brightness.dark)
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        blurRadius: 20,
-                      )
-                    else
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10),
-                      ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            
+            // Back button
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: SizedBox(
+                  height: 50, // Altura padrão do banner AdMob
+                  child: Stack(
                     children: [
-                      Expanded(
-                        child: MetricCard(
-                          label: 'Tempo',
-                          value: _formatTime(),
-                          unit: 'min',
+                      // Botão Voltar (Esquerda)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: CircleAvatar(
+                          backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                          child: IconButton(
+                            icon: Icon(LucideIcons.arrowLeft, color: Theme.of(context).colorScheme.onSurface),
+                            onPressed: _handleBackPress,
+                          ),
                         ),
                       ),
-                      Expanded(
-                        child: MetricCard(
-                          label: 'Distância',
-                          value: _distanceKm.toStringAsFixed(2),
-                          unit: 'km',
+                      // Anúncio Centralizado (Reduzido para não sobrepor ícones)
+                      Align(
+                        alignment: Alignment.center,
+                        child: AdBannerWidget(
+                          adSize: AdSize(width: 200, height: 50),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      Expanded(
-                        child: MetricCard(
-                          label: 'Ritmo',
-                          value: _calculatePace(),
-                          unit: '/km',
-                        ),
-                      ),
-                      Expanded(
-                        child: MetricCard(
-                          label: 'Calorias',
-                          value: _calculateCalories().toString(),
-                          unit: 'kcal',
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 32),
-                  if (_isFinished)
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              side: const BorderSide(color: Colors.redAccent),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
-                              ),
-                            ),
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('DESCARTAR', style: TextStyle(color: Colors.redAccent)),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              backgroundColor: AppColors.primaryNeon,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
-                              ),
-                            ),
-                            onPressed: () async {
-                              final dbService = DatabaseService();
-                              final run = RunModel(
-                                id: DateTime.now().millisecondsSinceEpoch.toString(),
-                                date: DateTime.now(),
-                                distanceKm: _distanceKm,
-                                durationSeconds: _secondsElapsed,
-                                pace: _calculatePace(),
-                                calories: _calculateCalories(),
-                                route: List.from(_routePoints), // Salva o percurso
-                              );
-                              await dbService.saveRun(run);
-                              
-                              // Verificar novas conquistas
-                              final newAwards = await _achievementService.checkAwards(run);
-                              
-                              if (context.mounted) {
-                                if (newAwards.isNotEmpty) {
-                                  // Mostrar feedback de conquistas ganhas
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('PARABÉNS! Você ganhou ${newAwards.length} novas conquistas! 🏆'),
-                                      backgroundColor: AppColors.primaryNeon,
-                                      duration: const Duration(seconds: 5),
-                                    ),
-                                  );
-                                }
-                                Navigator.of(context).pop();
-                              }
-                            },
-                            child: const Text('SALVAR TREINO', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                      ],
-                    )
-                  else if (!_isRunning)
-                    Column(
-                      children: [
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              side: BorderSide(color: _distanceGoal != null ? AppColors.primaryNeon : Colors.white24),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
-                              ),
-                            ),
-                            onPressed: _showGoalDialog,
-                            icon: Icon(LucideIcons.target, color: _distanceGoal != null ? AppColors.primaryNeon : Colors.white70),
-                            label: Text(
-                              _distanceGoal != null ? 'META: ${_distanceGoal!.toInt()}KM' : 'DEFINIR META',
-                              style: TextStyle(color: _distanceGoal != null ? AppColors.primaryNeon : Colors.white70),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              backgroundColor: AppColors.primaryNeon,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
-                              ),
-                            ),
-                            onPressed: _startRun,
-                            child: const Text('INICIAR', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                      ],
-                    )
-                  else
-                    Column(
-                      children: [
-                        if (_distanceGoal != null && _secondsElapsed >= 90)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 16),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(LucideIcons.clock, size: 16, color: AppColors.primaryNeon),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'CHEGADA ESTIMADA: ${_calculateETA()}',
-                                  style: const TextStyle(
-                                    color: AppColors.primaryNeon,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 1.1,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      // Botão Visibilidade (Direita)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (_isPaused)
-                              FloatingActionButton.extended(
-                                heroTag: 'resume',
-                                backgroundColor: AppColors.primaryNeonLight,
-                                onPressed: _resumeRun,
-                                icon: const Icon(LucideIcons.play),
-                                label: const Text('RETOMAR', style: TextStyle(color: Colors.black)),
-                              )
-                            else
-                              FloatingActionButton.extended(
-                                heroTag: 'pause',
-                                backgroundColor: Colors.orange,
-                                onPressed: _pauseRun,
-                                icon: const Icon(LucideIcons.pause),
-                                label: const Text('PAUSAR', style: TextStyle(color: Colors.black)),
+                            CircleAvatar(
+                              backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                              child: IconButton(
+                                icon: Icon(
+                                  _isScreenLocked ? LucideIcons.lock : LucideIcons.unlock, 
+                                  color: _isScreenLocked ? Colors.redAccent : Colors.white70,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _isScreenLocked = true;
+                                    _showLockHint = true;
+                                  });
+                                  HapticFeedback.heavyImpact();
+                                  
+                                  _lockHintTimer?.cancel();
+                                  _lockHintTimer = Timer(const Duration(seconds: 3), () {
+                                    if (mounted) {
+                                      setState(() {
+                                        _showLockHint = false;
+                                      });
+                                    }
+                                  });
+                                },
+                                tooltip: 'Bloquear Tela',
                               ),
-                            FloatingActionButton.extended(
-                              heroTag: 'stop',
-                              backgroundColor: Colors.redAccent,
-                              onPressed: _stopRun,
-                              icon: const Icon(LucideIcons.square),
-                              label: const Text('PARAR', style: TextStyle(color: Colors.white)),
+                            ),
+                            const SizedBox(width: 8),
+                            CircleAvatar(
+                              backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                              child: IconButton(
+                                icon: Icon(
+                                  _showMinimalMap ? LucideIcons.eyeOff : LucideIcons.eye, 
+                                  color: AppColors.primaryNeon,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    _showMinimalMap = !_showMinimalMap;
+                                  });
+                                  _saveMapPreference(_showMinimalMap);
+                                },
+                                tooltip: 'Alternar Mapa Minimalista',
+                              ),
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
+            
+            // Bottom Dashboard Card
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: SafeArea(
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).brightness == Brightness.dark 
+                        ? AppColors.backgroundDarkGreen.withValues(alpha: 0.95) 
+                        : Colors.white.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: AppColors.primaryNeon.withValues(alpha: 0.3)),
+                    boxShadow: [
+                      if (Theme.of(context).brightness == Brightness.dark)
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          blurRadius: 20,
+                        )
+                      else
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          Expanded(
+                            child: MetricCard(
+                              label: 'Tempo',
+                              value: _formatTime(),
+                              unit: 'min',
+                            ),
+                          ),
+                          Expanded(
+                            child: MetricCard(
+                              label: 'Distância',
+                              value: _distanceKm.toStringAsFixed(2),
+                              unit: 'km',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          Expanded(
+                            child: MetricCard(
+                              label: 'Ritmo',
+                              value: _calculatePace(),
+                              unit: '/km',
+                            ),
+                          ),
+                          Expanded(
+                            child: MetricCard(
+                              label: 'Calorias',
+                              value: _calculateCalories().toString(),
+                              unit: 'kcal',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 32),
+                      if (_isFinished)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  side: const BorderSide(color: Colors.redAccent),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                  ),
+                                ),
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('DESCARTAR', style: TextStyle(color: Colors.redAccent)),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  backgroundColor: AppColors.primaryNeon,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                  ),
+                                ),
+                                onPressed: () async {
+                                  final dbService = DatabaseService();
+                                  final run = RunModel(
+                                    id: DateTime.now().millisecondsSinceEpoch.toString(),
+                                    date: DateTime.now(),
+                                    distanceKm: _distanceKm,
+                                    durationSeconds: _secondsElapsed,
+                                    pace: _calculatePace(),
+                                    calories: _calculateCalories(),
+                                    route: List.from(_routePoints),
+                                  );
+                                  await dbService.saveRun(run);
+                                  final newAwards = await _achievementService.checkAwards(run);
+                                  if (context.mounted) {
+                                    if (newAwards.isNotEmpty) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('PARABÉNS! Você ganhou ${newAwards.length} novas conquistas! 🏆'),
+                                          backgroundColor: AppColors.primaryNeon,
+                                          duration: const Duration(seconds: 5),
+                                        ),
+                                      );
+                                    }
+                                    Navigator.of(context).pop();
+                                  }
+                                },
+                                child: const Text('SALVAR TREINO', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                          ],
+                        )
+                      else if (!_isRunning)
+                        Column(
+                          children: [
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
+                                  side: BorderSide(color: _distanceGoal != null ? AppColors.primaryNeon : Colors.white24),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                  ),
+                                ),
+                                onPressed: _showGoalDialog,
+                                icon: Icon(LucideIcons.target, color: _distanceGoal != null ? AppColors.primaryNeon : Colors.white70),
+                                label: Text(
+                                  _distanceGoal != null ? 'META: ${_distanceGoal!.toInt()}KM' : 'DEFINIR META',
+                                  style: TextStyle(color: _distanceGoal != null ? AppColors.primaryNeon : Colors.white70),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  backgroundColor: AppColors.primaryNeon,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                  ),
+                                ),
+                                onPressed: _startRun,
+                                child: const Text('INICIAR', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        Column(
+                          children: [
+                            if (_distanceGoal != null && _secondsElapsed >= 90)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(LucideIcons.clock, size: 16, color: AppColors.primaryNeon),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'CHEGADA ESTIMADA: ${_calculateETA()}',
+                                      style: const TextStyle(
+                                        color: AppColors.primaryNeon,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1.1,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                if (_isPaused)
+                                  FloatingActionButton.extended(
+                                    heroTag: 'resume',
+                                    backgroundColor: AppColors.primaryNeonLight,
+                                    onPressed: _resumeRun,
+                                    icon: const Icon(LucideIcons.play),
+                                    label: const Text('RETOMAR', style: TextStyle(color: Colors.black)),
+                                  )
+                                else
+                                  FloatingActionButton.extended(
+                                    heroTag: 'pause',
+                                    backgroundColor: Colors.orange,
+                                    onPressed: _pauseRun,
+                                    icon: const Icon(LucideIcons.pause),
+                                    label: const Text('PAUSAR', style: TextStyle(color: Colors.black)),
+                                  ),
+                                FloatingActionButton.extended(
+                                  heroTag: 'stop',
+                                  backgroundColor: Colors.redAccent,
+                                  onPressed: _stopRun,
+                                  icon: const Icon(LucideIcons.square),
+                                  label: const Text('PARAR', style: TextStyle(color: Colors.white)),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            
+            // Screen Lock Overlay
+            if (_isScreenLocked)
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _showLockHint = true;
+                    });
+                    _lockHintTimer?.cancel();
+                    _lockHintTimer = Timer(const Duration(seconds: 3), () {
+                      if (mounted) {
+                        setState(() {
+                          _showLockHint = false;
+                        });
+                      }
+                    });
+                  },
+                  onLongPress: () {
+                    setState(() {
+                      _isScreenLocked = false;
+                      _showLockHint = false;
+                    });
+                    _lockHintTimer?.cancel();
+                    HapticFeedback.mediumImpact();
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.7),
+                    child: Align(
+                      alignment: const Alignment(0, -0.4), // Reposicionado para cima
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(LucideIcons.lock, color: AppColors.primaryNeon, size: 64),
+                          const SizedBox(height: 16),
+                          AnimatedOpacity(
+                            opacity: _showLockHint ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 300),
+                            child: Text(
+                              'Pressione e segure para desbloquear',
+                              style: GoogleFonts.outfit(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
-      ],
-    ),
       ),
     );
   }
+
   int _calculateCalories() {
     if (_distanceKm == 0) return 0;
     // Base: 1.036 kcal/kg/km ou 65 kcal/km fixos
