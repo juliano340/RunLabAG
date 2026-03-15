@@ -17,7 +17,7 @@ class AdService {
   // IDs de teste oficiais do Google
   String get bannerAdUnitId {
     if (Platform.isAndroid) {
-      return 'ca-app-pub-3940256099942544/6300978111';
+      return 'ca-app-pub-8578901708699710/9471050199';
     } else if (Platform.isIOS) {
       return 'ca-app-pub-3940256099942544/2934735716';
     }
