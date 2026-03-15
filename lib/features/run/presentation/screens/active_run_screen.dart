@@ -623,87 +623,78 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                 ),
               },
             ),
-            
-            // Back button
+
+            // Top bar: back button | ad | eye+lock column
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
-                child: SizedBox(
-                  height: 50, // Altura padrão do banner AdMob
-                  child: Stack(
-                    children: [
-                      // Botão Voltar (Esquerda)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: CircleAvatar(
-                          backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                          child: IconButton(
-                            icon: Icon(LucideIcons.arrowLeft, color: Theme.of(context).colorScheme.onSurface),
-                            onPressed: _handleBackPress,
-                          ),
-                        ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Botão Voltar (Esquerda)
+                    CircleAvatar(
+                      backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                      child: IconButton(
+                        icon: Icon(LucideIcons.arrowLeft, color: Theme.of(context).colorScheme.onSurface),
+                        onPressed: _handleBackPress,
                       ),
-                      // Anúncio Centralizado (Reduzido para não sobrepor ícones)
-                      Align(
-                        alignment: Alignment.center,
+                    ),
+                    // Anúncio Centralizado
+                    Expanded(
+                      child: Center(
                         child: AdBannerWidget(
                           adSize: AdSize(width: 200, height: 50),
                         ),
                       ),
-                      // Botão Visibilidade (Direita)
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CircleAvatar(
-                              backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                              child: IconButton(
-                                icon: Icon(
-                                  _isScreenLocked ? LucideIcons.lock : LucideIcons.unlock, 
-                                  color: _isScreenLocked ? Colors.redAccent : Colors.white70,
-                                ),
-                                onPressed: () {
-                                  setState(() {
-                                    _isScreenLocked = true;
-                                    _showLockHint = true;
-                                  });
-                                  HapticFeedback.heavyImpact();
-                                  
-                                  _lockHintTimer?.cancel();
-                                  _lockHintTimer = Timer(const Duration(seconds: 3), () {
-                                    if (mounted) {
-                                      setState(() {
-                                        _showLockHint = false;
-                                      });
-                                    }
-                                  });
-                                },
-                                tooltip: 'Bloquear Tela',
-                              ),
+                    ),
+                    // Coluna direita: Olho (cima) + Cadeado (baixo)
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                          child: IconButton(
+                            icon: Icon(
+                              _showMinimalMap ? LucideIcons.eyeOff : LucideIcons.eye, 
+                              color: AppColors.primaryNeon,
                             ),
-                            const SizedBox(width: 8),
-                            CircleAvatar(
-                              backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
-                              child: IconButton(
-                                icon: Icon(
-                                  _showMinimalMap ? LucideIcons.eyeOff : LucideIcons.eye, 
-                                  color: AppColors.primaryNeon,
-                                ),
-                                onPressed: () {
-                                  setState(() {
-                                    _showMinimalMap = !_showMinimalMap;
-                                  });
-                                  _saveMapPreference(_showMinimalMap);
-                                },
-                                tooltip: 'Alternar Mapa Minimalista',
-                              ),
-                            ),
-                          ],
+                            onPressed: () {
+                              setState(() {
+                                _showMinimalMap = !_showMinimalMap;
+                              });
+                              _saveMapPreference(_showMinimalMap);
+                            },
+                            tooltip: 'Alternar Mapa Minimalista',
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                        if (_isRunning) ...[  
+                          const SizedBox(height: 8),
+                          CircleAvatar(
+                            backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                            child: IconButton(
+                              icon: const Icon(LucideIcons.lock, color: Colors.white70),
+                              onPressed: () {
+                                setState(() {
+                                  _isScreenLocked = true;
+                                  _showLockHint = true;
+                                });
+                                HapticFeedback.heavyImpact();
+                                _lockHintTimer?.cancel();
+                                _lockHintTimer = Timer(const Duration(seconds: 3), () {
+                                  if (mounted) {
+                                    setState(() {
+                                      _showLockHint = false;
+                                    });
+                                  }
+                                });
+                              },
+                              tooltip: 'Bloquear Tela',
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -777,6 +768,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 16),
+                      // Circular Goal Progress (only when goal is set)
+                      if (_distanceGoal != null && _distanceGoal! > 0 && !_isFinished) _buildGoalProgress(),
                       const SizedBox(height: 32),
                       if (_isFinished)
                         Row(
@@ -1032,6 +1026,80 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     return TimeUtils.formatDuration(_secondsElapsed);
   }
 
+  Widget _buildGoalProgress() {
+    final goal = _distanceGoal!;
+    final progress = (_distanceKm / goal).clamp(0.0, 1.0);
+    final remaining = (goal - _distanceKm).clamp(0.0, goal);
+    final goalColor = progress >= 1.0 ? Colors.greenAccent : AppColors.primaryNeon;
+
+    String etaText = '--:--';
+    if (_distanceKm > 0.05 && _secondsElapsed > 0 && remaining > 0) {
+      final secsRemaining = (remaining / (_distanceKm / _secondsElapsed)).toInt();
+      final mins = secsRemaining ~/ 60;
+      final secs = secsRemaining % 60;
+      etaText = '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+    }
+
+    final mutedColor = Theme.of(context).brightness == Brightness.dark
+        ? AppColors.textMuted
+        : AppColors.textMutedDark;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: goalColor.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: goalColor.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          // Mini ring
+          SizedBox(
+            width: 64,
+            height: 64,
+            child: CustomPaint(
+              painter: _GoalRingPainter(progress: progress, color: goalColor),
+              child: Center(
+                child: Text(
+                  '${(progress * 100).toInt()}%',
+                  style: GoogleFonts.outfit(
+                    color: goalColor,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          // Stats
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _goalStat('META', '${goal.toStringAsFixed(1)} km', Theme.of(context).colorScheme.onSurface, mutedColor),
+                _goalStat('FALTAM', '${remaining.toStringAsFixed(2)} km', AppColors.primaryNeonLight, mutedColor),
+                _goalStat('CHEGA EM', etaText, Theme.of(context).colorScheme.onSurface, mutedColor),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _goalStat(String label, String value, Color valueColor, Color labelColor) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(label, style: GoogleFonts.outfit(color: labelColor, fontSize: 10, letterSpacing: 0.5)),
+        const SizedBox(height: 2),
+        Text(value, style: GoogleFonts.outfit(color: valueColor, fontSize: 14, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
   Future<String?> _showTrainingTypePicker() async {
     return showModalBottomSheet<String>(
       context: context,
@@ -1264,4 +1332,48 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       ),
     );
   }
+}
+
+class _GoalRingPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+
+  _GoalRingPainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 10;
+    const strokeWidth = 10.0;
+    const startAngle = -3.14159 / 2; // Start from top
+    const fullAngle = 2 * 3.14159;
+
+    // Background track
+    final trackPaint = Paint()
+      ..color = color.withValues(alpha: 0.15)
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawCircle(center, radius, trackPaint);
+
+    // Progress arc
+    final progressPaint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      startAngle,
+      fullAngle * progress,
+      false,
+      progressPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_GoalRingPainter old) =>
+      old.progress != progress || old.color != color;
 }
