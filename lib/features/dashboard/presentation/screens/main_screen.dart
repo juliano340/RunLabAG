@@ -19,7 +19,6 @@ class _MainScreenState extends State<MainScreen> {
 
   final List<Widget> _tabs = [
     const HomeTab(),
-    const Center(child: Text('Por favor, use o botão INICIAR CORRIDA no Início')),
     const HistoryTab(),
     const AchievementsTab(),
     const ProfileTab(),
@@ -59,7 +58,6 @@ class _MainScreenState extends State<MainScreen> {
             showUnselectedLabels: false,
             items: const [
               BottomNavigationBarItem(icon: Icon(LucideIcons.home), label: 'Início'),
-              BottomNavigationBarItem(icon: Icon(LucideIcons.map), label: 'Corrida'),
               BottomNavigationBarItem(icon: Icon(LucideIcons.history), label: 'Histórico'),
               BottomNavigationBarItem(icon: Icon(LucideIcons.award), label: 'Conquistas'),
               BottomNavigationBarItem(icon: Icon(LucideIcons.user), label: 'Perfil'),

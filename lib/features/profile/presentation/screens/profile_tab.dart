@@ -307,13 +307,7 @@ class _ProfileTabState extends State<ProfileTab> {
                 children: [
                   _buildProfileTile(context, LucideIcons.user, 'Editar Dados do Perfil', onTap: _showEditProfileDialog),
                   const Divider(color: AppColors.cardBorder, height: 1),
-                  _buildProfileTile(context, LucideIcons.settings, 'Configurações de Conta'),
-                  const Divider(color: AppColors.cardBorder, height: 1),
-                  _buildProfileTile(context, LucideIcons.bell, 'Notificações'),
-                  const Divider(color: AppColors.cardBorder, height: 1),
                   _buildProfileTile(context, LucideIcons.lock, 'Privacidade', onTap: () => Navigator.pushNamed(context, '/privacy')),
-                  const Divider(color: AppColors.cardBorder, height: 1),
-                  _buildProfileTile(context, LucideIcons.helpCircle, 'Ajuda e Suporte'),
                   const Divider(color: AppColors.cardBorder, height: 1),
                   Consumer<ThemeService>(
                     builder: (context, themeService, child) {
