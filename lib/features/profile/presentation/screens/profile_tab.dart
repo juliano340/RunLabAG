@@ -12,6 +12,9 @@ import 'package:provider/provider.dart';
 import '../../../../core/services/theme_service.dart';
 import '../../../../core/services/backup_service.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/foundation.dart';
+import '../../../../core/services/ad_service.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -407,6 +410,76 @@ class _ProfileTabState extends State<ProfileTab> {
                 ],
               ),
             ),
+            // Help & Support Section
+            const SizedBox(height: 32),
+            Text(
+              'AJUDA E SUPORTE',
+              style: GoogleFonts.outfit(
+                color: AppColors.textMuted,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 16),
+            GlassContainer(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  _buildProfileTile(
+                    context, 
+                    LucideIcons.helpCircle, 
+                    'Suporte e FAQ', 
+                    onTap: () async {
+                      final Uri url = Uri.parse('https://www.juliano340.com/runlab/suporte');
+                      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Não foi possível abrir o link de suporte')),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+            if (kDebugMode) ...[
+              const SizedBox(height: 32),
+              Text(
+                'DESENVOLVEDOR',
+                style: GoogleFonts.outfit(
+                  color: AppColors.textMuted,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.2,
+                ),
+              ),
+              const SizedBox(height: 16),
+              GlassContainer(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const Icon(LucideIcons.code, color: AppColors.primaryNeon),
+                      title: Text(
+                        'Exibir Anúncios (Banner)',
+                        style: GoogleFonts.outfit(color: AppColors.textLight),
+                      ),
+                      trailing: Switch(
+                        value: AdService().adsEnabled,
+                        onChanged: (value) async {
+                          await AdService().setAdsEnabled(value);
+                          if (mounted) setState(() {});
+                        },
+                        activeThumbColor: AppColors.primaryNeon,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
             const SizedBox(height: 48),
           ],
         ),

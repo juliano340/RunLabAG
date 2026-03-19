@@ -425,13 +425,13 @@ class _HomeTabState extends State<HomeTab> {
                           getTitlesWidget: (value, meta) {
                             const style = TextStyle(color: Colors.white54, fontSize: 10);
                             switch (value.toInt()) {
-                              case 0: return const Text('Seg', style: style);
-                              case 1: return const Text('Ter', style: style);
-                              case 2: return const Text('Qua', style: style);
-                              case 3: return const Text('Qui', style: style);
-                              case 4: return const Text('Sex', style: style);
-                              case 5: return const Text('Sáb', style: style);
-                              case 6: return const Text('Dom', style: style);
+                              case 0: return const Text('Dom', style: style);
+                              case 1: return const Text('Seg', style: style);
+                              case 2: return const Text('Ter', style: style);
+                              case 3: return const Text('Qua', style: style);
+                              case 4: return const Text('Qui', style: style);
+                              case 5: return const Text('Sex', style: style);
+                              case 6: return const Text('Sáb', style: style);
                             }
                             return const Text('');
                           },

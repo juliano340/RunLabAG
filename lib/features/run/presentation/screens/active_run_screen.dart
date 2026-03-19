@@ -43,6 +43,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   double? _distanceGoal;
   int _secondsElapsed = 0;
   int _lastKmNotified = 0;
+  List<RunSplit> _splits = [];
+  int _lastSplitTimeSeconds = 0;
+  int _lastSplitCalories = 0;
   Timer? _timer;
   UserProfile? _userProfile;
   final AchievementService _achievementService = AchievementService();
@@ -90,6 +93,24 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _secondsElapsed = state['secondsElapsed'] ?? 0;
       _lastKmNotified = state['lastKmNotified'] ?? 0;
       _distanceGoal = state['distanceGoal'];
+      
+      final splitsJson = state['splits'];
+      if (splitsJson != null) {
+        final List<dynamic> decoded = jsonDecode(splitsJson);
+        _splits = decoded.map((s) {
+          if (s is Map) return RunSplit.fromMap(s.cast<String, dynamic>());
+          if (s is int) return RunSplit(timeSeconds: s, calories: 0);
+          return RunSplit(timeSeconds: 0, calories: 0);
+        }).toList();
+        // Estimar o tempo do último split a partir da soma dos splits restaurados
+        _lastSplitTimeSeconds = _splits.fold(0, (sum, s) => sum + s.timeSeconds);
+        _lastSplitCalories = _splits.fold(0, (sum, s) => sum + s.calories);
+      } else {
+        _splits = [];
+        _lastSplitTimeSeconds = 0;
+        _lastSplitCalories = 0;
+      }
+
       _isPaused = (state['isPaused'] ?? 0) == 1;
       
       final routeJson = state['route'];
@@ -118,6 +139,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       'distanceGoal': _distanceGoal,
       'isPaused': _isPaused ? 1 : 0,
       'route': jsonEncode(_routePoints.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList()),
+      'splits': jsonEncode(_splits.map((s) => s.toMap()).toList()),
     });
   }
 
@@ -175,6 +197,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     setState(() {
       _distanceKm = 0.0;
       _secondsElapsed = 0;
+      _lastKmNotified = 0;
+      _splits = [];
+      _lastSplitTimeSeconds = 0;
+      _lastSplitCalories = 0;
       if (currentPos != null) {
         _routePoints = [LatLng(currentPos.latitude, currentPos.longitude)];
       } else {
@@ -245,6 +271,14 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             // 4. Notificação de Milestone (a cada 1km)
             int currentKm = _distanceKm.floor();
             if (currentKm > _lastKmNotified) {
+              final splitTime = _secondsElapsed - _lastSplitTimeSeconds;
+              final totalCalories = _calculateCalories();
+              final splitCalories = totalCalories - _lastSplitCalories;
+              
+              _splits.add(RunSplit(timeSeconds: splitTime, calories: splitCalories));
+              _lastSplitTimeSeconds = _secondsElapsed;
+              _lastSplitCalories = totalCalories;
+              
               _lastKmNotified = currentKm;
               _persistState(); // Persist on milestone
               HapticFeedback.vibrate(); 
@@ -593,6 +627,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               zoomControlsEnabled: false,
               mapType: MapType.normal,
               style: _showMinimalMap ? _minimalMapStyle : null,
+              padding: EdgeInsets.only(
+                bottom: (_distanceGoal != null && _distanceGoal! > 0) ? 380 : 280,
+                top: MediaQuery.of(context).padding.top + 60,
+              ),
               onMapCreated: (GoogleMapController controller) {
                 _controller.complete(controller);
               },
@@ -820,6 +858,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                     route: List.from(_routePoints),
                                     type: selectedType,
                                     mood: selectedMood,
+                                    splits: List.from(_splits),
                                   );
                                   await dbService.saveRun(run);
                                   await dbService.clearActiveRun(); // Ensure recovery modal won't appear

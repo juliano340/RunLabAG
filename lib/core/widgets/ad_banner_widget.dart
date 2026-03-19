@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../services/ad_service.dart';
@@ -24,6 +25,9 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
   }
 
   void _loadAd() {
+    if (!AdService().adsEnabled) return;
+    if (!Platform.isAndroid && !Platform.isIOS) return;
+    
     _bannerAd = BannerAd(
       adUnitId: AdService().bannerAdUnitId,
       request: const AdRequest(),

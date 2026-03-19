@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:lucide_icons/lucide_icons.dart';
+import 'package:fl_chart/fl_chart.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/services/database_service.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:lucide_icons/lucide_icons.dart';
-import 'run_detail_screen.dart';
 import '../../../../core/utils/time_utils.dart';
+import 'run_detail_screen.dart';
 
 class HistoryTab extends StatefulWidget {
   const HistoryTab({super.key});
@@ -16,172 +17,681 @@ class HistoryTab extends StatefulWidget {
 
 class _HistoryTabState extends State<HistoryTab> {
   final DatabaseService _dbService = DatabaseService();
-  List<RunModel> _runs = [];
+  List<RunModel> _allRuns = [];
+  List<RunModel> _filteredRuns = [];
   bool _isLoading = true;
+  int _selectedPeriodIndex = 0; // 0: Semana, 1: Mês
+  final List<String> _periods = ['Semana', 'Mês'];
+  
+  UserProfile? _userProfile;
+  
+  // Pagination State
+  DateTime _referenceDate = DateTime.now();
+  DateTime? _minDate;
+  DateTime? _maxDate;
 
   @override
   void initState() {
     super.initState();
-    _loadHistory();
+    _loadData();
   }
 
-  Future<void> _loadHistory() async {
+  Future<void> _loadData() async {
     final runs = await _dbService.getHistory();
+    final profile = await _dbService.getUserProfile();
+    
+    if (mounted) {
+      DateTime? min;
+      DateTime? max;
+      if (runs.isNotEmpty) {
+        min = runs.map((r) => r.date).reduce((a, b) => a.isBefore(b) ? a : b);
+        max = runs.map((r) => r.date).reduce((a, b) => a.isAfter(b) ? a : b);
+      }
+
+      setState(() {
+        _allRuns = runs;
+        _userProfile = profile;
+        _minDate = min;
+        _maxDate = max;
+        _filterData();
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _filterData() {
+    if (_selectedPeriodIndex == 0) { // Semana (Domingo a Sábado)
+      // Encontrar o Domingo anterior ou igual
+      final startOfWeek = _referenceDate.subtract(Duration(days: _referenceDate.weekday % 7));
+      final start = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+      final end = start.add(const Duration(days: 7));
+      
+      _filteredRuns = _allRuns.where((run) => 
+        run.date.isAfter(start.subtract(const Duration(seconds: 1))) && 
+        run.date.isBefore(end)
+      ).toList();
+    } else { // Mês
+      final startOfMonth = DateTime(_referenceDate.year, _referenceDate.month, 1);
+      final nextMonth = DateTime(_referenceDate.year, _referenceDate.month + 1, 1);
+      
+      _filteredRuns = _allRuns.where((run) => 
+        run.date.isAfter(startOfMonth.subtract(const Duration(seconds: 1))) && 
+        run.date.isBefore(nextMonth)
+      ).toList();
+    }
+  }
+
+  bool _canGoPrevious() {
+    if (_minDate == null) return false;
+    
+    if (_selectedPeriodIndex == 0) { // Semana
+      final startOfCurrentWeek = _referenceDate.subtract(Duration(days: _referenceDate.weekday % 7));
+      final start = DateTime(startOfCurrentWeek.year, startOfCurrentWeek.month, startOfCurrentWeek.day);
+      return _minDate!.isBefore(start);
+    } else { // Mês
+      final startOfCurrentMonth = DateTime(_referenceDate.year, _referenceDate.month, 1);
+      return _minDate!.isBefore(startOfCurrentMonth);
+    }
+  }
+
+  bool _canGoNext() {
+    if (_maxDate == null) return false;
+
+    if (_selectedPeriodIndex == 0) { // Semana
+      final startOfCurrentWeek = _referenceDate.subtract(Duration(days: _referenceDate.weekday % 7));
+      final endOfCurrentWeek = DateTime(startOfCurrentWeek.year, startOfCurrentWeek.month, startOfCurrentWeek.day).add(const Duration(days: 7));
+      return _maxDate!.isAfter(endOfCurrentWeek.subtract(const Duration(seconds: 1)));
+    } else { // Mês
+      final startOfNextMonth = DateTime(_referenceDate.year, _referenceDate.month + 1, 1);
+      return _maxDate!.isAfter(startOfNextMonth.subtract(const Duration(seconds: 1)));
+    }
+  }
+
+  void _previousPeriod() {
+    if (!_canGoPrevious()) return;
     setState(() {
-      _runs = runs;
-      _isLoading = false;
+      if (_selectedPeriodIndex == 0) {
+        _referenceDate = _referenceDate.subtract(const Duration(days: 7));
+      } else {
+        _referenceDate = DateTime(_referenceDate.year, _referenceDate.month - 1, 1);
+      }
+      _filterData();
     });
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} às ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  void _nextPeriod() {
+    if (!_canGoNext()) return;
+    setState(() {
+      if (_selectedPeriodIndex == 0) {
+        _referenceDate = _referenceDate.add(const Duration(days: 7));
+      } else {
+        _referenceDate = DateTime(_referenceDate.year, _referenceDate.month + 1, 1);
+      }
+      _filterData();
+    });
   }
 
-  String _formatDuration(int seconds) {
-    return TimeUtils.formatDuration(seconds);
+  String _getPeriodTitle() {
+    final months = [
+      '', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+    final monthsShort = [
+      '', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
+      'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'
+    ];
+
+    if (_selectedPeriodIndex == 0) {
+      final startOfWeek = _referenceDate.subtract(Duration(days: _referenceDate.weekday % 7));
+      final endOfWeek = startOfWeek.add(const Duration(days: 6));
+      
+      if (startOfWeek.month == endOfWeek.month) {
+        return '${startOfWeek.day} - ${endOfWeek.day} de ${months[startOfWeek.month]}';
+      } else {
+        return '${startOfWeek.day} ${monthsShort[startOfWeek.month]} - ${endOfWeek.day} ${monthsShort[endOfWeek.month]}';
+      }
+    } else {
+      return '${months[_referenceDate.month]} ${_referenceDate.year}';
+    }
+  }
+
+  String _formatDateShort(DateTime date) {
+    final now = DateTime.now();
+    if (date.year == now.year && date.month == now.month && date.day == now.day) {
+      return 'Hoje';
+    }
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}';
+  }
+
+  void _showGoalSettings() {
+    final TextEditingController weeklyController = TextEditingController(text: _userProfile?.weeklyGoal.toString() ?? '20.0');
+    final TextEditingController monthlyController = TextEditingController(text: _userProfile?.monthlyGoal.toString() ?? '80.0');
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.backgroundDarkGreen,
+        title: Text('Configurar Metas (km)', style: GoogleFonts.outfit(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: weeklyController,
+              keyboardType: TextInputType.number,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Meta Semanal',
+                labelStyle: TextStyle(color: AppColors.textMuted),
+                enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: monthlyController,
+              keyboardType: TextInputType.number,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Meta Mensal',
+                labelStyle: TextStyle(color: AppColors.textMuted),
+                enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('CANCELAR', style: TextStyle(color: AppColors.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryNeon),
+            onPressed: () async {
+              if (_userProfile != null) {
+                final newProfile = UserProfile(
+                  name: _userProfile!.name,
+                  age: _userProfile!.age,
+                  weight: _userProfile!.weight,
+                  height: _userProfile!.height,
+                  profilePicturePath: _userProfile!.profilePicturePath,
+                  weeklyGoal: double.tryParse(weeklyController.text) ?? _userProfile!.weeklyGoal,
+                  monthlyGoal: double.tryParse(monthlyController.text) ?? _userProfile!.monthlyGoal,
+                );
+                await _dbService.saveUserProfile(newProfile);
+                if (context.mounted) {
+                  setState(() => _userProfile = newProfile);
+                  Navigator.pop(context);
+                }
+              }
+            },
+            child: const Text('SALVAR', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Histórico de Atividades',
-              style: GoogleFonts.outfit(
-                color: Theme.of(context).colorScheme.onSurface,
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-              ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Dashboard',
+                  style: GoogleFonts.outfit(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                IconButton(
+                  onPressed: _showGoalSettings,
+                  icon: const Icon(LucideIcons.settings, color: AppColors.textMuted, size: 20),
+                ),
+              ],
             ),
-            const SizedBox(height: 24),
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator(color: AppColors.primaryNeon))
-                  : _runs.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(LucideIcons.history, size: 64, color: AppColors.textMuted.withValues(alpha: 0.3)),
-                              const SizedBox(height: 16),
-                              Text(
-                                'Nenhuma atividade registrada ainda.',
-                                style: GoogleFonts.outfit(
-                                  color: Theme.of(context).brightness == Brightness.dark 
-                                      ? AppColors.textMuted 
-                                      : AppColors.textMutedDark,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Hora de queimar o asfalto!',
-                                style: GoogleFonts.outfit(color: AppColors.primaryNeon, fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                          ),
-                        )
-                      : ListView.builder(
-                          itemCount: _runs.length,
-                          itemBuilder: (context, index) {
-                            final run = _runs[index];
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 16),
-                              child: InkWell(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => RunDetailScreen(run: run),
-                                    ),
-                                  ).then((_) => _loadHistory());
-                                },
-                                borderRadius: BorderRadius.circular(16),
-                                child: GlassContainer(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Row(
-                                    children: [
-                                        Container(
-                                          padding: const EdgeInsets.all(12),
-                                          decoration: BoxDecoration(
-                                            color: Theme.of(context).brightness == Brightness.dark 
-                                                  ? AppColors.cardBorder.withValues(alpha: 0.3) 
-                                                  : AppColors.borderLight,
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: Icon(
-                                            run.type == 'Caminhada' 
-                                                ? LucideIcons.footprints 
-                                                : run.type == 'Corrida/Caminhada' 
-                                                    ? LucideIcons.timer 
-                                                    : LucideIcons.zap, 
-                                            color: run.type == 'Caminhada' 
-                                                ? Colors.blueAccent 
-                                                : run.type == 'Corrida/Caminhada' 
-                                                    ? Colors.orangeAccent 
-                                                    : AppColors.primaryNeon
-                                          ),
-                                        ),
-                                      const SizedBox(width: 16),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              '${run.type} de ${run.distanceKm.toStringAsFixed(2)} km',
-                                              style: GoogleFonts.outfit(
-                                                color: Theme.of(context).colorScheme.onSurface,
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              '${_formatDate(run.date)} • ${_formatDuration(run.durationSeconds)}',
-                                              style: GoogleFonts.outfit(
-                                                color: Theme.of(context).brightness == Brightness.dark 
-                                                    ? AppColors.textMuted 
-                                                    : AppColors.textMutedDark,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                       Column(
-                                         crossAxisAlignment: CrossAxisAlignment.end,
-                                         children: [
-                                           if (run.mood.isNotEmpty)
-                                             Text(run.mood, style: const TextStyle(fontSize: 22)),
-                                           Text(
-                                              run.pace,
-                                             style: GoogleFonts.outfit(
-                                               color: AppColors.primaryNeonLight,
-                                               fontSize: 16,
-                                               fontWeight: FontWeight.w600,
-                                             ),
-                                           ),
-                                           Text(
-                                             '/km',
-                                             style: GoogleFonts.outfit(
-                                               color: Theme.of(context).brightness == Brightness.dark 
-                                                   ? AppColors.textMuted 
-                                                   : AppColors.textMutedDark,
-                                               fontSize: 12,
-                                             ),
-                                           ),
-                                         ],
-                                       ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
+          ),
+          
+          const SizedBox(height: 12),
+          _buildPeriodSelector(),
+          const SizedBox(height: 12),
+          _buildPaginationHeader(),
+          const SizedBox(height: 12),
+
+          Expanded(
+            child: _isLoading
+              ? const Center(child: CircularProgressIndicator(color: AppColors.primaryNeon))
+              : SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    children: [
+                      _buildAnalyticsSummary(),
+                      const SizedBox(height: 24),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Row(
+                          children: [
+                            Text(
+                              'Atividades',
+                              style: GoogleFonts.outfit(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
+                            const Spacer(),
+                            Text(
+                              '${_filteredRuns.length} treinos',
+                              style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 13),
+                            ),
+                          ],
                         ),
+                      ),
+                      const SizedBox(height: 12),
+                      _buildActivitiesList(),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPeriodSelector() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Container(
+        height: 40,
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: AppColors.backgroundDarkGreen.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Row(
+          children: List.generate(_periods.length, (index) {
+            final isSelected = _selectedPeriodIndex == index;
+            return Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedPeriodIndex = index;
+                    _referenceDate = DateTime.now();
+                    _filterData();
+                  });
+                },
+                child: Container(
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppColors.primaryNeon.withValues(alpha: 0.1) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    border: isSelected ? Border.all(color: AppColors.primaryNeon.withValues(alpha: 0.3)) : null,
+                  ),
+                  child: Text(
+                    _periods[index],
+                    style: GoogleFonts.outfit(
+                      color: isSelected ? AppColors.primaryNeon : AppColors.textMuted,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaginationHeader() {
+    final canPrev = _canGoPrevious();
+    final canNext = _canGoNext();
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          IconButton(
+            onPressed: canPrev ? _previousPeriod : null,
+            icon: Icon(
+              LucideIcons.chevronLeft, 
+              color: canPrev ? AppColors.textMuted : AppColors.textMuted.withValues(alpha: 0.1)
+            ),
+            visualDensity: VisualDensity.compact,
+          ),
+          Text(
+            _getPeriodTitle(),
+            style: GoogleFonts.outfit(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
+          ),
+          IconButton(
+            onPressed: canNext ? _nextPeriod : null,
+            icon: Icon(
+              LucideIcons.chevronRight, 
+              color: canNext ? AppColors.textMuted : AppColors.textMuted.withValues(alpha: 0.1)
+            ),
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalyticsSummary() {
+    double totalKm = _filteredRuns.fold(0.0, (sum, r) => sum + r.distanceKm);
+    int totalDur = _filteredRuns.fold(0, (sum, r) => sum + r.durationSeconds);
+    int totalCal = _filteredRuns.fold(0, (sum, r) => sum + r.calories);
+    double weightLossKg = totalCal / 7700.0;
+    
+    double goal = (_selectedPeriodIndex == 0) ? (_userProfile?.weeklyGoal ?? 20.0) : (_userProfile?.monthlyGoal ?? 80.0);
+    double progress = goal > 0 ? (totalKm / goal).clamp(0.0, 1.0) : 0.0;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        children: [
+          // Row 1: Chart & Circle
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 3,
+                child: GlassContainer(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Desempenho',
+                        style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        height: 100,
+                        child: _buildBarChart(),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: GlassContainer(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Meta',
+                        style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12),
+                      ),
+                      const SizedBox(height: 16),
+                      Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox(
+                            height: 70,
+                            width: 70,
+                            child: CircularProgressIndicator(
+                              value: progress,
+                              strokeWidth: 8,
+                              color: AppColors.primaryNeon,
+                              backgroundColor: Colors.white12,
+                            ),
+                          ),
+                          Text(
+                            '${(progress * 100).toInt()}%',
+                            style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${totalKm.toStringAsFixed(1)} / ${goal.toInt()} km',
+                        style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Row 2: Stats
+          Row(
+            children: [
+              _buildSmallStat('Duração', TimeUtils.formatDuration(totalDur), LucideIcons.timer),
+              const SizedBox(width: 12),
+              _buildSmallStat('Calorias', '$totalCal kcal', LucideIcons.flame),
+              const SizedBox(width: 12),
+              _buildSmallStat('Peso Est.', '${weightLossKg.toStringAsFixed(3)} kg', LucideIcons.scale),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSmallStat(String label, String value, IconData icon) {
+    return Expanded(
+      child: GlassContainer(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        child: Column(
+          children: [
+            Icon(icon, color: AppColors.primaryNeon, size: 16),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            Text(
+              label,
+              style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 10),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBarChart() {
+    List<BarChartGroupData> barGroups = [];
+    double maxDistance = 0;
+
+    if (_selectedPeriodIndex == 0) { // Semana
+      final startOfWeek = _referenceDate.subtract(Duration(days: _referenceDate.weekday % 7));
+      
+      for (int i = 0; i < 7; i++) {
+        final day = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day).add(Duration(days: i));
+        double dailyTotal = _allRuns
+            .where((r) => r.date.year == day.year && r.date.month == day.month && r.date.day == day.day)
+            .fold(0.0, (sum, r) => sum + r.distanceKm);
+        
+        if (dailyTotal > maxDistance) maxDistance = dailyTotal;
+        barGroups.add(_makeGroupData(i, dailyTotal));
+      }
+    } else { // Mês
+      final year = _referenceDate.year;
+      final month = _referenceDate.month;
+      final firstDayOfMonth = DateTime(year, month, 1);
+      
+      for (int i = 0; i < 4; i++) {
+        final start = firstDayOfMonth.add(Duration(days: i * 7));
+        final end = i < 3 
+            ? firstDayOfMonth.add(Duration(days: (i + 1) * 7)) 
+            : DateTime(year, month + 1, 1);
+        
+        double weeklyTotal = _allRuns
+            .where((r) => r.date.isAfter(start.subtract(const Duration(seconds: 1))) && r.date.isBefore(end))
+            .fold(0.0, (sum, r) => sum + r.distanceKm);
+            
+        if (weeklyTotal > maxDistance) maxDistance = weeklyTotal;
+        barGroups.add(_makeGroupData(i, weeklyTotal));
+      }
+    }
+
+    if (maxDistance == 0) maxDistance = 5.0;
+
+    return BarChart(
+      BarChartData(
+        alignment: BarChartAlignment.spaceAround,
+        maxY: maxDistance * 1.2,
+        barTouchData: BarTouchData(
+          enabled: true,
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipColor: (_) => AppColors.backgroundDarkGreen,
+            tooltipBorder: const BorderSide(color: Colors.white10),
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+              return BarTooltipItem(
+                '${rod.toY.toStringAsFixed(1)} km',
+                GoogleFonts.outfit(color: AppColors.primaryNeon, fontWeight: FontWeight.bold),
+              );
+            },
+          ),
+        ),
+        titlesData: FlTitlesData(
+          show: true,
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (value, meta) {
+                String text = '';
+                if (_selectedPeriodIndex == 0) {
+                  const days = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+                  text = days[value.toInt() % 7];
+                } else {
+                  text = 'S${value.toInt() + 1}';
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(text, style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 10)),
+                );
+              },
+            ),
+          ),
+          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        ),
+        gridData: const FlGridData(show: false),
+        borderData: FlBorderData(show: false),
+        barGroups: barGroups,
+      ),
+    );
+  }
+
+  BarChartGroupData _makeGroupData(int x, double y) {
+    return BarChartGroupData(
+      x: x,
+      barRods: [
+        BarChartRodData(
+          toY: y,
+          color: AppColors.primaryNeon,
+          width: 8,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(2)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActivitiesList() {
+    return _filteredRuns.isEmpty 
+        ? _buildEmptyState()
+        : ListView.builder(
+            padding: EdgeInsets.zero,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _filteredRuns.length,
+            itemBuilder: (context, index) {
+              final run = _filteredRuns[index];
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+                child: _buildRunCard(run),
+              );
+            },
+          );
+  }
+
+  Widget _buildRunCard(RunModel run) {
+    return GlassContainer(
+      padding: const EdgeInsets.all(16),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => RunDetailScreen(run: run)),
+        ).then((_) => _loadData());
+      },
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: run.type == 'Caminhada' ? Colors.blue.withValues(alpha: 0.1) : AppColors.primaryNeon.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              run.type == 'Caminhada' ? LucideIcons.footprints : LucideIcons.zap,
+              color: run.type == 'Caminhada' ? Colors.blueAccent : AppColors.primaryNeon,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${run.distanceKm.toStringAsFixed(2)} km',
+                  style: GoogleFonts.outfit(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  '${_formatDateShort(run.date)} • ${TimeUtils.formatDuration(run.durationSeconds)}',
+                  style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                run.pace,
+                style: GoogleFonts.outfit(color: AppColors.primaryNeonLight, fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                'ritmo',
+                style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 10),
+              ),
+            ],
+          ),
+          const SizedBox(width: 8),
+          const Icon(LucideIcons.chevronRight, color: Colors.white12, size: 16),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(LucideIcons.history, size: 48, color: AppColors.textMuted.withValues(alpha: 0.2)),
+            const SizedBox(height: 16),
+            Text(
+              'Nenhuma atividade neste período.',
+              style: GoogleFonts.outfit(color: AppColors.textMuted),
             ),
           ],
         ),

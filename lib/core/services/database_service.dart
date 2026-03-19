@@ -3,6 +3,19 @@ import 'package:sqflite/sqflite.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:path/path.dart';
 
+class RunSplit {
+  final int timeSeconds;
+  final int calories;
+
+  RunSplit({required this.timeSeconds, required this.calories});
+
+  Map<String, dynamic> toMap() => {'t': timeSeconds, 'c': calories};
+  factory RunSplit.fromMap(Map<String, dynamic> map) => RunSplit(
+    timeSeconds: map['t'] ?? 0,
+    calories: map['c'] ?? 0,
+  );
+}
+
 class RunModel {
   final String id;
   final DateTime date;
@@ -13,6 +26,7 @@ class RunModel {
   final List<LatLng> route;
   final String type;
   final String mood;
+  final List<RunSplit> splits; // Detalhes de cada km
 
   RunModel({
     required this.id,
@@ -24,6 +38,7 @@ class RunModel {
     this.route = const [],
     this.type = 'Corrida',
     this.mood = '',
+    this.splits = const [],
   });
 
   Map<String, dynamic> toMap() {
@@ -37,11 +52,13 @@ class RunModel {
       'route': jsonEncode(route.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList()),
       'type': type,
       'mood': mood,
+      'splits': jsonEncode(splits.map((s) => s.toMap()).toList()),
     };
   }
 
   factory RunModel.fromMap(Map<String, dynamic> map) {
     List<dynamic> routeList = jsonDecode(map['route'] ?? '[]');
+    List<dynamic> splitList = jsonDecode(map['splits'] ?? '[]');
     return RunModel(
       id: map['id'],
       date: DateTime.parse(map['date']),
@@ -52,6 +69,11 @@ class RunModel {
       route: routeList.map((p) => LatLng(p['lat'], p['lng'])).toList(),
       type: map['type'] ?? 'Corrida',
       mood: map['mood'] ?? '',
+      splits: splitList.map((s) {
+        if (s is Map) return RunSplit.fromMap(s.cast<String, dynamic>());
+        if (s is int) return RunSplit(timeSeconds: s, calories: 0);
+        return RunSplit(timeSeconds: 0, calories: 0);
+      }).toList(),
     );
   }
 }
@@ -63,6 +85,7 @@ class UserProfile {
   final double height;
   final String? profilePicturePath;
   final double weeklyGoal;
+  final double monthlyGoal;
 
   UserProfile({
     required this.name,
@@ -71,6 +94,7 @@ class UserProfile {
     required this.height,
     this.profilePicturePath,
     this.weeklyGoal = 20.0,
+    this.monthlyGoal = 80.0,
   });
 
   Map<String, dynamic> toMap() {
@@ -82,6 +106,7 @@ class UserProfile {
       'height': height,
       'profilePicturePath': profilePicturePath,
       'weeklyGoal': weeklyGoal,
+      'monthlyGoal': monthlyGoal,
     };
   }
 
@@ -93,6 +118,7 @@ class UserProfile {
       height: map['height'] ?? 0.0,
       profilePicturePath: map['profilePicturePath'],
       weeklyGoal: map['weeklyGoal'] ?? 20.0,
+      monthlyGoal: map['monthlyGoal'] ?? 80.0,
     );
   }
 
@@ -113,7 +139,7 @@ class UserProfile {
 class DatabaseService {
   static Database? _database;
 
-  static const _databaseVersion = 9;
+  static const _databaseVersion = 11;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -128,16 +154,16 @@ class DatabaseService {
       version: _databaseVersion,
       onCreate: (db, version) async {
         await db.execute(
-          'CREATE TABLE runs(id TEXT PRIMARY KEY, date TEXT, distanceKm REAL, durationSeconds INTEGER, pace TEXT, calories INTEGER, route TEXT, type TEXT, mood TEXT)',
+          'CREATE TABLE runs(id TEXT PRIMARY KEY, date TEXT, distanceKm REAL, durationSeconds INTEGER, pace TEXT, calories INTEGER, route TEXT, type TEXT, mood TEXT, splits TEXT)',
         );
         await db.execute(
-          'CREATE TABLE user_profile(id TEXT PRIMARY KEY, name TEXT, age INTEGER, weight REAL, height REAL, profilePicturePath TEXT, weeklyGoal REAL)',
+          'CREATE TABLE user_profile(id TEXT PRIMARY KEY, name TEXT, age INTEGER, weight REAL, height REAL, profilePicturePath TEXT, weeklyGoal REAL, monthlyGoal REAL)',
         );
         await db.execute(
           'CREATE TABLE achievements(id TEXT PRIMARY KEY, title TEXT, description TEXT, iconCode INTEGER, earnedDate TEXT)',
         );
         await db.execute(
-          'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER)',
+          'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER, splits TEXT)',
         );
         await db.execute(
           'CREATE TABLE monitored_distances(distanceKm REAL PRIMARY KEY)',
@@ -183,6 +209,13 @@ class DatabaseService {
               await db.insert('monitored_distances', {'distanceKm': dist}, conflictAlgorithm: ConflictAlgorithm.ignore);
             }
           }
+        }
+        if (oldVersion < 10) {
+          await db.execute('ALTER TABLE user_profile ADD COLUMN monthlyGoal REAL DEFAULT 80.0');
+        }
+        if (oldVersion < 11) {
+          await db.execute('ALTER TABLE runs ADD COLUMN splits TEXT');
+          await db.execute('ALTER TABLE active_run ADD COLUMN splits TEXT');
         }
       },
     );
@@ -442,8 +475,8 @@ class DatabaseService {
 
   Future<List<double>> getWeeklyProgress() async {
     final now = DateTime.now();
-    // Encontrar a última segunda-feira
-    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    // Encontrar o último domingo (ou hoje se for domingo)
+    final startOfWeek = now.subtract(Duration(days: now.weekday % 7));
     final startDate = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
     
     final List<double> dailyDistances = List.filled(7, 0.0);

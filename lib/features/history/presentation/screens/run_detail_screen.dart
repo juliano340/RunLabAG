@@ -42,6 +42,131 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     return TimeUtils.formatDuration(seconds);
   }
 
+  void _showSplitsModal() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.7,
+        decoration: BoxDecoration(
+          color: AppColors.backgroundDarkGreen,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'VOLTAS (KM)',
+              style: GoogleFonts.outfit(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                  ),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        child: Row(
+                          children: [
+                            Expanded(flex: 1, child: Text('KM', style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12))),
+                            Expanded(flex: 2, child: Text('TEMPO', style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12))),
+                            Expanded(flex: 2, child: Text('RITMO', style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12))),
+                            Expanded(flex: 1, child: Text('KCAL', style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12), textAlign: TextAlign.right)),
+                          ],
+                        ),
+                      ),
+                      const Divider(color: Colors.white10, height: 1),
+                      ...List.generate(widget.run.splits.length, (index) {
+                        final split = widget.run.splits[index];
+                        final splitTime = split.timeSeconds;
+                        final minutes = splitTime ~/ 60;
+                        final seconds = splitTime % 60;
+                        final paceStr = '$minutes:${seconds.toString().padLeft(2, '0')}';
+                        
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            border: const Border(bottom: BorderSide(color: Colors.white10, width: 0.5)),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(flex: 1, child: Text('${index + 1}', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold))),
+                              Expanded(flex: 2, child: Text(_formatDuration(splitTime), style: GoogleFonts.outfit(color: Colors.white))),
+                              Expanded(flex: 2, child: Text('$paceStr/km', style: GoogleFonts.outfit(color: AppColors.primaryNeon, fontWeight: FontWeight.w600))),
+                              Expanded(flex: 1, child: Text('${split.calories}', style: GoogleFonts.outfit(color: Colors.orangeAccent, fontSize: 13), textAlign: TextAlign.right)),
+                            ],
+                          ),
+                        );
+                      }),
+                      
+                      // Adicionar o trecho final (parcial)
+                      if (widget.run.distanceKm > widget.run.splits.length + 0.01) (() {
+                        final remainingDist = widget.run.distanceKm - widget.run.splits.length;
+                        final consumedTime = widget.run.splits.fold(0, (sum, s) => sum + s.timeSeconds);
+                        final remainingTime = (widget.run.durationSeconds - consumedTime).clamp(0, widget.run.durationSeconds);
+                        
+                        final consumedCals = widget.run.splits.fold(0, (sum, s) => sum + s.calories);
+                        final remainingCals = (widget.run.calories - consumedCals).clamp(0, widget.run.calories);
+
+                        // Calcular ritmo para o trecho parcial
+                        String partialPace = '--:--';
+                        if (remainingDist > 0 && remainingTime > 0) {
+                          double paceInMinutes = (remainingTime / 60) / remainingDist;
+                          int mins = paceInMinutes.toInt();
+                          int secs = ((paceInMinutes - mins) * 60).toInt();
+                          partialPace = '$mins:${secs.toString().padLeft(2, '0')}';
+                        }
+
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.05),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(flex: 1, child: Text('RESTO', style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
+                              Expanded(flex: 2, child: Text('${remainingDist.toStringAsFixed(2)} km', style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13))),
+                              Expanded(flex: 2, child: Text('$partialPace/km', style: GoogleFonts.outfit(color: AppColors.primaryNeon.withValues(alpha: 0.8), fontSize: 13))),
+                              Expanded(flex: 1, child: Text('$remainingCals', style: GoogleFonts.outfit(color: Colors.orangeAccent.withValues(alpha: 0.8), fontSize: 13), textAlign: TextAlign.right)),
+                            ],
+                          ),
+                        );
+                      })(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -291,6 +416,31 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: 32),
+                
+                if (widget.run.splits.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 24),
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+                        side: BorderSide(color: AppColors.primaryNeon.withValues(alpha: 0.5)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                      ),
+                      onPressed: _showSplitsModal,
+                      icon: const Icon(LucideIcons.list, color: AppColors.primaryNeon, size: 18),
+                      label: Text(
+                        'VER VOLTAS',
+                        style: GoogleFonts.outfit(
+                          color: AppColors.primaryNeon,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                    ),
+                  ),
+
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
