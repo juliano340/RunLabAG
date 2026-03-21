@@ -9,6 +9,8 @@ import 'features/profile/presentation/screens/onboarding_screen.dart';
 import 'features/profile/presentation/screens/privacy_screen.dart';
 import 'core/services/ad_service.dart';
 
+import 'features/water/presentation/providers/water_provider.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
@@ -21,6 +23,7 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeService()),
+        ChangeNotifierProvider(create: (_) => WaterProvider()),
       ],
       child: RunLabApp(
         hasCompletedOnboarding: hasCompletedOnboarding,

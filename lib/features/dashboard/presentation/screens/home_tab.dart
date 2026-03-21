@@ -9,7 +9,8 @@ import '../widgets/start_run_button.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../../../features/run/presentation/screens/active_run_screen.dart';
 
-import '../../../../core/services/database_service.dart';
+import 'package:runlabag/core/services/database_service.dart';
+import 'package:runlabag/features/water/presentation/widgets/water_card.dart';
 
 class HomeTab extends StatefulWidget {
   const HomeTab({super.key});
@@ -336,6 +337,10 @@ class _HomeTabState extends State<HomeTab> {
                 ),
                 const SizedBox(height: 32),
               ],
+              
+              // Water Intake Card
+              const WaterCard(),
+              const SizedBox(height: 32),
   
               // Stats Grid
               Text(

@@ -294,7 +294,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                         Expanded(
                           child: Text(
                             AchievementService.getIncentiveMessage(currentKm),
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ],
@@ -867,7 +870,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                     if (newAwards.isNotEmpty) {
                                       ScaffoldMessenger.of(context).showSnackBar(
                                         SnackBar(
-                                          content: Text('PARABÉNS! Você ganhou ${newAwards.length} novas conquistas! 🏆'),
+                                          content: Text(
+                                            'PARABÉNS! Você ganhou ${newAwards.length} novas conquistas! 🏆',
+                                            style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                                          ),
                                           backgroundColor: AppColors.primaryNeon,
                                           duration: const Duration(seconds: 5),
                                         ),

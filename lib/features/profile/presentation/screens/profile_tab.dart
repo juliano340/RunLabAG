@@ -14,7 +14,8 @@ import '../../../../core/services/backup_service.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart';
-import '../../../../core/services/ad_service.dart';
+import 'package:runlabag/core/services/ad_service.dart';
+import 'package:runlabag/features/water/presentation/providers/water_provider.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -66,9 +67,14 @@ class _ProfileTabState extends State<ProfileTab> {
         height: _profile!.height,
         profilePicturePath: savedImage.path,
         weeklyGoal: _profile!.weeklyGoal,
+        monthlyGoal: _profile!.monthlyGoal,
+        waterGoal: _profile!.waterGoal,
       );
 
       await _dbService.saveUserProfile(updatedProfile);
+      if (mounted) {
+        context.read<WaterProvider>().refresh();
+      }
       _loadProfile();
     }
   }
@@ -86,6 +92,7 @@ class _ProfileTabState extends State<ProfileTab> {
     final weightController = TextEditingController(text: _profile!.weight.toString().replaceAll('.', ','));
     final heightController = TextEditingController(text: _profile!.height.toInt().toString());
     final weeklyGoalController = TextEditingController(text: _profile!.weeklyGoal.toString().replaceAll('.', ','));
+    final waterGoalController = TextEditingController(text: _profile!.waterGoal.toInt().toString());
     final formKey = GlobalKey<FormState>();
 
     showDialog(
@@ -108,6 +115,8 @@ class _ProfileTabState extends State<ProfileTab> {
                 _buildEditField(heightController, 'Altura (cm)', LucideIcons.ruler, keyboardType: TextInputType.number),
                 const SizedBox(height: 16),
                 _buildEditField(weeklyGoalController, 'Meta Semanal (km)', LucideIcons.target, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                const SizedBox(height: 16),
+                _buildEditField(waterGoalController, 'Meta de Água (ml)', LucideIcons.droplet, keyboardType: TextInputType.number),
               ],
             ),
           ),
@@ -128,9 +137,12 @@ class _ProfileTabState extends State<ProfileTab> {
                   height: _parseNumber(heightController.text),
                   profilePicturePath: _profile!.profilePicturePath,
                   weeklyGoal: _parseNumber(weeklyGoalController.text),
+                  monthlyGoal: _profile!.monthlyGoal,
+                  waterGoal: _parseNumber(waterGoalController.text),
                 );
                 await _dbService.saveUserProfile(updatedProfile);
                 if (context.mounted) {
+                  context.read<WaterProvider>().refresh();
                   Navigator.pop(context);
                   _loadProfile();
                 }
@@ -265,6 +277,8 @@ class _ProfileTabState extends State<ProfileTab> {
                 _buildInfoBadge('${_profile?.height.toInt() ?? 0} cm'),
                 const SizedBox(width: 8),
                 _buildInfoBadge('Meta: ${_profile?.weeklyGoal.toStringAsFixed(1) ?? 20} km'),
+                const SizedBox(width: 8),
+                _buildInfoBadge('Água: ${(_profile?.waterGoal ?? 2000).toInt()} ml'),
               ],
             ),
             const SizedBox(height: 24),
@@ -370,7 +384,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       } catch (e) {
                         if (mounted && context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Erro ao exportar backup')),
+                            const SnackBar(content: Text('Erro ao exportar backup', style: TextStyle(color: Colors.white))),
                           );
                         }
                       }
@@ -398,7 +412,8 @@ class _ProfileTabState extends State<ProfileTab> {
                             SnackBar(
                               content: Text(success 
                                 ? 'Dados restaurados com sucesso!' 
-                                : 'Erro ao importar arquivo'),
+                                : 'Erro ao importar arquivo',
+                                style: const TextStyle(color: Colors.white)),
                               backgroundColor: success ? Colors.green : Colors.red,
                             ),
                           );
@@ -435,7 +450,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Não foi possível abrir o link de suporte')),
+                            const SnackBar(content: Text('Não foi possível abrir o link de suporte', style: TextStyle(color: Colors.white))),
                           );
                         }
                       }

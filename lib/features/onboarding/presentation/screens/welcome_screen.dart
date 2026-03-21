@@ -141,7 +141,7 @@ class WelcomeScreen extends StatelessWidget {
                               }
                             } else {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Erro ao importar backup')),
+                                const SnackBar(content: Text('Erro ao importar arquivo', style: TextStyle(color: Colors.white))),
                               );
                             }
                           }

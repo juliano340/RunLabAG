@@ -86,6 +86,7 @@ class UserProfile {
   final String? profilePicturePath;
   final double weeklyGoal;
   final double monthlyGoal;
+  final double waterGoal; // em ml
 
   UserProfile({
     required this.name,
@@ -95,6 +96,7 @@ class UserProfile {
     this.profilePicturePath,
     this.weeklyGoal = 20.0,
     this.monthlyGoal = 80.0,
+    this.waterGoal = 2000.0,
   });
 
   Map<String, dynamic> toMap() {
@@ -107,6 +109,7 @@ class UserProfile {
       'profilePicturePath': profilePicturePath,
       'weeklyGoal': weeklyGoal,
       'monthlyGoal': monthlyGoal,
+      'waterGoal': waterGoal,
     };
   }
 
@@ -119,6 +122,7 @@ class UserProfile {
       profilePicturePath: map['profilePicturePath'],
       weeklyGoal: map['weeklyGoal'] ?? 20.0,
       monthlyGoal: map['monthlyGoal'] ?? 80.0,
+      waterGoal: map['waterGoal']?.toDouble() ?? 2000.0,
     );
   }
 
@@ -139,7 +143,7 @@ class UserProfile {
 class DatabaseService {
   static Database? _database;
 
-  static const _databaseVersion = 11;
+  static const _databaseVersion = 12;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -167,6 +171,9 @@ class DatabaseService {
         );
         await db.execute(
           'CREATE TABLE monitored_distances(distanceKm REAL PRIMARY KEY)',
+        );
+        await db.execute(
+          'CREATE TABLE water_intake(id INTEGER PRIMARY KEY AUTOINCREMENT, amount INTEGER, timestamp TEXT)',
         );
         // Pre-populate defaults
         for (double dist in [1.0, 5.0, 10.0, 15.0]) {
@@ -216,6 +223,12 @@ class DatabaseService {
         if (oldVersion < 11) {
           await db.execute('ALTER TABLE runs ADD COLUMN splits TEXT');
           await db.execute('ALTER TABLE active_run ADD COLUMN splits TEXT');
+        }
+        if (oldVersion < 12) {
+          await db.execute(
+            'CREATE TABLE water_intake(id INTEGER PRIMARY KEY AUTOINCREMENT, amount INTEGER, timestamp TEXT)',
+          );
+          await db.execute('ALTER TABLE user_profile ADD COLUMN waterGoal REAL DEFAULT 2000.0');
         }
       },
     );
@@ -519,5 +532,40 @@ class DatabaseService {
     );
     if (maps.isEmpty) return null;
     return UserProfile.fromMap(maps.first);
+  }
+
+  // Water Intake Methods
+  Future<void> saveWaterIntake(int amount) async {
+    final db = await database;
+    await db.insert(
+      'water_intake',
+      {
+        'amount': amount,
+        'timestamp': DateTime.now().toIso8601String(),
+      },
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getDailyWaterIntake() async {
+    final db = await database;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day).toIso8601String();
+    
+    return await db.query(
+      'water_intake',
+      where: 'timestamp >= ?',
+      whereArgs: [today],
+      orderBy: 'timestamp DESC',
+    );
+  }
+
+  Future<int> getTotalDailyWaterIntake() async {
+    final logs = await getDailyWaterIntake();
+    return logs.fold<int>(0, (sum, log) => sum + (log['amount'] as int));
+  }
+
+  Future<void> deleteWaterIntake(int id) async {
+    final db = await database;
+    await db.delete('water_intake', where: 'id = ?', whereArgs: [id]);
   }
 }

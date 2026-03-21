@@ -21,6 +21,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _weightController = TextEditingController();
   final _heightController = TextEditingController();
   final _weeklyGoalController = TextEditingController(text: '20');
+  final _waterGoalController = TextEditingController(text: '2000');
 
   int _currentPage = 0;
   final int _totalPages = 5;
@@ -33,6 +34,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _weightController.dispose();
     _heightController.dispose();
     _weeklyGoalController.dispose();
+    _waterGoalController.dispose();
     super.dispose();
   }
 
@@ -71,6 +73,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       weight: _parseNumber(_weightController.text),
       height: _parseNumber(_heightController.text),
       weeklyGoal: _parseNumber(_weeklyGoalController.text),
+      waterGoal: _parseNumber(_waterGoalController.text),
     );
 
     final dbService = DatabaseService();
@@ -172,6 +175,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         icon: LucideIcons.target,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         hint: 'Ex: 20',
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Meta é obrigatória';
+                          if (_parseNumber(v) <= 0) return 'Meta inválida';
+                          return null;
+                        },
+                      ),
+                    ),
+                    _buildStep(
+                      title: 'Qual a sua meta de água?',
+                      subtitle: 'Quanto de água você quer tomar por dia?',
+                      child: _buildTextField(
+                        controller: _waterGoalController,
+                        label: 'Meta de Água (ml)',
+                        icon: LucideIcons.droplets,
+                        keyboardType: TextInputType.number,
+                        hint: 'Ex: 2000',
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Meta é obrigatória';
                           if (_parseNumber(v) <= 0) return 'Meta inválida';

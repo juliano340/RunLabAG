@@ -504,7 +504,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                 Navigator.of(context).pop(); // Return to history
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Treino excluído com sucesso.'),
+                    content: Text('Treino excluído com sucesso.', style: TextStyle(color: Colors.white)),
                     backgroundColor: Colors.redAccent,
                   ),
                 );
