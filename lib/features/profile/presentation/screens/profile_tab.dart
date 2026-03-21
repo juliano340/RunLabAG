@@ -267,17 +267,15 @@ class _ProfileTabState extends State<ProfileTab> {
               ),
             ),
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 _buildInfoBadge('${_profile?.age ?? 0} anos'),
-                const SizedBox(width: 8),
                 _buildInfoBadge('${_profile?.weight.toStringAsFixed(1) ?? 0} kg'),
-                const SizedBox(width: 8),
                 _buildInfoBadge('${_profile?.height.toInt() ?? 0} cm'),
-                const SizedBox(width: 8),
                 _buildInfoBadge('Meta: ${_profile?.weeklyGoal.toStringAsFixed(1) ?? 20} km'),
-                const SizedBox(width: 8),
                 _buildInfoBadge('Água: ${(_profile?.waterGoal ?? 2000).toInt()} ml'),
               ],
             ),
