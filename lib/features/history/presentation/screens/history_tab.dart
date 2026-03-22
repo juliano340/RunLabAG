@@ -84,6 +84,8 @@ class _HistoryTabState extends State<HistoryTab> {
   bool _canGoPrevious() {
     if (_minDate == null) return false;
     
+    // Calculate the start of the earliest possible period we should show
+    // Usually we don't need to go before the first run ever recorded
     if (_selectedPeriodIndex == 0) { // Semana
       final startOfCurrentWeek = _referenceDate.subtract(Duration(days: _referenceDate.weekday % 7));
       final start = DateTime(startOfCurrentWeek.year, startOfCurrentWeek.month, startOfCurrentWeek.day);
@@ -95,15 +97,17 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   bool _canGoNext() {
-    if (_maxDate == null) return false;
+    // We should ALWAYS be able to see the current week/month even if there's no data yet.
+    final now = DateTime.now();
+    final effectiveMax = _maxDate == null || now.isAfter(_maxDate!) ? now : _maxDate!;
 
     if (_selectedPeriodIndex == 0) { // Semana
       final startOfCurrentWeek = _referenceDate.subtract(Duration(days: _referenceDate.weekday % 7));
       final endOfCurrentWeek = DateTime(startOfCurrentWeek.year, startOfCurrentWeek.month, startOfCurrentWeek.day).add(const Duration(days: 7));
-      return _maxDate!.isAfter(endOfCurrentWeek.subtract(const Duration(seconds: 1)));
+      return effectiveMax.isAfter(endOfCurrentWeek.subtract(const Duration(seconds: 1)));
     } else { // Mês
       final startOfNextMonth = DateTime(_referenceDate.year, _referenceDate.month + 1, 1);
-      return _maxDate!.isAfter(startOfNextMonth.subtract(const Duration(seconds: 1)));
+      return effectiveMax.isAfter(startOfNextMonth.subtract(const Duration(seconds: 1)));
     }
   }
 
@@ -715,9 +719,21 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   Color _getGoalColor(double progress) {
-    if (progress >= 1.5) return Colors.purpleAccent;
-    if (progress >= 1.25) return Colors.amberAccent;
-    if (progress >= 1.0) return Colors.orangeAccent;
-    return AppColors.primaryNeon;
+    if (progress <= 0) return AppColors.primaryNeon.withOpacity(0.3);
+    
+    // Dragon chasing tail: Chromatic progression
+    if (progress < 0.5) {
+      // 0 to 0.5: Cyan to Neon Green
+      return Color.lerp(Colors.cyanAccent, AppColors.primaryNeon, progress * 2)!;
+    } else if (progress < 1.0) {
+      // 0.5 to 1.0: Neon Green to Orange
+      return Color.lerp(AppColors.primaryNeon, Colors.orangeAccent, (progress - 0.5) * 2)!;
+    } else if (progress < 1.5) {
+      // 1.0 to 1.5: Orange to Pink/Purple
+      return Color.lerp(Colors.orangeAccent, Colors.pinkAccent, (progress - 1.0) * 2)!;
+    } else {
+      // Over 1.5: Deep Purple
+      return Colors.deepPurpleAccent;
+    }
   }
 }
