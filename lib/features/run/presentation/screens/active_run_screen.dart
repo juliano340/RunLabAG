@@ -53,6 +53,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   // Smoothing fields
   List<Position> _paceBuffer = [];
   String _currentSmoothedPace = '0:00';
+  bool _isFirstPointAfterResume = false;
   
   bool _isScreenLocked = false;
   bool _showLockHint = false;
@@ -236,8 +237,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _positionStream = _locationService.getLocationStream().listen((Position position) {
         if (_isPaused) return;
 
-        // 1. Filtro de Precisão (Ignorar se o erro for maior que 25 metros)
-        if (position.accuracy > 25) {
+        // 1. Filtro de Precisão (Reduzido de 25m p/ 18m para evitar drift)
+        if (position.accuracy > 18) {
           debugPrint("GPS impreciso ignorado: ${position.accuracy}m");
           return;
         }
@@ -251,14 +252,38 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             newPoint.latitude, newPoint.longitude,
           );
 
-          // 2. Filtro de Jitter (Ignorar pequenos movimentos < 2.5 metros)
-          if (distanceInMeters > 2.5) {
+          if (_isFirstPointAfterResume) {
+            setState(() {
+              _routePoints = List.from(_routePoints)..add(newPoint);
+              _paceBuffer = [position]; // Reinicia o buffer para não sujar o ritmo
+              _isFirstPointAfterResume = false;
+            });
+            _updateCamera(newPoint);
+            return; // Ignora o cálculo de distância para este salto
+          }
+
+          // 2. Filtro de Velocidade (Ignorar se > 10m/s ou 36km/h - improvável p/ corrida/caminhada)
+          // Usamos o tempo entre o ponto anterior e o atual para validar
+          final lastPosition = _paceBuffer.isNotEmpty ? _paceBuffer.last : null;
+          if (lastPosition != null) {
+            final timeDiff = position.timestamp.difference(lastPosition.timestamp).inSeconds;
+            if (timeDiff > 0) {
+              final speed = distanceInMeters / timeDiff;
+              if (speed > 10.0) {
+                debugPrint("Salto de GPS detectado (velocidade excessiva): ${speed.toStringAsFixed(1)} m/s");
+                return;
+              }
+            }
+          }
+
+          // 3. Filtro de Jitter (Aumentado de 2.5m p/ 3.5m p/ evitar acúmulo de erro parado/devagar)
+          if (distanceInMeters > 3.5) {
             setState(() {
               _distanceKm += distanceInMeters / 1000;
               
-              // 3. Atualizar buffer para ritmo suavizado
+              // 4. Atualizar buffer para ritmo suavizado (Aumentado p/ 30 amostras)
               _paceBuffer.add(position);
-              if (_paceBuffer.length > 10) _paceBuffer.removeAt(0);
+              if (_paceBuffer.length > 30) _paceBuffer.removeAt(0);
               _updateSmoothedPace();
             });
             
@@ -325,7 +350,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   }
 
   void _updateSmoothedPace() {
-    if (_paceBuffer.length < 2) {
+    // Exigimos pelo menos 5 amostras para começar a suavizar (cerca de 5-10 segundos)
+    if (_paceBuffer.length < 5) {
       _currentSmoothedPace = '0:00';
       return;
     }
@@ -333,20 +359,28 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     final first = _paceBuffer.first;
     final last = _paceBuffer.last;
     
-    final distMeters = Geolocator.distanceBetween(
-      first.latitude, first.longitude,
-      last.latitude, last.longitude,
-    );
+    // Calcula a distância total percorrida DENTRO de todo o buffer para maior precisão
+    double totalBufferDist = 0;
+    for (int i = 0; i < _paceBuffer.length - 1; i++) {
+      totalBufferDist += Geolocator.distanceBetween(
+        _paceBuffer[i].latitude, _paceBuffer[i].longitude,
+        _paceBuffer[i+1].latitude, _paceBuffer[i+1].longitude,
+      );
+    }
     
     final timeSeconds = last.timestamp.difference(first.timestamp).inSeconds;
 
-    if (timeSeconds > 0 && distMeters > 5) {
-      double paceInMinutes = (timeSeconds / 60) / (distMeters / 1000);
-      if (paceInMinutes > 0 && paceInMinutes < 30) { // Limite razoável de 30 min/km
+    // Se o deslocamento total no buffer for muito pequeno (< 10m), assume que está parado/muito lento
+    if (timeSeconds > 0 && totalBufferDist > 10) {
+      double paceInMinutes = (timeSeconds / 60) / (totalBufferDist / 1000);
+      if (paceInMinutes > 0 && paceInMinutes < 35) { // Limite razoável
         int minutes = paceInMinutes.toInt();
         int seconds = ((paceInMinutes - minutes) * 60).toInt();
         _currentSmoothedPace = '$minutes:${seconds.toString().padLeft(2, '0')}';
       }
+    } else if (timeSeconds > 10) {
+      // Se passou muito tempo e não se mexeu 10m, o ritmo é muito baixo
+      _currentSmoothedPace = '0:00'; 
     }
   }
 
@@ -362,6 +396,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   void _resumeRun() {
     setState(() {
       _isPaused = false;
+      _isFirstPointAfterResume = true;
     });
     _startTimersAndStreams(isNew: false);
     _persistState(); // Persist resume state

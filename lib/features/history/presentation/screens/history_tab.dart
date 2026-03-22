@@ -392,7 +392,8 @@ class _HistoryTabState extends State<HistoryTab> {
     double weightLossKg = totalCal / 7700.0;
     
     double goal = (_selectedPeriodIndex == 0) ? (_userProfile?.weeklyGoal ?? 20.0) : (_userProfile?.monthlyGoal ?? 80.0);
-    double progress = goal > 0 ? (totalKm / goal).clamp(0.0, 1.0) : 0.0;
+    double rawProgress = goal > 0 ? totalKm / goal : 0.0;
+    double progress = rawProgress.clamp(0.0, 1.0);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -443,13 +444,17 @@ class _HistoryTabState extends State<HistoryTab> {
                             child: CircularProgressIndicator(
                               value: progress,
                               strokeWidth: 8,
-                              color: AppColors.primaryNeon,
+                              color: _getGoalColor(rawProgress),
                               backgroundColor: Colors.white12,
                             ),
                           ),
                           Text(
-                            '${(progress * 100).toInt()}%',
-                            style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                            '${(rawProgress * 100).toInt()}%',
+                            style: GoogleFonts.outfit(
+                              color: _getGoalColor(rawProgress), 
+                              fontWeight: FontWeight.bold, 
+                              fontSize: 14
+                            ),
                           ),
                         ],
                       ),
@@ -518,7 +523,7 @@ class _HistoryTabState extends State<HistoryTab> {
             .fold(0.0, (sum, r) => sum + r.distanceKm);
         
         if (dailyTotal > maxDistance) maxDistance = dailyTotal;
-        barGroups.add(_makeGroupData(i, dailyTotal));
+        barGroups.add(_makeGroupData(i, dailyTotal, maxDistance));
       }
     } else { // Mês
       final year = _referenceDate.year;
@@ -536,7 +541,7 @@ class _HistoryTabState extends State<HistoryTab> {
             .fold(0.0, (sum, r) => sum + r.distanceKm);
             
         if (weeklyTotal > maxDistance) maxDistance = weeklyTotal;
-        barGroups.add(_makeGroupData(i, weeklyTotal));
+        barGroups.add(_makeGroupData(i, weeklyTotal, maxDistance));
       }
     }
 
@@ -590,13 +595,23 @@ class _HistoryTabState extends State<HistoryTab> {
     );
   }
 
-  BarChartGroupData _makeGroupData(int x, double y) {
+  BarChartGroupData _makeGroupData(int x, double y, double maxY) {
+    Color barColor = AppColors.primaryNeon;
+    if (maxY > 0) {
+      double ratio = y / maxY;
+      if (ratio > 0.7) {
+        barColor = Colors.purpleAccent;
+      } else if (ratio > 0.4) {
+        barColor = Colors.orangeAccent;
+      }
+    }
+
     return BarChartGroupData(
       x: x,
       barRods: [
         BarChartRodData(
           toY: y,
-          color: AppColors.primaryNeon,
+          color: barColor,
           width: 8,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(2)),
         ),
@@ -697,5 +712,12 @@ class _HistoryTabState extends State<HistoryTab> {
         ),
       ),
     );
+  }
+
+  Color _getGoalColor(double progress) {
+    if (progress >= 1.5) return Colors.purpleAccent;
+    if (progress >= 1.25) return Colors.amberAccent;
+    if (progress >= 1.0) return Colors.orangeAccent;
+    return AppColors.primaryNeon;
   }
 }

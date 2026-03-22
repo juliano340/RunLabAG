@@ -177,7 +177,8 @@ class _HomeTabState extends State<HomeTab> {
 
     double weeklyTotal = _weeklyProgress.fold(0, (sum, item) => sum + item);
     double weeklyGoal = _profile?.weeklyGoal ?? 20.0;
-    double goalProgress = (weeklyTotal / weeklyGoal).clamp(0.0, 1.0);
+    double rawProgress = weeklyGoal > 0 ? weeklyTotal / weeklyGoal : 0.0;
+    double goalProgress = rawProgress.clamp(0.0, 1.0);
 
     return SafeArea(
       child: RefreshIndicator(
@@ -204,8 +205,8 @@ class _HomeTabState extends State<HomeTab> {
                             child: CircularProgressIndicator(
                               value: goalProgress,
                               strokeWidth: 4,
-                              backgroundColor: AppColors.primaryNeon.withValues(alpha: 0.1),
-                              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primaryNeon),
+                              backgroundColor: _getGoalColor(rawProgress).withValues(alpha: 0.1),
+                              valueColor: AlwaysStoppedAnimation<Color>(_getGoalColor(rawProgress)),
                             ),
                           ),
                           GestureDetector(
@@ -263,7 +264,7 @@ class _HomeTabState extends State<HomeTab> {
                         style: GoogleFonts.outfit(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.primaryNeon,
+                          color: _getGoalColor(rawProgress),
                         ),
                       ),
                     ],
@@ -455,19 +456,28 @@ class _HomeTabState extends State<HomeTab> {
                             FlSpot(i.toDouble(), _weeklyProgress[i]),
                         ],
                         isCurved: true,
-                        color: AppColors.primaryNeon,
-                        barWidth: 3,
+                        gradient: const LinearGradient(
+                          colors: [
+                            AppColors.primaryNeon,
+                            Colors.orangeAccent,
+                            Colors.purpleAccent,
+                          ],
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                        ),
+                        barWidth: 4,
                         isStrokeCapRound: true,
                         dotData: const FlDotData(show: false),
                         belowBarData: BarAreaData(
                           show: true,
                           gradient: LinearGradient(
                             colors: [
-                              AppColors.primaryNeon.withValues(alpha: 0.3),
-                              AppColors.primaryNeon.withValues(alpha: 0.0),
+                              AppColors.primaryNeon.withValues(alpha: 0.2),
+                              Colors.orangeAccent.withValues(alpha: 0.1),
+                              Colors.purpleAccent.withValues(alpha: 0.05),
                             ],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
                           ),
                         ),
                       ),
@@ -524,6 +534,13 @@ class _HomeTabState extends State<HomeTab> {
         ),
       ),
     );
+  }
+
+  Color _getGoalColor(double progress) {
+    if (progress >= 1.5) return Colors.purpleAccent;
+    if (progress >= 1.25) return Colors.amberAccent;
+    if (progress >= 1.0) return Colors.orangeAccent;
+    return AppColors.primaryNeon;
   }
 
   String _formatRunDuration(int seconds) {
