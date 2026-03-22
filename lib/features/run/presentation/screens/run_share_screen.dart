@@ -11,6 +11,8 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/utils/time_utils.dart';
 
+enum ShareTemplate { boxed, center, bottomBar, minimalist }
+
 class RunShareScreen extends StatefulWidget {
   final RunModel run;
 
@@ -25,6 +27,14 @@ class _RunShareScreenState extends State<RunShareScreen> {
   File? _backgroundImage;
   final ImagePicker _picker = ImagePicker();
   bool _isSharing = false;
+  
+  // Customization State
+  double _aspectRatio = 1.0; // 1.0 = Square, 0.5625 = 9:16 (Story)
+  Offset _statsPosition = const Offset(20, 100); // Initial position from bottom
+  bool _showRoute = false;
+  Color _accentColor = AppColors.primaryNeon;
+  ShareTemplate _currentTemplate = ShareTemplate.boxed;
+  double _overlayOpacity = 0.4; // Background dimming
 
   Future<void> _pickImage(ImageSource source) async {
     final XFile? image = await _picker.pickImage(source: source);
@@ -63,10 +73,6 @@ class _RunShareScreenState extends State<RunShareScreen> {
     }
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} às ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -83,198 +89,588 @@ class _RunShareScreenState extends State<RunShareScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-           body: Column(
+      body: Column(
         children: [
           Expanded(
             child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: AspectRatio(
-                  aspectRatio: 1, // Square for Instagram
-                  child: Screenshot(
-                    controller: _screenshotController,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.backgroundDarkGreen,
-                        // Blurred background fallback for the square area
-                        image: _backgroundImage != null ? DecorationImage(
-                          image: FileImage(_backgroundImage!),
-                          fit: BoxFit.cover,
-                          opacity: 0.25,
-                        ) : null,
-                      ),
-                      child: Stack(
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    children: [
+                      // Preview Labels
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          // Main Photo (Full Bleed)
-                          if (_backgroundImage != null)
-                            Positioned.fill(
-                              child: Image.file(
-                                _backgroundImage!,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                          // Dark Gradient Overlay for readability
-                          Positioned.fill(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Colors.black.withValues(alpha: 0.3),
-                                    Colors.transparent,
-                                    Colors.black.withValues(alpha: 0.85),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          // Watermark
-                          Positioned(
-                            top: 20,
-                            right: 20,
-                            child: Row(
-                              children: [
-                                const Icon(LucideIcons.zap, color: AppColors.primaryNeon, size: 16),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'RUNLAB',
-                                  style: GoogleFonts.outfit(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 2,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                          // User Stats Footer
-                          Positioned(
-                            bottom: 24,
-                            left: 20,
-                            right: 20,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  widget.run.distanceKm.toStringAsFixed(2),
-                                  style: GoogleFonts.outfit(
-                                    color: AppColors.primaryNeon,
-                                    fontSize: 64,
-                                    fontWeight: FontWeight.bold,
-                                    height: 0.9,
-                                  ),
-                                ),
-                                Text(
-                                  'KILÔMETROS',
-                                  style: GoogleFonts.outfit(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 1,
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  children: [
-                                    _buildSmallStat(LucideIcons.clock, widget.run.pace, '/km'),
-                                    const SizedBox(width: 24),
-                                    _buildSmallStat(LucideIcons.timer, _formatDuration(widget.run.durationSeconds), 'min'),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  _formatDate(widget.run.date),
-                                  style: GoogleFonts.outfit(
-                                    color: Colors.white.withValues(alpha: 0.5),
-                                    fontSize: 10,
-                                  ),
-                                ),
-                              ],
-                            ),
+                          const Icon(LucideIcons.eye, color: Colors.white54, size: 14),
+                          const SizedBox(width: 8),
+                          Text(
+                            _aspectRatio == 1.0 ? 'PRÉVIA: FEED (1:1)' : 'PRÉVIA: STORY (9:16)',
+                            style: GoogleFonts.outfit(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1),
                           ),
                         ],
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                      
+                      // The Shareable Item
+                      Screenshot(
+                        controller: _screenshotController,
+                        child: AspectRatio(
+                          aspectRatio: _aspectRatio,
+                          child: Container(
+                            clipBehavior: Clip.antiAlias,
+                            decoration: BoxDecoration(
+                              color: AppColors.backgroundDarkGreen,
+                              image: _backgroundImage != null ? DecorationImage(
+                                image: FileImage(_backgroundImage!),
+                                fit: BoxFit.cover,
+                              ) : null,
+                            ),
+                            child: Stack(
+                              children: [
+                                // Gradient Overlay for contrast
+                                if (_backgroundImage != null)
+                                  Positioned.fill(
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topCenter,
+                                          end: Alignment.bottomCenter,
+                                          colors: [
+                                            Colors.black.withValues(alpha: 0.1),
+                                            Colors.transparent,
+                                            Colors.black.withValues(alpha: 0.6),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+
+                                // Optional Route Map
+                                if (_showRoute && widget.run.route.isNotEmpty)
+                                  Positioned.fill(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(40),
+                                      child: CustomPaint(
+                                        painter: RoutePainter(
+                                          route: widget.run.route,
+                                          color: _accentColor,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+
+                                // Watermark (Fixed Top Right)
+                                Positioned(
+                                  top: _aspectRatio == 1.0 ? 16 : 48,
+                                  right: 16,
+                                  child: Opacity(
+                                    opacity: 0.8,
+                                    child: Row(
+                                      children: [
+                                        Icon(LucideIcons.zap, color: _accentColor, size: 14),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'RUNLAB',
+                                          style: GoogleFonts.outfit(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 14,
+                                            letterSpacing: 2,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                                // Draggable Stats Overlay
+                                _buildStatsOverlay(),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (_currentTemplate == ShareTemplate.boxed)
+                        Text(
+                          'DICA: ARRASTE O BLOCO DE DADOS PARA POSICIONAR',
+                          style: GoogleFonts.outfit(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                    ],
                   ),
                 ),
               ),
             ),
           ),
           
-          // Action Buttons
           Container(
-            padding: EdgeInsets.fromLTRB(
-              24, 
-              24, 
-              24, 
-              24 + MediaQuery.of(context).padding.bottom
-            ),
-            decoration: const BoxDecoration(
+            padding: EdgeInsets.fromLTRB(24, 16, 24, 16 + MediaQuery.of(context).padding.bottom),
+            decoration: BoxDecoration(
               color: AppColors.backgroundDarkGreen,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(30),
-                topRight: Radius.circular(30),
-              ),
+              border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.05))),
             ),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
+                // Layout Customization Tabs
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildOptionButton(
+                        LucideIcons.maximize, 
+                        'QUADRADO', 
+                        _aspectRatio == 1.0, 
+                        () => setState(() {
+                          _aspectRatio = 1.0;
+                          _statsPosition = const Offset(20, 24);
+                        })
+                      ),
+                      const SizedBox(width: 8),
+                      _buildOptionButton(
+                        LucideIcons.smartphone, 
+                        'STORY', 
+                        _aspectRatio == 9/16, 
+                        () => setState(() {
+                          _aspectRatio = 9/16;
+                          _statsPosition = const Offset(20, 48);
+                        })
+                      ),
+                      const SizedBox(width: 8),
+                      _buildOptionButton(
+                        LucideIcons.map, 
+                        'MAPA', 
+                        _showRoute, 
+                        () => setState(() => _showRoute = !_showRoute)
+                      ),
+                      const SizedBox(width: 8),
+                      _buildOptionButton(
+                        LucideIcons.layers, 
+                        'ESTILO', 
+                        true, 
+                        _toggleTemplate
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                
+                // Color & Opacity Controls
                 Row(
                   children: [
                     Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _pickImage(ImageSource.gallery),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white24),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      flex: 2,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _buildColorCircle(AppColors.primaryNeon),
+                            _buildColorCircle(Colors.white),
+                            _buildColorCircle(const Color(0xFFFC6100)), // Strava Orange
+                            _buildColorCircle(Colors.deepPurpleAccent),
+                          ],
                         ),
-                        icon: const Icon(LucideIcons.image),
-                        label: const Text('GALERIA'),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _pickImage(ImageSource.camera),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white24),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                        icon: const Icon(LucideIcons.camera),
-                        label: const Text('CÂMERA'),
+                      flex: 3,
+                      child: Row(
+                        children: [
+                          const Icon(LucideIcons.sun, color: Colors.white54, size: 14),
+                          Expanded(
+                            child: Slider(
+                              value: _overlayOpacity,
+                              onChanged: (v) => setState(() => _overlayOpacity = v),
+                              activeColor: _accentColor,
+                              inactiveColor: Colors.white10,
+                            ),
+                          ),
+                          const Icon(LucideIcons.moon, color: Colors.white54, size: 14),
+                        ],
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: _isSharing ? null : _shareWorkout,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryNeon,
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    minimumSize: const Size(double.infinity, 50),
-                  ),
-                  icon: _isSharing 
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                      : const Icon(LucideIcons.share2),
-                  label: Text(
-                    _isSharing ? 'GERANDO...' : 'COMPARTILHAR',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
+                
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _pickImage(ImageSource.gallery),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white.withValues(alpha: 0.05),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          elevation: 0,
+                        ),
+                        icon: const Icon(LucideIcons.image, size: 20),
+                        label: const Text('FOTO', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _isSharing ? null : _shareWorkout,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryNeon,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          elevation: 0,
+                        ),
+                        icon: _isSharing 
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                            : const Icon(LucideIcons.share2, size: 20),
+                        label: Text(
+                          _isSharing ? '...' : 'GERAR',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _toggleTemplate() {
+    setState(() {
+      int next = (_currentTemplate.index + 1) % ShareTemplate.values.length;
+      _currentTemplate = ShareTemplate.values[next];
+      // Reset position for centered templates
+      if (_currentTemplate == ShareTemplate.bottomBar) _statsPosition = const Offset(0, 0);
+      if (_currentTemplate == ShareTemplate.minimalist) _statsPosition = const Offset(0, 0);
+    });
+  }
+
+  Widget _buildColorCircle(Color color) {
+    bool isSelected = _accentColor == color;
+    return GestureDetector(
+      onTap: () => setState(() => _accentColor = color),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isSelected ? Colors.white : Colors.transparent,
+            width: 2,
+          ),
+          boxShadow: [
+            if (isSelected) BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 8)
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatsOverlay() {
+    switch (_currentTemplate) {
+      case ShareTemplate.boxed:
+        return _buildBoxedTemplate();
+      case ShareTemplate.center:
+        return _buildCenterTemplate();
+      case ShareTemplate.bottomBar:
+        return _buildBottomBarTemplate();
+      case ShareTemplate.minimalist:
+        return _buildMinimalistTemplate();
+    }
+  }
+
+  Widget _buildBoxedTemplate() {
+    return Positioned(
+      left: _statsPosition.dx,
+      bottom: _statsPosition.dy,
+      child: GestureDetector(
+        onPanUpdate: (details) {
+          setState(() {
+            _statsPosition += Offset(details.delta.dx, -details.delta.dy);
+            _statsPosition = Offset(
+              _statsPosition.dx.clamp(10, 200),
+              _statsPosition.dy.clamp(20, 500),
+            );
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: _overlayOpacity),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                widget.run.distanceKm.toStringAsFixed(2),
+                style: GoogleFonts.outfit(
+                  color: _accentColor,
+                  fontSize: 56,
+                  fontWeight: FontWeight.w900,
+                  height: 1.0,
+                ),
+              ),
+              Text(
+                'KILÔMETROS',
+                style: GoogleFonts.outfit(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildSmallStat(LucideIcons.clock, widget.run.pace, '/km'),
+                  const SizedBox(width: 20),
+                  _buildSmallStat(LucideIcons.timer, _formatDuration(widget.run.durationSeconds), 'min'),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCenterTemplate() {
+    return Positioned.fill(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        color: Colors.black.withValues(alpha: _overlayOpacity * 0.5),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'RUNLAB',
+              style: GoogleFonts.outfit(
+                color: _accentColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 4,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              widget.run.distanceKm.toStringAsFixed(2),
+              style: GoogleFonts.outfit(
+                color: Colors.white,
+                fontSize: 80,
+                fontWeight: FontWeight.w900,
+                height: 1.0,
+              ),
+            ),
+            Text(
+              'KILÔMETROS',
+              style: GoogleFonts.outfit(
+                color: Colors.white70,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 32),
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+              decoration: BoxDecoration(
+                border: Border.symmetric(
+                  horizontal: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildColumnStat('RITMO', widget.run.pace),
+                  _buildColumnStat('TEMPO', _formatDuration(widget.run.durationSeconds)),
+                  _buildColumnStat('KCAL', widget.run.calories.toString()),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomBarTemplate() {
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+            colors: [
+              Colors.black.withValues(alpha: _overlayOpacity + 0.2),
+              Colors.transparent,
+            ],
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    widget.run.distanceKm.toStringAsFixed(2),
+                    style: GoogleFonts.outfit(
+                      color: _accentColor,
+                      fontSize: 42,
+                      fontWeight: FontWeight.w900,
+                      height: 1.0,
+                    ),
+                  ),
+                  Text(
+                    'KILÔMETROS @ RUNLAB',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildSmallStat(LucideIcons.clock, widget.run.pace, '/km'),
+                const SizedBox(height: 4),
+                _buildSmallStat(LucideIcons.timer, _formatDuration(widget.run.durationSeconds), 'min'),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMinimalistTemplate() {
+    return Positioned(
+      top: _aspectRatio == 1.0 ? 40 : 80,
+      left: 24,
+      right: 24,
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.run.distanceKm.toStringAsFixed(2),
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 48,
+                      fontWeight: FontWeight.w900,
+                      height: 1.0,
+                    ),
+                  ),
+                  Text(
+                    'KM',
+                    style: GoogleFonts.outfit(
+                      color: _accentColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    widget.run.pace,
+                    style: GoogleFonts.outfit(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    'RITMO',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(height: 2, width: double.infinity, color: _accentColor.withValues(alpha: 0.5)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildColumnStat(String label, String value) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.outfit(color: Colors.white60, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1),
+        ),
+        Text(
+          value,
+          style: GoogleFonts.outfit(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOptionButton(IconData icon, String label, bool isSelected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 100, // Fixed width for horizontal scroll
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primaryNeon.withValues(alpha: 0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? AppColors.primaryNeon : Colors.white.withValues(alpha: 0.1),
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: isSelected ? AppColors.primaryNeon : Colors.white54, size: 20),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: GoogleFonts.outfit(
+                color: isSelected ? AppColors.primaryNeon : Colors.white54,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
