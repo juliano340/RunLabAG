@@ -11,7 +11,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/utils/time_utils.dart';
 
-enum ShareTemplate { boxed, center, bottomBar, minimalist }
+enum ShareTemplate { boxed, center, bottomBar, minimalist, verticalModern }
 
 class RunShareScreen extends StatefulWidget {
   final RunModel run;
@@ -349,6 +349,7 @@ class _RunShareScreenState extends State<RunShareScreen> {
       // Reset position for centered templates
       if (_currentTemplate == ShareTemplate.bottomBar) _statsPosition = const Offset(0, 0);
       if (_currentTemplate == ShareTemplate.minimalist) _statsPosition = const Offset(0, 0);
+      if (_currentTemplate == ShareTemplate.verticalModern) _statsPosition = const Offset(0, 0);
     });
   }
 
@@ -385,6 +386,8 @@ class _RunShareScreenState extends State<RunShareScreen> {
         return _buildBottomBarTemplate();
       case ShareTemplate.minimalist:
         return _buildMinimalistTemplate();
+      case ShareTemplate.verticalModern:
+        return _buildVerticalModernTemplate();
     }
   }
 
@@ -629,6 +632,69 @@ class _RunShareScreenState extends State<RunShareScreen> {
     );
   }
 
+  Widget _buildVerticalModernTemplate() {
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withValues(alpha: _overlayOpacity * 0.4),
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            _buildVerticalStat('Distância', '${widget.run.distanceKm.toStringAsFixed(2)} km'),
+            const SizedBox(height: 24),
+            _buildVerticalStat('Ritmo', '${widget.run.pace} /km'),
+            const SizedBox(height: 24),
+            _buildVerticalStat('Tempo', _formatDuration(widget.run.durationSeconds)),
+            const SizedBox(height: 48),
+            
+            // Branding at the bottom
+            Column(
+              children: [
+                Icon(LucideIcons.zap, color: _accentColor, size: 32),
+                const SizedBox(height: 12),
+                Text(
+                  'RUNLAB',
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 6,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVerticalStat(String label, String value) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.outfit(
+            color: Colors.white70,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: GoogleFonts.outfit(
+            color: Colors.white,
+            fontSize: 34,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.5,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildColumnStat(String label, String value) {
     return Column(
       children: [
@@ -717,17 +783,21 @@ class RoutePainter extends CustomPainter {
 
     final paint = Paint()
       ..color = color
-      ..strokeWidth = 5.0
+      ..strokeWidth = 3.0
       ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true
       ..style = PaintingStyle.stroke;
 
     // Add a glow effect
     final glowPaint = Paint()
-      ..color = color.withValues(alpha: 0.5)
-      ..strokeWidth = 10.0
+      ..color = color.withValues(alpha: 0.3)
+      ..strokeWidth = 6.0
       ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true
       ..style = PaintingStyle.stroke
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.0);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.0);
 
     // 1. Encontrar limites
     double minLat = route[0].latitude;
@@ -763,11 +833,11 @@ class RoutePainter extends CustomPainter {
     final endPoint = _getOffset(route.last, minLat, maxLat, minLng, maxLng, size);
 
     // Start Dot
-    canvas.drawCircle(startPoint, 8.0, Paint()..color = Colors.greenAccent..style = PaintingStyle.fill);
+    canvas.drawCircle(startPoint, 5.0, Paint()..color = Colors.greenAccent..style = PaintingStyle.fill);
     
     // Only draw end dot if it's different from start or if we have movement
     if (route.length > 1) {
-      canvas.drawCircle(endPoint, 8.0, Paint()..color = AppColors.primaryNeon..style = PaintingStyle.fill);
+      canvas.drawCircle(endPoint, 5.0, Paint()..color = AppColors.primaryNeon..style = PaintingStyle.fill);
     }
   }
 
