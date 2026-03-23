@@ -807,14 +807,14 @@ class _RunShareScreenState extends State<RunShareScreen> {
 }
 
 class RoutePainter extends CustomPainter {
-  final List<LatLng> route;
+  final List<List<LatLng>> route;
   final Color color;
 
   RoutePainter({required this.route, required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (route.isEmpty) return;
+    if (route.isEmpty || route.every((s) => s.isEmpty)) return;
 
     final paint = Paint()
       ..color = color
@@ -824,7 +824,6 @@ class RoutePainter extends CustomPainter {
       ..isAntiAlias = true
       ..style = PaintingStyle.stroke;
 
-    // Add a glow effect
     final glowPaint = Paint()
       ..color = color.withValues(alpha: 0.3)
       ..strokeWidth = 6.0
@@ -834,45 +833,55 @@ class RoutePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.0);
 
-    // 1. Encontrar limites
-    double minLat = route[0].latitude;
-    double maxLat = route[0].latitude;
-    double minLng = route[0].longitude;
-    double maxLng = route[0].longitude;
+    // 1. Encontrar limites GLOBAIS
+    double? minLat, maxLat, minLng, maxLng;
 
-    for (var p in route) {
-      if (p.latitude < minLat) minLat = p.latitude;
-      if (p.latitude > maxLat) maxLat = p.latitude;
-      if (p.longitude < minLng) minLng = p.longitude;
-      if (p.longitude > maxLng) maxLng = p.longitude;
+    for (var segment in route) {
+      for (var p in segment) {
+        if (minLat == null || p.latitude < minLat) minLat = p.latitude;
+        if (maxLat == null || p.latitude > maxLat) maxLat = p.latitude;
+        if (minLng == null || p.longitude < minLng) minLng = p.longitude;
+        if (maxLng == null || p.longitude > maxLng) maxLng = p.longitude;
+      }
     }
 
-    // 2. Normalizar e desenhar
-    final path = Path();
-    for (int i = 0; i < route.length; i++) {
-      final p = route[i];
-      final offset = _getOffset(p, minLat, maxLat, minLng, maxLng, size);
+    if (minLat == null || maxLat == null || minLng == null || maxLng == null) return;
 
-      if (i == 0) {
-        path.moveTo(offset.dx, offset.dy);
-      } else {
-        path.lineTo(offset.dx, offset.dy);
+    // 2. Normalizar e desenhar cada segmento de forma independente
+    final path = Path();
+    for (var segment in route) {
+      if (segment.isEmpty) continue;
+      
+      for (int i = 0; i < segment.length; i++) {
+        final p = segment[i];
+        final offset = _getOffset(p, minLat, maxLat, minLng, maxLng, size);
+
+        if (i == 0) {
+          path.moveTo(offset.dx, offset.dy);
+        } else {
+          path.lineTo(offset.dx, offset.dy);
+        }
       }
     }
 
     canvas.drawPath(path, glowPaint);
     canvas.drawPath(path, paint);
 
-    // 3. Draw Start/End points for clarity (even in short or single-point runs)
-    final startPoint = _getOffset(route.first, minLat, maxLat, minLng, maxLng, size);
-    final endPoint = _getOffset(route.last, minLat, maxLat, minLng, maxLng, size);
-
-    // Start Dot
-    canvas.drawCircle(startPoint, 5.0, Paint()..color = Colors.greenAccent..style = PaintingStyle.fill);
+    // 3. Desenhar pontos de início e fim
+    final List<LatLng> firstSegment = route.firstWhere((s) => s.isNotEmpty, orElse: () => []);
+    final List<LatLng> lastSegment = route.lastWhere((s) => s.isNotEmpty, orElse: () => []);
     
-    // Only draw end dot if it's different from start or if we have movement
-    if (route.length > 1) {
-      canvas.drawCircle(endPoint, 5.0, Paint()..color = AppColors.primaryNeon..style = PaintingStyle.fill);
+    if (firstSegment.isNotEmpty) {
+      final startPoint = _getOffset(firstSegment.first, minLat, maxLat, minLng, maxLng, size);
+      canvas.drawCircle(startPoint, 5.0, Paint()..color = Colors.greenAccent..style = PaintingStyle.fill);
+      
+      if (lastSegment.isNotEmpty) {
+        final endPoint = _getOffset(lastSegment.last, minLat, maxLat, minLng, maxLng, size);
+        // Só desenha ponto final se for diferente do início ou se tivermos movimento real
+        if (route.length > 1 || firstSegment.length > 1) {
+          canvas.drawCircle(endPoint, 5.0, Paint()..color = AppColors.primaryNeon..style = PaintingStyle.fill);
+        }
+      }
     }
   }
 

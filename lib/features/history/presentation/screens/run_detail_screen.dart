@@ -206,63 +206,63 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
           Expanded(
             flex: 3,
             child: Stack(
-              children: [
-                GoogleMap(
+              children: [                GoogleMap(
                   style: _mapStyle,
                   initialCameraPosition: CameraPosition(
-                    target: widget.run.route.isNotEmpty 
-                        ? widget.run.route.first 
+                    target: (widget.run.route.isNotEmpty && widget.run.route.first.isNotEmpty) 
+                        ? widget.run.route.first.first 
                         : const LatLng(-23.5505, -46.6333),
                     zoom: 15,
                   ),
                   markers: {
-                    if (widget.run.route.isNotEmpty)
+                    if (widget.run.route.isNotEmpty && widget.run.route.first.isNotEmpty)
                       Marker(
                         markerId: const MarkerId('start'),
-                        position: widget.run.route.first,
+                        position: widget.run.route.first.first,
                         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
                         infoWindow: const InfoWindow(title: 'Início'),
                       ),
-                    if (widget.run.route.isNotEmpty)
+                    if (widget.run.route.isNotEmpty && widget.run.route.last.isNotEmpty)
                       Marker(
                         markerId: const MarkerId('finish'),
-                        position: widget.run.route.last,
+                        position: widget.run.route.last.last,
                         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
                         infoWindow: const InfoWindow(title: 'Chegada'),
                       ),
                   },
-                  polylines: {
-                    Polyline(
-                      polylineId: const PolylineId('route'),
-                      points: widget.run.route,
+                  polylines: widget.run.route.asMap().entries.map((entry) {
+                    return Polyline(
+                      polylineId: PolylineId('route_${entry.key}'),
+                      points: entry.value,
                       color: AppColors.primaryNeon,
                       width: 5,
-                    ),
-                  },
+                      startCap: Cap.roundCap,
+                      endCap: Cap.roundCap,
+                    );
+                  }).toSet(),
                   myLocationButtonEnabled: false,
                   zoomControlsEnabled: false,
                   onMapCreated: (controller) {
-                    if (widget.run.route.isNotEmpty) {
-                      // Fit bounds to show entire route
-                      LatLngBounds bounds;
-                      double minLat = widget.run.route.first.latitude;
-                      double minLng = widget.run.route.first.longitude;
-                      double maxLat = widget.run.route.first.latitude;
-                      double maxLng = widget.run.route.first.longitude;
+                    if (widget.run.route.isNotEmpty && widget.run.route.any((s) => s.isNotEmpty)) {
+                      // Encontrar limites em todos os segmentos
+                      double? minLat, minLng, maxLat, maxLng;
 
-                      for (var point in widget.run.route) {
-                        if (point.latitude < minLat) minLat = point.latitude;
-                        if (point.longitude < minLng) minLng = point.longitude;
-                        if (point.latitude > maxLat) maxLat = point.latitude;
-                        if (point.longitude > maxLng) maxLng = point.longitude;
+                      for (var segment in widget.run.route) {
+                        for (var point in segment) {
+                          if (minLat == null || point.latitude < minLat) minLat = point.latitude;
+                          if (minLng == null || point.longitude < minLng) minLng = point.longitude;
+                          if (maxLat == null || point.latitude > maxLat) maxLat = point.latitude;
+                          if (maxLng == null || point.longitude > maxLng) maxLng = point.longitude;
+                        }
                       }
 
-                      bounds = LatLngBounds(
-                        southwest: LatLng(minLat, minLng),
-                        northeast: LatLng(maxLat, maxLng),
-                      );
-
-                      controller.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
+                      if (minLat != null && minLng != null && maxLat != null && maxLng != null) {
+                        final bounds = LatLngBounds(
+                          southwest: LatLng(minLat, minLng),
+                          northeast: LatLng(maxLat, maxLng),
+                        );
+                        controller.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
+                      }
                     }
                   },
                 ),

@@ -23,7 +23,7 @@ class RunModel {
   final int durationSeconds;
   final String pace;
   final int calories;
-  final List<LatLng> route;
+  final List<List<LatLng>> route; // Cada lista interna é um segmento contínuo
   final String type;
   final String mood;
   final List<RunSplit> splits; // Detalhes de cada km
@@ -49,7 +49,9 @@ class RunModel {
       'durationSeconds': durationSeconds,
       'pace': pace,
       'calories': calories,
-      'route': jsonEncode(route.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList()),
+      'route': jsonEncode(route.map((segment) => 
+        segment.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList()
+      ).toList()),
       'type': type,
       'mood': mood,
       'splits': jsonEncode(splits.map((s) => s.toMap()).toList()),
@@ -66,7 +68,7 @@ class RunModel {
       durationSeconds: map['durationSeconds'],
       pace: map['pace'],
       calories: map['calories'],
-      route: routeList.map((p) => LatLng(p['lat'], p['lng'])).toList(),
+      route: _decodeRoute(routeList),
       type: map['type'] ?? 'Corrida',
       mood: map['mood'] ?? '',
       splits: splitList.map((s) {
@@ -75,6 +77,22 @@ class RunModel {
         return RunSplit(timeSeconds: 0, calories: 0);
       }).toList(),
     );
+  }
+
+  static List<List<LatLng>> _decodeRoute(List<dynamic> list) {
+    if (list.isEmpty) return [];
+    
+    // Check if it's already a nested list of segments
+    if (list.first is List) {
+      return list.map((segment) {
+        return (segment as List).map((p) => LatLng(p['lat'], p['lng'])).toList();
+      }).toList();
+    }
+    
+    // Backward compatibility: Convert flat list to a single segment
+    return [
+      list.map((p) => LatLng(p['lat'], p['lng'])).toList()
+    ];
   }
 }
 

@@ -30,7 +30,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   final LocationService _locationService = LocationService();
   
   StreamSubscription<Position>? _positionStream;
-  List<LatLng> _routePoints = [];
+  List<List<LatLng>> _routePoints = []; // Lista de segmentos
   bool _isRunning = false;
   bool _isPaused = false;
   bool _isFinished = false;
@@ -117,7 +117,14 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       final routeJson = state['route'];
       if (routeJson != null) {
         final List<dynamic> decoded = jsonDecode(routeJson);
-        _routePoints = decoded.map((p) => LatLng(p['lat'], p['lng'])).toList();
+        if (decoded.isNotEmpty && decoded.first is List) {
+          _routePoints = decoded.map((segment) => 
+            (segment as List).map((p) => LatLng(p['lat'], p['lng'])).toList()
+          ).toList();
+        } else {
+          // Backward compatibility
+          _routePoints = [decoded.map((p) => LatLng(p['lat'], p['lng'])).toList()];
+        }
       }
       
       _isRunning = true;
@@ -139,7 +146,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       'lastKmNotified': _lastKmNotified,
       'distanceGoal': _distanceGoal,
       'isPaused': _isPaused ? 1 : 0,
-      'route': jsonEncode(_routePoints.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList()),
+      'route': jsonEncode(_routePoints.map((segment) => 
+        segment.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList()
+      ).toList()),
       'splits': jsonEncode(_splits.map((s) => s.toMap()).toList()),
     });
   }
@@ -171,7 +180,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         
         // Define o ponto inicial do traçado
         setState(() {
-          _routePoints = [latLng];
+          _routePoints = [[latLng]];
         });
 
         final controller = await _controller.future;
@@ -203,9 +212,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _lastSplitTimeSeconds = 0;
       _lastSplitCalories = 0;
       if (currentPos != null) {
-        _routePoints = [LatLng(currentPos.latitude, currentPos.longitude)];
+        _routePoints = [[LatLng(currentPos.latitude, currentPos.longitude)]];
       } else {
-        _routePoints = [];
+        _routePoints = [[]];
       }
       _isRunning = true;
       _isPaused = false;
@@ -237,7 +246,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _positionStream = _locationService.getLocationStream().listen((Position position) {
         if (_isPaused) return;
 
-        // 1. Filtro de Precisão (Reduzido de 25m p/ 18m para evitar drift)
+        // 1. Filtro de Precisão
         if (position.accuracy > 18) {
           debugPrint("GPS impreciso ignorado: ${position.accuracy}m");
           return;
@@ -245,8 +254,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
 
         final newPoint = LatLng(position.latitude, position.longitude);
         
-        if (_routePoints.isNotEmpty) {
-          final lastPoint = _routePoints.last;
+        // Verifica se temos um ponto anterior no segmento ATUAL para calcular distância
+        if (_routePoints.isNotEmpty && _routePoints.last.isNotEmpty) {
+          final lastPoint = _routePoints.last.last;
           final distanceInMeters = Geolocator.distanceBetween(
             lastPoint.latitude, lastPoint.longitude,
             newPoint.latitude, newPoint.longitude,
@@ -254,16 +264,20 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
 
           if (_isFirstPointAfterResume) {
             setState(() {
-              _routePoints = List.from(_routePoints)..add(newPoint);
-              _paceBuffer = [position]; // Reinicia o buffer para não sujar o ritmo
+              // Já garantimos no _resumeRun que existe um novo segmento vazio ou estamos no primeiro
+              if (_routePoints.last.isEmpty) {
+                _routePoints.last.add(newPoint);
+              } else {
+                _routePoints.add([newPoint]);
+              }
+              _paceBuffer = [position];
               _isFirstPointAfterResume = false;
             });
             _updateCamera(newPoint);
-            return; // Ignora o cálculo de distância para este salto
+            return; // Ignora o cálculo de distância para este salto (teletransporte)
           }
 
-          // 2. Filtro de Velocidade (Ignorar se > 10m/s ou 36km/h - improvável p/ corrida/caminhada)
-          // Usamos o tempo entre o ponto anterior e o atual para validar
+          // 2. Filtro de Velocidade
           final lastPosition = _paceBuffer.isNotEmpty ? _paceBuffer.last : null;
           if (lastPosition != null) {
             final timeDiff = position.timestamp.difference(lastPosition.timestamp).inSeconds;
@@ -276,24 +290,20 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             }
           }
 
-          // 3. Filtro de Jitter (Aumentado de 2.5m p/ 3.5m p/ evitar acúmulo de erro parado/devagar)
+          // 3. Filtro de Jitter
           if (distanceInMeters > 3.5) {
             setState(() {
               _distanceKm += distanceInMeters / 1000;
-              
-              // 4. Atualizar buffer para ritmo suavizado (Aumentado p/ 30 amostras)
               _paceBuffer.add(position);
               if (_paceBuffer.length > 30) _paceBuffer.removeAt(0);
               _updateSmoothedPace();
-            });
-            
-            setState(() {
-              _routePoints = List.from(_routePoints)..add(newPoint);
+              
+              _routePoints.last.add(newPoint);
             });
             
             _updateCamera(newPoint);
 
-            // 4. Notificação de Milestone (a cada 1km)
+            // 4. Notificação de Milestone
             int currentKm = _distanceKm.floor();
             if (currentKm > _lastKmNotified) {
               final splitTime = _secondsElapsed - _lastSplitTimeSeconds;
@@ -305,9 +315,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               _lastSplitCalories = totalCalories;
               
               _lastKmNotified = currentKm;
-              _persistState(); // Persist on milestone
+              _persistState();
               HapticFeedback.vibrate(); 
-              HapticFeedback.heavyImpact(); // Impacto forte para o milestone
+              HapticFeedback.heavyImpact();
               
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -316,15 +326,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                       children: [
                         const Icon(LucideIcons.trophy, color: AppColors.primaryNeon),
                         const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            AchievementService.getIncentiveMessage(currentKm),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
+                        Expanded(child: Text(AchievementService.getIncentiveMessage(currentKm), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
                       ],
                     ),
                     backgroundColor: AppColors.backgroundDarkGreen,
@@ -337,9 +339,17 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             }
           }
         } else {
+          // Primeiro ponto do primeiro segmento ou se resetado
           setState(() {
-            _routePoints = [newPoint];
+            if (_routePoints.isEmpty) {
+              _routePoints = [[newPoint]];
+            } else if (_routePoints.last.isEmpty) {
+              _routePoints.last.add(newPoint);
+            } else {
+              _routePoints.add([newPoint]);
+            }
             _paceBuffer = [position];
+            _isFirstPointAfterResume = false;
           });
           _updateCamera(newPoint);
         }
@@ -397,6 +407,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     setState(() {
       _isPaused = false;
       _isFirstPointAfterResume = true;
+      // Inicia um novo segmento se o último não estiver vazio
+      if (_routePoints.isEmpty || _routePoints.last.isNotEmpty) {
+        _routePoints.add([]);
+      }
     });
     _startTimersAndStreams(isNew: false);
     _persistState(); // Persist resume state
@@ -673,31 +687,33 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                 _controller.complete(controller);
               },
               markers: {
-                if (_routePoints.isNotEmpty)
+                if (_routePoints.isNotEmpty && _routePoints.first.isNotEmpty)
                   Marker(
                     markerId: const MarkerId('start'),
-                    position: _routePoints.first,
+                    position: _routePoints.first.first,
                     icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
                     infoWindow: const InfoWindow(title: 'Início'),
                   ),
-                if (_isFinished && _routePoints.isNotEmpty)
+                if (_isFinished && _routePoints.isNotEmpty && _routePoints.last.isNotEmpty)
                   Marker(
                     markerId: const MarkerId('finish'),
-                    position: _routePoints.last,
+                    position: _routePoints.last.last,
                     icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
                     infoWindow: const InfoWindow(title: 'Chegada'),
                   ),
               },
-              polylines: {
-                Polyline(
-                  polylineId: const PolylineId('route'),
-                  points: _routePoints,
+              polylines: _routePoints.asMap().entries.map((entry) {
+                final int idx = entry.key;
+                final List<LatLng> segment = entry.value;
+                return Polyline(
+                  polylineId: PolylineId('route_$idx'),
+                  points: segment,
                   color: AppColors.primaryNeon,
-                  width: 6,
+                  width: 5, // Slightly thinner as requested earlier
                   startCap: Cap.roundCap,
                   endCap: Cap.roundCap,
-                ),
-              },
+                );
+              }).toSet(),
             ),
 
             // Top bar: back button | ad | eye+lock column
