@@ -10,6 +10,9 @@ import 'features/profile/presentation/screens/privacy_screen.dart';
 import 'core/services/ad_service.dart';
 
 import 'features/water/presentation/providers/water_provider.dart';
+import 'features/strength_training/presentation/providers/strength_workout_provider.dart';
+import 'features/strength_training/data/repositories/strength_workout_repository_impl.dart';
+import 'core/services/database_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,6 +27,11 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeService()),
         ChangeNotifierProvider(create: (_) => WaterProvider()),
+        ChangeNotifierProvider(
+          create: (_) => StrengthWorkoutProvider(
+            StrengthWorkoutRepositoryImpl(DatabaseService()),
+          )..loadWorkouts(),
+        ),
       ],
       child: RunLabApp(
         hasCompletedOnboarding: hasCompletedOnboarding,

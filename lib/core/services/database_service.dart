@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:path/path.dart';
 import '../../features/training/data/models/training_plan.dart';
+import '../../features/strength_training/domain/models/strength_workout.dart';
 
 class RunSplit {
   final int timeSeconds;
@@ -166,7 +167,7 @@ class UserProfile {
 class DatabaseService {
   static Database? _database;
 
-  static const _databaseVersion = 13;
+  static const _databaseVersion = 15;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -206,6 +207,12 @@ class DatabaseService {
         );
         await db.execute(
           'CREATE TABLE user_training_enrollments(planId TEXT, startDate TEXT, currentWeek INTEGER, currentDay INTEGER, isActive INTEGER)',
+        );
+        await db.execute(
+          'CREATE TABLE strength_workouts(id TEXT PRIMARY KEY, name TEXT, date INTEGER, payload TEXT)',
+        );
+        await db.execute(
+          'CREATE TABLE exercise_dictionary(id TEXT PRIMARY KEY, name TEXT, muscleGroupId TEXT)',
         );
         // Pre-populate defaults
         for (double dist in [1.0, 5.0, 10.0, 15.0]) {
@@ -275,6 +282,14 @@ class DatabaseService {
         }
         if (oldVersion < 14) {
           await db.execute('ALTER TABLE user_profile ADD COLUMN lastGoalUpdate TEXT');
+        }
+        if (oldVersion < 15) {
+          await db.execute(
+            'CREATE TABLE strength_workouts(id TEXT PRIMARY KEY, name TEXT, date INTEGER, payload TEXT)',
+          );
+          await db.execute(
+            'CREATE TABLE exercise_dictionary(id TEXT PRIMARY KEY, name TEXT, muscleGroupId TEXT)',
+          );
         }
       },
     );
@@ -734,5 +749,45 @@ class DatabaseService {
   Future<void> deactivateActiveEnrollment() async {
     final db = await database;
     await db.update('user_training_enrollments', {'isActive': 0});
+  }
+
+  // --- Strength Training Management ---
+  Future<void> saveStrengthWorkout(StrengthWorkout workout) async {
+    final db = await database;
+    await db.insert('strength_workouts', {
+      'id': workout.id,
+      'name': workout.name,
+      'date': workout.date?.millisecondsSinceEpoch,
+      'payload': workout.toJson(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<StrengthWorkout>> getStrengthWorkouts() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('strength_workouts', orderBy: 'date DESC');
+    return maps.map((map) {
+      final payload = map['payload'] as String;
+      return StrengthWorkout.fromJson(payload);
+    }).toList();
+  }
+
+  Future<void> deleteStrengthWorkout(String id) async {
+    final db = await database;
+    await db.delete('strength_workouts', where: 'id = ?', whereArgs: [id]);
+  }
+  
+  // --- Exercise Dictionary ---
+  Future<void> saveToDictionary(String id, String name, String muscleGroupId) async {
+    final db = await database;
+    await db.insert('exercise_dictionary', {
+      'id': id,
+      'name': name,
+      'muscleGroupId': muscleGroupId,
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+  
+  Future<List<Map<String, dynamic>>> getExerciseDictionary(String muscleGroupId) async {
+    final db = await database;
+    return await db.query('exercise_dictionary', where: 'muscleGroupId = ?', whereArgs: [muscleGroupId]);
   }
 }
