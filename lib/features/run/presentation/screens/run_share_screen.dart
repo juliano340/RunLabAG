@@ -35,11 +35,21 @@ class _RunShareScreenState extends State<RunShareScreen> {
   ShareTemplate _currentTemplate = ShareTemplate.boxed;
   double _overlayOpacity = 0.4; // Background dimming
   
-  // Freeform Transformation
-  double _scale = 1.0;
-  double _baseScale = 1.0;
-  Offset _statsPosition = const Offset(20, 100); 
-  bool _isOperating = false; // UX feedback flag
+  // Freeform Transformation - Stats
+  double _statsScale = 1.0;
+  double _statsBaseScale = 1.0;
+  Offset _statsOffset = const Offset(0, 50); 
+  bool _isOperatingStats = false;
+
+  // Freeform Transformation - Map
+  double _mapScale = 1.0;
+  double _mapBaseScale = 1.0;
+  Offset _mapOffset = const Offset(0, -100);
+  bool _isOperatingMap = false;
+
+  // Centering Guidelines
+  bool _showVerticalCenterGuide = false;
+  bool _showHorizontalCenterGuide = false;
 
   Future<void> _pickImage(ImageSource source) async {
     final XFile? image = await _picker.pickImage(source: source);
@@ -158,16 +168,18 @@ class _RunShareScreenState extends State<RunShareScreen> {
 
                                     // Optional Route Map
                                     if (_showRoute && widget.run.route.isNotEmpty)
-                                      Positioned.fill(
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(40),
-                                          child: CustomPaint(
-                                            painter: RoutePainter(
-                                              route: widget.run.route,
-                                              color: _accentColor,
-                                            ),
-                                          ),
-                                        ),
+                                      _buildInteractiveMap(),
+
+                                    // Guidelines
+                                    if (_showVerticalCenterGuide)
+                                      Positioned(
+                                        top: 0, bottom: 0, left: 189,
+                                        child: Container(width: 2, color: _accentColor.withValues(alpha: 0.8)),
+                                      ),
+                                    if (_showHorizontalCenterGuide)
+                                      Positioned(
+                                        left: 0, right: 0, top: (380 / _aspectRatio) / 2 - 1,
+                                        child: Container(height: 2, color: _accentColor.withValues(alpha: 0.8)),
                                       ),
 
                                     // Watermark (Fixed Top Right)
@@ -238,7 +250,7 @@ class _RunShareScreenState extends State<RunShareScreen> {
                         _aspectRatio == 1.0, 
                         () => setState(() {
                           _aspectRatio = 1.0;
-                          _statsPosition = const Offset(20, 24);
+                          _statsOffset = const Offset(0, 50);
                         })
                       ),
                       const SizedBox(width: 8),
@@ -248,7 +260,7 @@ class _RunShareScreenState extends State<RunShareScreen> {
                         _aspectRatio < 1.0, 
                         () => setState(() {
                           _aspectRatio = 0.5625;
-                          _statsPosition = const Offset(20, 48);
+                          _statsOffset = const Offset(0, 100);
                         })
                       ),
                       const SizedBox(width: 8),
@@ -360,10 +372,10 @@ class _RunShareScreenState extends State<RunShareScreen> {
       int next = (_currentTemplate.index + 1) % ShareTemplate.values.length;
       _currentTemplate = ShareTemplate.values[next];
       // Reset position/scale for a fresh start with the new template
-      _scale = 1.0;
-      _statsPosition = const Offset(20, 24);
-      if (_currentTemplate == ShareTemplate.center) _statsPosition = const Offset(20, 150);
-      if (_currentTemplate == ShareTemplate.verticalModern) _statsPosition = const Offset(20, 40);
+      _statsScale = 1.0;
+      _statsOffset = const Offset(0, 50);
+      if (_currentTemplate == ShareTemplate.center) _statsOffset = const Offset(0, 0);
+      if (_currentTemplate == ShareTemplate.verticalModern) _statsOffset = const Offset(0, -100);
     });
   }
 
@@ -390,46 +402,128 @@ class _RunShareScreenState extends State<RunShareScreen> {
     );
   }
 
-  Widget _buildInteractiveOverlay() {
-    return Positioned(
-      left: _statsPosition.dx,
-      bottom: _statsPosition.dy,
-      child: GestureDetector(
-        onScaleStart: (details) {
-          setState(() {
-            _baseScale = _scale;
-            _isOperating = true;
-          });
-        },
-        onScaleEnd: (details) {
-          setState(() {
-            _isOperating = false;
-          });
-        },
-        onScaleUpdate: (details) {
-          setState(() {
-            _scale = (_baseScale * details.scale).clamp(0.4, 4.0);
-            _statsPosition += Offset(details.focalPointDelta.dx, -details.focalPointDelta.dy);
-            
-            // Much more generous bounds to work across all aspect ratios
-            _statsPosition = Offset(
-              _statsPosition.dx.clamp(-200, 500),
-              _statsPosition.dy.clamp(-100, 1200),
-            );
-          });
-        },
+  Widget _buildInteractiveMap() {
+    double mapWidth = 300;
+    return Align(
+      alignment: Alignment.center,
+      child: Transform.translate(
+        offset: _mapOffset,
+        child: GestureDetector(
+          onScaleStart: (details) {
+            setState(() {
+              _mapBaseScale = _mapScale;
+              _isOperatingMap = true;
+            });
+          },
+          onScaleEnd: (details) {
+            setState(() {
+              _isOperatingMap = false;
+              _showVerticalCenterGuide = false;
+              _showHorizontalCenterGuide = false;
+            });
+          },
+          onScaleUpdate: (details) {
+            setState(() {
+              _mapScale = (_mapBaseScale * details.scale).clamp(0.4, 4.0);
+              _mapOffset += details.focalPointDelta;
+              
+              if (_mapOffset.dx.abs() < 15) {
+                _mapOffset = Offset(0, _mapOffset.dy);
+                _showVerticalCenterGuide = true;
+              } else {
+                _showVerticalCenterGuide = false;
+              }
+              
+              if (_mapOffset.dy.abs() < 15) {
+                _mapOffset = Offset(_mapOffset.dx, 0);
+                _showHorizontalCenterGuide = true;
+              } else {
+                _showHorizontalCenterGuide = false;
+              }
+            });
+          },
         child: Container(
           decoration: BoxDecoration(
-            border: _isOperating 
+            border: _isOperatingMap 
+                ? Border.all(color: _accentColor.withValues(alpha: 0.8), width: 2, style: BorderStyle.solid) 
+                : null,
+          ),
+          child: Transform.scale(
+            scale: _mapScale,
+            child: SizedBox(
+              width: mapWidth,
+              height: 300,
+              child: CustomPaint(
+                painter: RoutePainter(
+                  route: widget.run.route,
+                  color: _accentColor,
+                ),
+              ),
+            ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInteractiveOverlay() {
+    return Align(
+      alignment: Alignment.center,
+      child: Transform.translate(
+        offset: _statsOffset,
+        child: GestureDetector(
+          onScaleStart: (details) {
+            setState(() {
+              _statsBaseScale = _statsScale;
+              _isOperatingStats = true;
+            });
+          },
+          onScaleEnd: (details) {
+            setState(() {
+              _isOperatingStats = false;
+              _showVerticalCenterGuide = false;
+              _showHorizontalCenterGuide = false;
+            });
+          },
+          onScaleUpdate: (details) {
+            setState(() {
+              _statsScale = (_statsBaseScale * details.scale).clamp(0.4, 4.0);
+              _statsOffset += details.focalPointDelta;
+              
+              if (_statsOffset.dx.abs() < 15) {
+                _statsOffset = Offset(0, _statsOffset.dy);
+                _showVerticalCenterGuide = true;
+              } else {
+                _showVerticalCenterGuide = false;
+              }
+
+              if (_statsOffset.dy.abs() < 15) {
+                _statsOffset = Offset(_statsOffset.dx, 0);
+                _showHorizontalCenterGuide = true;
+              } else {
+                _showHorizontalCenterGuide = false;
+              }
+              
+              _statsOffset = Offset(
+                _statsOffset.dx.clamp(-200, 200),
+                _statsOffset.dy.clamp(-500, 500),
+              );
+            });
+          },
+        child: Container(
+          decoration: BoxDecoration(
+            border: _isOperatingStats 
                 ? Border.all(color: _accentColor.withValues(alpha: 0.8), width: 2, style: BorderStyle.solid) 
                 : null,
             borderRadius: BorderRadius.circular(20),
           ),
           child: Transform.scale(
-            scale: _scale,
+            scale: _statsScale,
             child: Padding(
               padding: const EdgeInsets.all(12), // Extra hit area
               child: _buildStatsOverlayContent(),
+            ),
             ),
           ),
         ),
