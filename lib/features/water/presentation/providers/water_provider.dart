@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:runlabag/core/services/database_service.dart';
-import 'package:runlabag/features/water/data/models/water_consumption.dart';
 
 class WaterProvider with ChangeNotifier {
   final DatabaseService _db = DatabaseService();

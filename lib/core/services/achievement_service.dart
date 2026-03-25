@@ -7,7 +7,7 @@ class AchievementService {
   /// Verifica e salva novas conquistas com base no último treino
   Future<List<Map<String, dynamic>>> checkAwards(RunModel latestRun) async {
     final List<Map<String, dynamic>> newlyEarned = [];
-    final allRuns = await _dbService.getHistory();
+    final allRuns = await _dbService.getRuns();
     final stats = await _dbService.getUserStats();
     final double totalDist = double.tryParse(stats['totalDistance'] ?? '0') ?? 0;
 

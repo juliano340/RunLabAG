@@ -10,7 +10,10 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/database_service.dart';
+import '../../../../features/training/services/training_service.dart';
+import '../../../../core/services/pacing_service.dart';
 import '../widgets/metric_card.dart';
+import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/widgets/ad_banner_widget.dart';
 import '../../../../core/utils/time_utils.dart';
 import '../../../../core/services/achievement_service.dart';
@@ -41,6 +44,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   // Metrics
   double _distanceKm = 0.0;
   double? _distanceGoal;
+  int? _targetTimeSeconds;
+  PacingService? _pacingService;
+  PacingFeedback? _pacingFeedback;
   int _secondsElapsed = 0;
   int _lastKmNotified = 0;
   List<RunSplit> _splits = [];
@@ -94,6 +100,14 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _secondsElapsed = state['secondsElapsed'] ?? 0;
       _lastKmNotified = state['lastKmNotified'] ?? 0;
       _distanceGoal = state['distanceGoal'];
+      _targetTimeSeconds = state['targetTimeSeconds'];
+      
+      if (_distanceGoal != null && _targetTimeSeconds != null) {
+        _pacingService = PacingService(
+          targetDistanceKm: _distanceGoal,
+          targetTimeSeconds: _targetTimeSeconds,
+        );
+      }
       
       final splitsJson = state['splits'];
       if (splitsJson != null) {
@@ -145,6 +159,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       'secondsElapsed': _secondsElapsed,
       'lastKmNotified': _lastKmNotified,
       'distanceGoal': _distanceGoal,
+      'targetTimeSeconds': _targetTimeSeconds,
       'isPaused': _isPaused ? 1 : 0,
       'route': jsonEncode(_routePoints.map((segment) => 
         segment.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList()
@@ -229,6 +244,17 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
         _secondsElapsed++;
+        if (_pacingService != null) {
+          final oldStatus = _pacingFeedback?.status;
+          _pacingFeedback = _pacingService!.getUpdate(_distanceKm, _secondsElapsed);
+          
+          // Vibrar se o status mudar para alertar o usuário sem precisar olhar o celular
+          if (_pacingFeedback != null && 
+              _pacingFeedback!.status != oldStatus && 
+              _pacingFeedback!.status != PacingStatus.none) {
+            HapticFeedback.mediumImpact();
+          }
+        }
       });
       // Save state every 5 seconds
       if (_secondsElapsed % 5 == 0) {
@@ -564,21 +590,35 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          'Definir Meta de Distância', 
+          'Definir Meta de Corrida', 
           style: TextStyle(color: Theme.of(context).colorScheme.onSurface)
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Text('Distância Alvo:', style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+            const SizedBox(height: 8),
             _goalOption(1.0, '1 km (Velocidade)'),
             _goalOption(3.0, '3 km (Leve)'),
             _goalOption(5.0, '5 km (Avançado)'),
             _goalOption(10.0, '10 km (Resistência)'),
             const Divider(color: Colors.white24),
             ListTile(
+              title: const Text('Mais opções...', style: TextStyle(color: Colors.white70)),
+              onTap: () {
+                // TODO: Custom distance input
+              },
+            ),
+            const Divider(color: Colors.white24),
+            ListTile(
               title: const Text('Sem meta', style: TextStyle(color: Colors.white70)),
               onTap: () {
-                setState(() => _distanceGoal = null);
+                setState(() {
+                  _distanceGoal = null;
+                  _targetTimeSeconds = null;
+                  _pacingService = null;
+                  _pacingFeedback = null;
+                });
                 Navigator.pop(context);
               },
             ),
@@ -588,13 +628,69 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     );
   }
 
+  void _showTimeGoalDialog(double distance) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).brightness == Brightness.dark 
+            ? AppColors.backgroundDarkGreen 
+            : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Definir Tempo Alvo para ${distance.toInt()}km', 
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 18)
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _timeOption(distance, 5, 'Pace 5:00 (Forte)'),
+            _timeOption(distance, 6, 'Pace 6:00 (Moderado)'),
+            _timeOption(distance, 7, 'Pace 7:00 (Leve)'),
+            const Divider(color: Colors.white24),
+            ListTile(
+              title: const Text('Sem tempo alvo', style: TextStyle(color: Colors.white70)),
+              onTap: () {
+                setState(() {
+                  _distanceGoal = distance;
+                  _targetTimeSeconds = null;
+                  _pacingService = null;
+                  _pacingFeedback = null;
+                });
+                Navigator.pop(context); // Close time dialog
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _timeOption(double distance, int paceMinutes, String label) {
+    final int totalSeconds = (distance * paceMinutes * 60).toInt();
+    return ListTile(
+      title: Text(label, style: const TextStyle(color: Colors.white)),
+      subtitle: Text('Total: ${paceMinutes * distance.toInt()} min', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+      onTap: () {
+        setState(() {
+          _distanceGoal = distance;
+          _targetTimeSeconds = totalSeconds;
+          _pacingService = PacingService(
+            targetDistanceKm: _distanceGoal,
+            targetTimeSeconds: _targetTimeSeconds,
+          );
+        });
+        Navigator.pop(context);
+      },
+    );
+  }
+
   Widget _goalOption(double value, String label) {
     return ListTile(
       title: Text(label, style: const TextStyle(color: Colors.white)),
       trailing: _distanceGoal == value ? const Icon(LucideIcons.check, color: AppColors.primaryNeon) : null,
       onTap: () {
-        setState(() => _distanceGoal = value);
         Navigator.pop(context);
+        _showTimeGoalDialog(value);
       },
     );
   }
@@ -916,13 +1012,25 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                   );
                                   await dbService.saveRun(run);
                                   await dbService.clearActiveRun(); // Ensure recovery modal won't appear
+                                  
+                                  // Verificar se o treino cumpre a sessão do plano de treinamento
+                                  final trainingService = TrainingService(dbService);
+                                  final isPlanSuccessful = await trainingService.matchRunToPlan(run);
+                                  
                                   final newAwards = await _achievementService.checkAwards(run);
                                   if (context.mounted) {
-                                    if (newAwards.isNotEmpty) {
+                                    String snackMessage = '';
+                                    if (isPlanSuccessful) {
+                                      snackMessage = 'SESSÃO DO PLANO CONCLUÍDA! 🎯';
+                                    } else if (newAwards.isNotEmpty) {
+                                      snackMessage = 'PARABÉNS! Você ganhou ${newAwards.length} novas conquistas! 🏆';
+                                    }
+
+                                    if (snackMessage.isNotEmpty) {
                                       ScaffoldMessenger.of(context).showSnackBar(
                                         SnackBar(
                                           content: Text(
-                                            'PARABÉNS! Você ganhou ${newAwards.length} novas conquistas! 🏆',
+                                            snackMessage,
                                             style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
                                           ),
                                           backgroundColor: AppColors.primaryNeon,
@@ -979,7 +1087,12 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                       else
                         Column(
                           children: [
-                            if (_distanceGoal != null && _secondsElapsed >= 90)
+                            if (_pacingFeedback != null && _pacingFeedback!.status != PacingStatus.none)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: _buildPacingCard(),
+                              )
+                            else if (_distanceGoal != null && _secondsElapsed >= 90)
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 16),
                                 child: Row(
@@ -1403,6 +1516,118 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildPacingCard() {
+    if (_pacingFeedback == null) return const SizedBox.shrink();
+
+    final statusColor = _pacingColor(_pacingFeedback!.status);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return GlassContainer(
+      borderColor: statusColor.withValues(alpha: 0.5),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _pacingIcon(_pacingFeedback!.status),
+                  color: statusColor,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _pacingFeedback!.message,
+                      style: GoogleFonts.outfit(
+                        color: statusColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      'Pace Ideal: ${_pacingFeedback!.idealPace} min/km',
+                      style: GoogleFonts.outfit(
+                        color: isDark ? AppColors.textMuted : AppColors.textMutedDark,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    _pacingFeedback!.currentPace,
+                    style: GoogleFonts.outfit(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                    ),
+                  ),
+                  Text(
+                    'ATUAL',
+                    style: GoogleFonts.outfit(
+                      color: AppColors.textMuted,
+                      fontSize: 10,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Barra de progresso da meta
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: _pacingFeedback!.progress,
+              backgroundColor: statusColor.withValues(alpha: 0.1),
+              valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+              minHeight: 4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _pacingColor(PacingStatus status) {
+    switch (status) {
+      case PacingStatus.onTrack:
+        return Colors.greenAccent;
+      case PacingStatus.behind:
+        return Colors.redAccent;
+      case PacingStatus.ahead:
+        return Colors.orangeAccent;
+      default:
+        return AppColors.primaryNeon;
+    }
+  }
+
+  IconData _pacingIcon(PacingStatus status) {
+    switch (status) {
+      case PacingStatus.onTrack:
+        return LucideIcons.checkCircle;
+      case PacingStatus.behind:
+        return LucideIcons.trendingUp;
+      case PacingStatus.ahead:
+        return LucideIcons.trendingDown;
+      default:
+        return LucideIcons.info;
+    }
   }
 
   Widget _moodOption(BuildContext context, String emoji, String label) {

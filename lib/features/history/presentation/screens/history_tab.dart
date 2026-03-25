@@ -6,6 +6,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/utils/time_utils.dart';
+import '../../../../core/services/recommendation_service.dart';
 import 'run_detail_screen.dart';
 
 class HistoryTab extends StatefulWidget {
@@ -29,6 +30,7 @@ class _HistoryTabState extends State<HistoryTab> {
   DateTime _referenceDate = DateTime.now();
   DateTime? _minDate;
   DateTime? _maxDate;
+  RecommendationResult? _recommendation;
 
   @override
   void initState() {
@@ -37,7 +39,7 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   Future<void> _loadData() async {
-    final runs = await _dbService.getHistory();
+    final runs = await _dbService.getRuns();
     final profile = await _dbService.getUserProfile();
     
     if (mounted) {
@@ -70,7 +72,28 @@ class _HistoryTabState extends State<HistoryTab> {
         run.date.isAfter(start.subtract(const Duration(seconds: 1))) && 
         run.date.isBefore(end)
       ).toList();
+
+      // Calcular recomendação se estivermos na semana ATUAL
+      final now = DateTime.now();
+      final currentWeekStart = now.subtract(Duration(days: now.weekday % 7));
+      
+      if (start.year == currentWeekStart.year && start.month == currentWeekStart.month && start.day == currentWeekStart.day && _userProfile != null) {
+        // Para a recomendação, usamos SEMPRE os últimos 7 dias completados (rolling window)
+        // Isso evita sugerir redução logo na segunda-feira porque a semana "começou vazia"
+        final sevenDaysAgo = now.subtract(const Duration(days: 7));
+        final lastSevenDaysRuns = _allRuns.where((run) => 
+          run.date.isAfter(sevenDaysAgo) && run.date.isBefore(now)
+        ).toList();
+
+        _recommendation = RecommendationService.calculateWeeklyRecommendation(
+          profile: _userProfile!,
+          runs: lastSevenDaysRuns,
+        );
+      } else {
+        _recommendation = null;
+      }
     } else { // Mês
+      _recommendation = null;
       final startOfMonth = DateTime(_referenceDate.year, _referenceDate.month, 1);
       final nextMonth = DateTime(_referenceDate.year, _referenceDate.month + 1, 1);
       
@@ -219,6 +242,7 @@ class _HistoryTabState extends State<HistoryTab> {
                   profilePicturePath: _userProfile!.profilePicturePath,
                   weeklyGoal: double.tryParse(weeklyController.text) ?? _userProfile!.weeklyGoal,
                   monthlyGoal: double.tryParse(monthlyController.text) ?? _userProfile!.monthlyGoal,
+                  lastGoalUpdate: DateTime.now(),
                 );
                 await _dbService.saveUserProfile(newProfile);
                 if (context.mounted) {
@@ -624,21 +648,106 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   Widget _buildActivitiesList() {
-    return _filteredRuns.isEmpty 
-        ? _buildEmptyState()
-        : ListView.builder(
-            padding: EdgeInsets.zero,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _filteredRuns.length,
-            itemBuilder: (context, index) {
-              final run = _filteredRuns[index];
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-                child: _buildRunCard(run),
-              );
-            },
-          );
+    return Column(
+      children: [
+        if (_recommendation != null && _selectedPeriodIndex == 0) 
+          _buildRecommendationCard(),
+        _filteredRuns.isEmpty 
+            ? _buildEmptyState()
+            : ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _filteredRuns.length,
+                itemBuilder: (context, index) {
+                  final run = _filteredRuns[index];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+                    child: _buildRunCard(run),
+                  );
+                },
+              ),
+      ],
+    );
+  }
+
+  Widget _buildRecommendationCard() {
+    final res = _recommendation!;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      child: GlassContainer(
+        padding: const EdgeInsets.all(16),
+        borderColor: res.isIncrease ? AppColors.primaryNeon.withValues(alpha: 0.3) : Colors.orangeAccent.withValues(alpha: 0.3),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  res.isIncrease ? LucideIcons.trendingUp : LucideIcons.refreshCcw,
+                  color: res.isIncrease ? AppColors.primaryNeon : Colors.orangeAccent,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Dica de Evolução',
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              res.message,
+              style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: res.isIncrease ? AppColors.primaryNeon : Colors.white10,
+                  foregroundColor: res.isIncrease ? Colors.black : Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () async {
+                  if (_userProfile != null) {
+                    final newProfile = UserProfile(
+                      name: _userProfile!.name,
+                      age: _userProfile!.age,
+                      weight: _userProfile!.weight,
+                      height: _userProfile!.height,
+                      profilePicturePath: _userProfile!.profilePicturePath,
+                      weeklyGoal: res.recommendedGoal,
+                      monthlyGoal: _userProfile!.monthlyGoal,
+                      lastGoalUpdate: DateTime.now(),
+                    );
+                    await _dbService.saveUserProfile(newProfile);
+                    setState(() {
+                      _userProfile = newProfile;
+                      _recommendation = null; // Remove card após aceitar
+                    });
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Nova meta semanal definida! 🚀')),
+                      );
+                    }
+                  }
+                },
+                child: Text(
+                  'DEFINIR META: ${res.recommendedGoal.toStringAsFixed(1)} KM',
+                  style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildRunCard(RunModel run) {

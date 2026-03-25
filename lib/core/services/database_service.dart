@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:path/path.dart';
+import '../../features/training/data/models/training_plan.dart';
 
 class RunSplit {
   final int timeSeconds;
@@ -105,6 +106,7 @@ class UserProfile {
   final double weeklyGoal;
   final double monthlyGoal;
   final double waterGoal; // em ml
+  final DateTime? lastGoalUpdate;
 
   UserProfile({
     required this.name,
@@ -115,6 +117,7 @@ class UserProfile {
     this.weeklyGoal = 20.0,
     this.monthlyGoal = 80.0,
     this.waterGoal = 2000.0,
+    this.lastGoalUpdate,
   });
 
   Map<String, dynamic> toMap() {
@@ -128,6 +131,7 @@ class UserProfile {
       'weeklyGoal': weeklyGoal,
       'monthlyGoal': monthlyGoal,
       'waterGoal': waterGoal,
+      'lastGoalUpdate': lastGoalUpdate?.toIso8601String(),
     };
   }
 
@@ -141,6 +145,7 @@ class UserProfile {
       weeklyGoal: map['weeklyGoal'] ?? 20.0,
       monthlyGoal: map['monthlyGoal'] ?? 80.0,
       waterGoal: map['waterGoal']?.toDouble() ?? 2000.0,
+      lastGoalUpdate: map['lastGoalUpdate'] != null ? DateTime.parse(map['lastGoalUpdate']) : null,
     );
   }
 
@@ -161,7 +166,7 @@ class UserProfile {
 class DatabaseService {
   static Database? _database;
 
-  static const _databaseVersion = 12;
+  static const _databaseVersion = 13;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -192,6 +197,15 @@ class DatabaseService {
         );
         await db.execute(
           'CREATE TABLE water_intake(id INTEGER PRIMARY KEY AUTOINCREMENT, amount INTEGER, timestamp TEXT)',
+        );
+        await db.execute(
+          'CREATE TABLE training_plans(id TEXT PRIMARY KEY, title TEXT, description TEXT, totalWeeks INTEGER, level INTEGER, goal TEXT)',
+        );
+        await db.execute(
+          'CREATE TABLE plan_sessions(id TEXT PRIMARY KEY, planId TEXT, week INTEGER, day INTEGER, title TEXT, type INTEGER, targetDistance REAL, description TEXT)',
+        );
+        await db.execute(
+          'CREATE TABLE user_training_enrollments(planId TEXT, startDate TEXT, currentWeek INTEGER, currentDay INTEGER, isActive INTEGER)',
         );
         // Pre-populate defaults
         for (double dist in [1.0, 5.0, 10.0, 15.0]) {
@@ -247,6 +261,20 @@ class DatabaseService {
             'CREATE TABLE water_intake(id INTEGER PRIMARY KEY AUTOINCREMENT, amount INTEGER, timestamp TEXT)',
           );
           await db.execute('ALTER TABLE user_profile ADD COLUMN waterGoal REAL DEFAULT 2000.0');
+        }
+        if (oldVersion < 13) {
+          await db.execute(
+            'CREATE TABLE training_plans(id TEXT PRIMARY KEY, title TEXT, description TEXT, totalWeeks INTEGER, level INTEGER, goal TEXT)',
+          );
+          await db.execute(
+            'CREATE TABLE plan_sessions(id TEXT PRIMARY KEY, planId TEXT, week INTEGER, day INTEGER, title TEXT, type INTEGER, targetDistance REAL, description TEXT)',
+          );
+          await db.execute(
+            'CREATE TABLE user_training_enrollments(planId TEXT, startDate TEXT, currentWeek INTEGER, currentDay INTEGER, isActive INTEGER)',
+          );
+        }
+        if (oldVersion < 14) {
+          await db.execute('ALTER TABLE user_profile ADD COLUMN lastGoalUpdate TEXT');
         }
       },
     );
@@ -311,12 +339,21 @@ class DatabaseService {
     );
   }
 
-  Future<List<RunModel>> getHistory() async {
+  Future<List<RunModel>> getRuns() async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query('runs', orderBy: 'date DESC');
-    return List.generate(maps.length, (i) {
-      return RunModel.fromMap(maps[i]);
-    });
+    return List.generate(maps.length, (i) => RunModel.fromMap(maps[i]));
+  }
+
+  Future<List<RunModel>> getRunsBetween(DateTime start, DateTime end) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'runs',
+      where: 'date >= ? AND date <= ?',
+      whereArgs: [start.toIso8601String(), end.toIso8601String()],
+      orderBy: 'date ASC',
+    );
+    return List.generate(maps.length, (i) => RunModel.fromMap(maps[i]));
   }
 
   Future<RunModel?> getLastRun() async {
@@ -336,7 +373,7 @@ class DatabaseService {
   }
 
   Future<Map<String, dynamic>> getUserStats() async {
-    final runs = await getHistory();
+    final runs = await getRuns();
     double totalDistance = 0;
     int totalRuns = runs.length;
     int totalSeconds = 0;
@@ -344,8 +381,8 @@ class DatabaseService {
 
     for (final run in runs) {
       totalDistance += run.distanceKm;
-      totalSeconds += run.durationSeconds;
-      totalCalories += run.calories;
+      totalSeconds += run.durationSeconds.toInt();
+      totalCalories += run.calories.toInt();
     }
 
     String avgPace = '0:00';
@@ -384,7 +421,7 @@ class DatabaseService {
   }
 
   Future<Map<String, dynamic>> getPersonalRecords() async {
-    final runs = await getHistory();
+    final runs = await getRuns();
     final monitored = await getMonitoredDistances();
     
     Map<String, Map<String, dynamic>> records = {};
@@ -435,7 +472,7 @@ class DatabaseService {
   }
 
   Future<List<Map<String, dynamic>>> getRecordHistory(String category) async {
-    final runs = await getHistory();
+    final runs = await getRuns();
     // Sort by date ascending to track evolution
     final sortedRuns = runs.reversed.toList();
     
@@ -477,7 +514,7 @@ class DatabaseService {
   }
 
   Future<List<Map<String, dynamic>>> getLongestDistanceHistory() async {
-    final runs = await getHistory();
+    final runs = await getRuns();
     // Sort by date ascending to track evolution
     final sortedRuns = runs.reversed.toList();
     
@@ -585,5 +622,67 @@ class DatabaseService {
   Future<void> deleteWaterIntake(int id) async {
     final db = await database;
     await db.delete('water_intake', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // --- Training Plans Methods ---
+
+  Future<void> saveTrainingPlan(TrainingPlan plan) async {
+    final db = await database;
+    await db.insert('training_plans', plan.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> savePlanSession(PlanSession session) async {
+    final db = await database;
+    await db.insert('plan_sessions', session.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<TrainingPlan>> getTrainingPlans() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('training_plans');
+    return List.generate(maps.length, (i) => TrainingPlan.fromMap(maps[i]));
+  }
+
+  Future<List<PlanSession>> getPlanSessions(String planId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'plan_sessions',
+      where: 'planId = ?',
+      whereArgs: [planId],
+      orderBy: 'week ASC, day ASC',
+    );
+    return List.generate(maps.length, (i) => PlanSession.fromMap(maps[i]));
+  }
+
+  Future<void> saveEnrollment(UserPlanEnrollment enrollment) async {
+    final db = await database;
+    // We only support one active plan for now, so deactivate others
+    await db.update('user_training_enrollments', {'isActive': 0});
+    await db.insert('user_training_enrollments', enrollment.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<UserPlanEnrollment?> getActiveEnrollment() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'user_training_enrollments',
+      where: 'isActive = 1',
+      limit: 1,
+    );
+    if (maps.isEmpty) return null;
+    return UserPlanEnrollment.fromMap(maps.first);
+  }
+
+  Future<void> updateEnrollmentProgress(String planId, int week, int day) async {
+    final db = await database;
+    await db.update(
+      'user_training_enrollments',
+      {'currentWeek': week, 'currentDay': day},
+      where: 'planId = ? AND isActive = 1',
+      whereArgs: [planId],
+    );
+  }
+
+  Future<void> deactivateActiveEnrollment() async {
+    final db = await database;
+    await db.update('user_training_enrollments', {'isActive': 0});
   }
 }
