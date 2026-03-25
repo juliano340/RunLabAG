@@ -438,16 +438,46 @@ class DatabaseService {
       // Logic for all-time bests for specific distances
       for (double targetDist in monitored) {
         if (run.distanceKm >= targetDist) {
-          // Estimate time for the exact distance based on average pace
-          final double estimatedTime = (run.durationSeconds / run.distanceKm) * targetDist;
+          // 1. Initial estimation based on average pace (safest fallback)
+          double bestTimeInRun = (run.durationSeconds / run.distanceKm) * targetDist;
+          String currentInterval = "Média do Treino";
+          
+          // 2. If we have splits, they are much more accurate for integer distances
+          if (run.splits.isNotEmpty) {
+            final int tDistInt = targetDist.round();
+            // Check if it's very close to an integer (to handle 5.0, 10.0, etc.)
+            if ((targetDist - tDistInt).abs() < 0.001) {
+              if (run.splits.length >= tDistInt) {
+                // Find fastest consecutive sequence of splits
+                for (int i = 0; i <= run.splits.length - tDistInt; i++) {
+                  int sequenceTime = 0;
+                  for (int j = 0; j < tDistInt; j++) {
+                    sequenceTime += run.splits[i + j].timeSeconds;
+                  }
+                  if (sequenceTime < bestTimeInRun) {
+                    bestTimeInRun = sequenceTime.toDouble();
+                    currentInterval = tDistInt == 1 ? "km ${i + 1}" : "km ${i + 1} a ${i + tDistInt}";
+                  }
+                }
+              }
+            } else if (targetDist == 1.0) {
+              for (int i = 0; i < run.splits.length; i++) {
+                if (run.splits[i].timeSeconds < bestTimeInRun) {
+                  bestTimeInRun = run.splits[i].timeSeconds.toDouble();
+                  currentInterval = "km ${i + 1}";
+                }
+              }
+            }
+          }
           
           String key = targetDist == 21.0975 ? '21km' : targetDist == 42.195 ? '42km' : '${targetDist.toStringAsFixed(targetDist == targetDist.toInt() ? 0 : 1)}km';
 
-          if (records[key]!['time'] == null || estimatedTime < records[key]!['time']) {
+          if (records[key]!['time'] == null || bestTimeInRun < records[key]!['time']) {
             records[key] = {
-              'time': estimatedTime,
+              'time': bestTimeInRun,
               'date': run.date,
               'runId': run.id,
+              'interval': currentInterval,
             };
           }
         }
@@ -490,21 +520,41 @@ class DatabaseService {
 
     for (final run in sortedRuns) {
       if (run.distanceKm >= targetDist) {
-        final double estimatedTime = (run.durationSeconds / run.distanceKm) * targetDist;
+        // 1. Initial estimation based on average pace
+        double bestTimeInRun = (run.durationSeconds / run.distanceKm) * targetDist;
+        String currentInterval = "Média do Treino";
         
-        if (currentBest == null || estimatedTime < currentBest) {
+        // 2. Accurate calculation if splits are present
+        if (run.splits.isNotEmpty) {
+          final int tDistInt = targetDist.round();
+          if ((targetDist - tDistInt).abs() < 0.001 && run.splits.length >= tDistInt) {
+            for (int i = 0; i <= run.splits.length - tDistInt; i++) {
+              int sequenceTime = 0;
+              for (int j = 0; j < tDistInt; j++) {
+                sequenceTime += run.splits[i + j].timeSeconds;
+              }
+              if (sequenceTime < bestTimeInRun) {
+                bestTimeInRun = sequenceTime.toDouble();
+                currentInterval = tDistInt == 1 ? "km ${i + 1}" : "km ${i + 1} a ${i + tDistInt}";
+              }
+            }
+          }
+        }
+
+        if (currentBest == null || bestTimeInRun < currentBest) {
           double improvement = 0;
           if (currentBest != null) {
-            improvement = currentBest - estimatedTime;
+            improvement = currentBest - bestTimeInRun;
           }
           
-          currentBest = estimatedTime;
           history.add({
-            'time': estimatedTime,
+            'time': bestTimeInRun,
             'date': run.date,
-            'runId': run.id,
             'improvement': improvement,
+            'runId': run.id,
+            'interval': currentInterval,
           });
+          currentBest = bestTimeInRun;
         }
       }
     }

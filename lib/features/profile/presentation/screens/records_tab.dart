@@ -48,6 +48,10 @@ class _RecordsTabState extends State<RecordsTab> {
 
   String _formatDate(DateTime? date) {
     if (date == null) return 'Nenhum registro';
+    final now = DateTime.now();
+    if (date.year == now.year && date.month == now.month && date.day == now.day) {
+      return 'Hoje';
+    }
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
@@ -78,6 +82,7 @@ class _RecordsTabState extends State<RecordsTab> {
                   isLast: isLast,
                   title: _formatTime((item['time'] as double)),
                   subtitle: _formatDate(item['date']),
+                  interval: item['interval'] as String?,
                   improvement: improvement > 0 ? '-${_formatTime(improvement)}' : null,
                 );
               },
@@ -164,6 +169,7 @@ class _RecordsTabState extends State<RecordsTab> {
     required bool isLast,
     required String title,
     required String subtitle,
+    String? interval,
     String? improvement,
     bool isPositive = false,
   }) {
@@ -211,6 +217,10 @@ class _RecordsTabState extends State<RecordsTab> {
                         ),
                     ],
                   ),
+                  if (interval != null) ...[
+                    const SizedBox(height: 2),
+                    Text(interval, style: GoogleFonts.outfit(color: AppColors.primaryNeon.withValues(alpha: 0.7), fontSize: 11)),
+                  ],
                   Text(subtitle, style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 13)),
                 ],
               ),
@@ -390,13 +400,14 @@ class _RecordsTabState extends State<RecordsTab> {
           dist == 21.0975 ? 'Meia Maratona' : (dist == 42.195 ? 'Maratona' : '${dist.toStringAsFixed(dist == dist.toInt() ? 0 : 1)} km'),
           _formatTime(data?['time']),
           _formatDate(data?['date']),
+          interval: data?['interval'],
           onTap: () => _showRecordHistory(key, '${dist.toStringAsFixed(1)} km'),
         );
       },
     );
   }
 
-  Widget _buildBestCard(String label, String time, String date, {VoidCallback? onTap}) {
+  Widget _buildBestCard(String label, String time, String date, {String? interval, VoidCallback? onTap}) {
     final bool hasData = time != '--:--';
     return GlassContainer(
       onTap: hasData ? onTap : null,
@@ -417,7 +428,15 @@ class _RecordsTabState extends State<RecordsTab> {
           Text(time, style: GoogleFonts.outfit(color: hasData ? AppColors.textLight : AppColors.textMuted.withValues(alpha: 0.5), fontSize: 22, fontWeight: FontWeight.bold)),
           if (hasData) ...[
             const SizedBox(height: 4),
-            Text(date, style: GoogleFonts.outfit(color: AppColors.primaryNeon.withValues(alpha: 0.7), fontSize: 11)),
+            Row(
+              children: [
+                if (interval != null) ...[
+                  Text(interval, style: GoogleFonts.outfit(color: AppColors.primaryNeon.withValues(alpha: 0.7), fontSize: 11, fontWeight: FontWeight.bold)),
+                  Text(' • ', style: GoogleFonts.outfit(color: AppColors.textMuted.withValues(alpha: 0.5), fontSize: 11)),
+                ],
+                Text(date, style: GoogleFonts.outfit(color: AppColors.primaryNeon.withValues(alpha: 0.7), fontSize: 11)),
+              ],
+            )
           ],
         ],
       ),
