@@ -167,7 +167,7 @@ class UserProfile {
 class DatabaseService {
   static Database? _database;
 
-  static const _databaseVersion = 15;
+  static const _databaseVersion = 16;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -213,6 +213,9 @@ class DatabaseService {
         );
         await db.execute(
           'CREATE TABLE exercise_dictionary(id TEXT PRIMARY KEY, name TEXT, muscleGroupId TEXT)',
+        );
+        await db.execute(
+          'CREATE TABLE goal_history(periodId TEXT PRIMARY KEY, goalType TEXT, goalValue REAL)',
         );
         // Pre-populate defaults
         for (double dist in [1.0, 5.0, 10.0, 15.0]) {
@@ -291,8 +294,36 @@ class DatabaseService {
             'CREATE TABLE exercise_dictionary(id TEXT PRIMARY KEY, name TEXT, muscleGroupId TEXT)',
           );
         }
+        if (oldVersion < 16) {
+          await db.execute(
+            'CREATE TABLE goal_history(periodId TEXT PRIMARY KEY, goalType TEXT, goalValue REAL)',
+          );
+        }
       },
     );
+  }
+
+  // --- Goal History ---
+  Future<void> saveGoalHistory(String periodId, String goalType, double goalValue) async {
+    final db = await database;
+    await db.insert('goal_history', {
+      'periodId': periodId,
+      'goalType': goalType,
+      'goalValue': goalValue,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<double?> getGoalHistory(String periodId, String goalType) async {
+    final db = await database;
+    List<Map<String, dynamic>> maps = await db.query(
+      'goal_history',
+      where: 'periodId = ? AND goalType = ?',
+      whereArgs: [periodId, goalType],
+    );
+    if (maps.isNotEmpty) {
+      return (maps.first['goalValue'] as num).toDouble();
+    }
+    return null;
   }
 
   // Achievement Methods

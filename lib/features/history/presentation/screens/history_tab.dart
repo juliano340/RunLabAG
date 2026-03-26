@@ -23,9 +23,11 @@ class _HistoryTabState extends State<HistoryTab> {
   bool _isLoading = true;
   int _selectedPeriodIndex = 0; // 0: Semana, 1: Mês
   final List<String> _periods = ['Semana', 'Mês'];
-  
+
   UserProfile? _userProfile;
-  
+  double _currentPeriodGoal =
+      20.0; // The historically-locked goal for the displayed period
+
   // Pagination State
   DateTime _referenceDate = DateTime.now();
   DateTime? _minDate;
@@ -41,7 +43,7 @@ class _HistoryTabState extends State<HistoryTab> {
   Future<void> _loadData() async {
     final runs = await _dbService.getRuns();
     final profile = await _dbService.getUserProfile();
-    
+
     if (mounted) {
       DateTime? min;
       DateTime? max;
@@ -55,66 +57,142 @@ class _HistoryTabState extends State<HistoryTab> {
         _userProfile = profile;
         _minDate = min;
         _maxDate = max;
-        _filterData();
-        _isLoading = false;
       });
+      await _filterData();
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _filterData() {
-    if (_selectedPeriodIndex == 0) { // Semana (Domingo a Sábado)
-      // Encontrar o Domingo anterior ou igual
-      final startOfWeek = _referenceDate.subtract(Duration(days: _referenceDate.weekday % 7));
-      final start = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
-      final end = start.add(const Duration(days: 7));
-      
-      _filteredRuns = _allRuns.where((run) => 
-        run.date.isAfter(start.subtract(const Duration(seconds: 1))) && 
-        run.date.isBefore(end)
-      ).toList();
+  String _getPeriodId() {
+    if (_selectedPeriodIndex == 0) {
+      // Weekly
+      final startOfWeek = _referenceDate.subtract(
+        Duration(days: _referenceDate.weekday % 7),
+      );
+      // ISO week number-like ID: YYYY-WNN
+      final dayOfYear = startOfWeek
+          .difference(DateTime(startOfWeek.year, 1, 1))
+          .inDays;
+      final weekNum = (dayOfYear / 7).floor() + 1;
+      return '${startOfWeek.year}-W${weekNum.toString().padLeft(2, '0')}';
+    } else {
+      // Monthly
+      return '${_referenceDate.year}-${_referenceDate.month.toString().padLeft(2, '0')}';
+    }
+  }
 
-      // Calcular recomendação se estivermos na semana ATUAL
+  Future<void> _filterData() async {
+    final periodId = _getPeriodId();
+    final goalType = _selectedPeriodIndex == 0 ? 'weekly' : 'monthly';
+    final defaultGoal = _selectedPeriodIndex == 0
+        ? (_userProfile?.weeklyGoal ?? 20.0)
+        : (_userProfile?.monthlyGoal ?? 80.0);
+
+    // Try to load an existing historical snapshot for this period
+    double? historicalGoal = await _dbService.getGoalHistory(
+      periodId,
+      goalType,
+    );
+
+    if (historicalGoal == null) {
+      // No snapshot yet — create one now to "freeze" the current goal to this period
+      historicalGoal = defaultGoal;
+      await _dbService.saveGoalHistory(periodId, goalType, defaultGoal);
+    }
+
+    if (_selectedPeriodIndex == 0) {
+      // Week
+      final startOfWeek = _referenceDate.subtract(
+        Duration(days: _referenceDate.weekday % 7),
+      );
+      final start = DateTime(
+        startOfWeek.year,
+        startOfWeek.month,
+        startOfWeek.day,
+      );
+      final end = start.add(const Duration(days: 7));
+
+      _filteredRuns = _allRuns
+          .where(
+            (run) =>
+                run.date.isAfter(start.subtract(const Duration(seconds: 1))) &&
+                run.date.isBefore(end),
+          )
+          .toList();
+
       final now = DateTime.now();
       final currentWeekStart = now.subtract(Duration(days: now.weekday % 7));
-      
-      if (start.year == currentWeekStart.year && start.month == currentWeekStart.month && start.day == currentWeekStart.day && _userProfile != null) {
-        // Para a recomendação, usamos SEMPRE os últimos 7 dias completados (rolling window)
-        // Isso evita sugerir redução logo na segunda-feira porque a semana "começou vazia"
-        final sevenDaysAgo = now.subtract(const Duration(days: 7));
-        final lastSevenDaysRuns = _allRuns.where((run) => 
-          run.date.isAfter(sevenDaysAgo) && run.date.isBefore(now)
-        ).toList();
 
+      if (start.year == currentWeekStart.year &&
+          start.month == currentWeekStart.month &&
+          start.day == currentWeekStart.day &&
+          _userProfile != null) {
         _recommendation = RecommendationService.calculateWeeklyRecommendation(
           profile: _userProfile!,
-          runs: lastSevenDaysRuns,
+          runs: _filteredRuns, // current week only (already filtered above)
+          monthRuns: _allRuns.where((r) {
+            final cutoff = now.subtract(const Duration(days: 30));
+            return r.date.isAfter(cutoff) &&
+                r.date.isBefore(start); // exclude current week
+          }).toList(),
+          currentPeriodGoal: historicalGoal,
         );
       } else {
         _recommendation = null;
       }
-    } else { // Mês
+    } else {
+      // Month
       _recommendation = null;
-      final startOfMonth = DateTime(_referenceDate.year, _referenceDate.month, 1);
-      final nextMonth = DateTime(_referenceDate.year, _referenceDate.month + 1, 1);
-      
-      _filteredRuns = _allRuns.where((run) => 
-        run.date.isAfter(startOfMonth.subtract(const Duration(seconds: 1))) && 
-        run.date.isBefore(nextMonth)
-      ).toList();
+      final startOfMonth = DateTime(
+        _referenceDate.year,
+        _referenceDate.month,
+        1,
+      );
+      final nextMonth = DateTime(
+        _referenceDate.year,
+        _referenceDate.month + 1,
+        1,
+      );
+
+      _filteredRuns = _allRuns
+          .where(
+            (run) =>
+                run.date.isAfter(
+                  startOfMonth.subtract(const Duration(seconds: 1)),
+                ) &&
+                run.date.isBefore(nextMonth),
+          )
+          .toList();
+    }
+
+    if (mounted) {
+      setState(() => _currentPeriodGoal = historicalGoal!);
     }
   }
 
   bool _canGoPrevious() {
     if (_minDate == null) return false;
-    
+
     // Calculate the start of the earliest possible period we should show
     // Usually we don't need to go before the first run ever recorded
-    if (_selectedPeriodIndex == 0) { // Semana
-      final startOfCurrentWeek = _referenceDate.subtract(Duration(days: _referenceDate.weekday % 7));
-      final start = DateTime(startOfCurrentWeek.year, startOfCurrentWeek.month, startOfCurrentWeek.day);
+    if (_selectedPeriodIndex == 0) {
+      // Semana
+      final startOfCurrentWeek = _referenceDate.subtract(
+        Duration(days: _referenceDate.weekday % 7),
+      );
+      final start = DateTime(
+        startOfCurrentWeek.year,
+        startOfCurrentWeek.month,
+        startOfCurrentWeek.day,
+      );
       return _minDate!.isBefore(start);
-    } else { // Mês
-      final startOfCurrentMonth = DateTime(_referenceDate.year, _referenceDate.month, 1);
+    } else {
+      // Mês
+      final startOfCurrentMonth = DateTime(
+        _referenceDate.year,
+        _referenceDate.month,
+        1,
+      );
       return _minDate!.isBefore(startOfCurrentMonth);
     }
   }
@@ -122,15 +200,33 @@ class _HistoryTabState extends State<HistoryTab> {
   bool _canGoNext() {
     // We should ALWAYS be able to see the current week/month even if there's no data yet.
     final now = DateTime.now();
-    final effectiveMax = _maxDate == null || now.isAfter(_maxDate!) ? now : _maxDate!;
+    final effectiveMax = _maxDate == null || now.isAfter(_maxDate!)
+        ? now
+        : _maxDate!;
 
-    if (_selectedPeriodIndex == 0) { // Semana
-      final startOfCurrentWeek = _referenceDate.subtract(Duration(days: _referenceDate.weekday % 7));
-      final endOfCurrentWeek = DateTime(startOfCurrentWeek.year, startOfCurrentWeek.month, startOfCurrentWeek.day).add(const Duration(days: 7));
-      return effectiveMax.isAfter(endOfCurrentWeek.subtract(const Duration(seconds: 1)));
-    } else { // Mês
-      final startOfNextMonth = DateTime(_referenceDate.year, _referenceDate.month + 1, 1);
-      return effectiveMax.isAfter(startOfNextMonth.subtract(const Duration(seconds: 1)));
+    if (_selectedPeriodIndex == 0) {
+      // Semana
+      final startOfCurrentWeek = _referenceDate.subtract(
+        Duration(days: _referenceDate.weekday % 7),
+      );
+      final endOfCurrentWeek = DateTime(
+        startOfCurrentWeek.year,
+        startOfCurrentWeek.month,
+        startOfCurrentWeek.day,
+      ).add(const Duration(days: 7));
+      return effectiveMax.isAfter(
+        endOfCurrentWeek.subtract(const Duration(seconds: 1)),
+      );
+    } else {
+      // Mês
+      final startOfNextMonth = DateTime(
+        _referenceDate.year,
+        _referenceDate.month + 1,
+        1,
+      );
+      return effectiveMax.isAfter(
+        startOfNextMonth.subtract(const Duration(seconds: 1)),
+      );
     }
   }
 
@@ -140,10 +236,14 @@ class _HistoryTabState extends State<HistoryTab> {
       if (_selectedPeriodIndex == 0) {
         _referenceDate = _referenceDate.subtract(const Duration(days: 7));
       } else {
-        _referenceDate = DateTime(_referenceDate.year, _referenceDate.month - 1, 1);
+        _referenceDate = DateTime(
+          _referenceDate.year,
+          _referenceDate.month - 1,
+          1,
+        );
       }
-      _filterData();
     });
+    _filterData();
   }
 
   void _nextPeriod() {
@@ -152,26 +252,54 @@ class _HistoryTabState extends State<HistoryTab> {
       if (_selectedPeriodIndex == 0) {
         _referenceDate = _referenceDate.add(const Duration(days: 7));
       } else {
-        _referenceDate = DateTime(_referenceDate.year, _referenceDate.month + 1, 1);
+        _referenceDate = DateTime(
+          _referenceDate.year,
+          _referenceDate.month + 1,
+          1,
+        );
       }
-      _filterData();
     });
+    _filterData();
   }
 
   String _getPeriodTitle() {
     final months = [
-      '', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+      '',
+      'Janeiro',
+      'Fevereiro',
+      'Março',
+      'Abril',
+      'Maio',
+      'Junho',
+      'Julho',
+      'Agosto',
+      'Setembro',
+      'Outubro',
+      'Novembro',
+      'Dezembro',
     ];
     final monthsShort = [
-      '', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
-      'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'
+      '',
+      'Jan',
+      'Fev',
+      'Mar',
+      'Abr',
+      'Mai',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Set',
+      'Out',
+      'Nov',
+      'Dez',
     ];
 
     if (_selectedPeriodIndex == 0) {
-      final startOfWeek = _referenceDate.subtract(Duration(days: _referenceDate.weekday % 7));
+      final startOfWeek = _referenceDate.subtract(
+        Duration(days: _referenceDate.weekday % 7),
+      );
       final endOfWeek = startOfWeek.add(const Duration(days: 6));
-      
+
       if (startOfWeek.month == endOfWeek.month) {
         return '${startOfWeek.day} - ${endOfWeek.day} de ${months[startOfWeek.month]}';
       } else {
@@ -184,43 +312,106 @@ class _HistoryTabState extends State<HistoryTab> {
 
   String _formatDateShort(DateTime date) {
     final now = DateTime.now();
-    if (date.year == now.year && date.month == now.month && date.day == now.day) {
+    if (date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day) {
       return 'Hoje';
     }
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}';
   }
 
   void _showGoalSettings() {
-    final TextEditingController weeklyController = TextEditingController(text: _userProfile?.weeklyGoal.toString() ?? '20.0');
-    final TextEditingController monthlyController = TextEditingController(text: _userProfile?.monthlyGoal.toString() ?? '80.0');
+    final periodId = _getPeriodId();
+    final goalType = _selectedPeriodIndex == 0 ? 'weekly' : 'monthly';
+    final periodController = TextEditingController(
+      text: _currentPeriodGoal.toStringAsFixed(1),
+    );
+    final TextEditingController globalController = TextEditingController(
+      text: _selectedPeriodIndex == 0
+          ? (_userProfile?.weeklyGoal.toStringAsFixed(1) ?? '20.0')
+          : (_userProfile?.monthlyGoal.toStringAsFixed(1) ?? '80.0'),
+    );
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.backgroundDarkGreen,
-        title: Text('Configurar Metas (km)', style: GoogleFonts.outfit(color: Colors.white)),
+        title: Text(
+          'Configurar Meta',
+          style: GoogleFonts.outfit(color: Colors.white),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              controller: weeklyController,
-              keyboardType: TextInputType.number,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                labelText: 'Meta Semanal',
-                labelStyle: TextStyle(color: AppColors.textMuted),
-                enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+            // Per-period goal
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.primaryNeon.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: AppColors.primaryNeon.withValues(alpha: 0.2),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.lock_clock,
+                        color: AppColors.primaryNeon,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Meta deste período',
+                        style: GoogleFonts.outfit(
+                          color: AppColors.primaryNeon,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Altera apenas este período. Não afeta o histórico.',
+                    style: GoogleFonts.outfit(
+                      color: Colors.white54,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: periodController,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      labelText: 'Meta (km)',
+                      labelStyle: TextStyle(color: AppColors.textMuted),
+                      enabledBorder: const UnderlineInputBorder(
+                        borderSide: BorderSide(color: Colors.white24),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),
+            // Default / future goal
             TextField(
-              controller: monthlyController,
+              controller: globalController,
               keyboardType: TextInputType.number,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                labelText: 'Meta Mensal',
+                labelText: 'Meta padrão futura (km)',
+                helperText: 'Aplicada a novos períodos',
+                helperStyle: TextStyle(color: Colors.white30, fontSize: 11),
                 labelStyle: TextStyle(color: AppColors.textMuted),
-                enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                enabledBorder: const UnderlineInputBorder(
+                  borderSide: BorderSide(color: Colors.white24),
+                ),
               ),
             ),
           ],
@@ -228,30 +419,62 @@ class _HistoryTabState extends State<HistoryTab> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('CANCELAR', style: TextStyle(color: AppColors.textMuted)),
+            child: Text(
+              'CANCELAR',
+              style: TextStyle(color: AppColors.textMuted),
+            ),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryNeon),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryNeon,
+            ),
             onPressed: () async {
+              final newPeriodGoal =
+                  double.tryParse(periodController.text) ?? _currentPeriodGoal;
+              final newGlobalGoal =
+                  double.tryParse(globalController.text) ??
+                  (_userProfile?.weeklyGoal ?? 20.0);
+              final navigator = Navigator.of(context);
+
+              // Save per-period (historical) goal
+              await _dbService.saveGoalHistory(
+                periodId,
+                goalType,
+                newPeriodGoal,
+              );
+
+              // Save global default for future periods
               if (_userProfile != null) {
-                final newProfile = UserProfile(
+                final updatedProfile = UserProfile(
                   name: _userProfile!.name,
                   age: _userProfile!.age,
                   weight: _userProfile!.weight,
                   height: _userProfile!.height,
                   profilePicturePath: _userProfile!.profilePicturePath,
-                  weeklyGoal: double.tryParse(weeklyController.text) ?? _userProfile!.weeklyGoal,
-                  monthlyGoal: double.tryParse(monthlyController.text) ?? _userProfile!.monthlyGoal,
+                  weeklyGoal: _selectedPeriodIndex == 0
+                      ? newGlobalGoal
+                      : _userProfile!.weeklyGoal,
+                  monthlyGoal: _selectedPeriodIndex == 1
+                      ? newGlobalGoal
+                      : _userProfile!.monthlyGoal,
                   lastGoalUpdate: DateTime.now(),
                 );
-                await _dbService.saveUserProfile(newProfile);
-                if (context.mounted) {
-                  setState(() => _userProfile = newProfile);
-                  Navigator.pop(context);
-                }
+                await _dbService.saveUserProfile(updatedProfile);
+                if (mounted) setState(() => _userProfile = updatedProfile);
+              }
+
+              if (mounted) {
+                setState(() => _currentPeriodGoal = newPeriodGoal);
+                navigator.pop();
               }
             },
-            child: const Text('SALVAR', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'SALVAR',
+              style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -279,12 +502,16 @@ class _HistoryTabState extends State<HistoryTab> {
                 ),
                 IconButton(
                   onPressed: _showGoalSettings,
-                  icon: const Icon(LucideIcons.settings, color: AppColors.textMuted, size: 20),
+                  icon: const Icon(
+                    LucideIcons.settings,
+                    color: AppColors.textMuted,
+                    size: 20,
+                  ),
                 ),
               ],
             ),
           ),
-          
+
           const SizedBox(height: 12),
           _buildPeriodSelector(),
           const SizedBox(height: 12),
@@ -293,35 +520,46 @@ class _HistoryTabState extends State<HistoryTab> {
 
           Expanded(
             child: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: AppColors.primaryNeon))
-              : SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: Column(
-                    children: [
-                      _buildAnalyticsSummary(),
-                      const SizedBox(height: 24),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Row(
-                          children: [
-                            Text(
-                              'Atividades',
-                              style: GoogleFonts.outfit(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                            ),
-                            const Spacer(),
-                            Text(
-                              '${_filteredRuns.length} treinos',
-                              style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 13),
-                            ),
-                          ],
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.primaryNeon,
+                    ),
+                  )
+                : SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: Column(
+                      children: [
+                        _buildAnalyticsSummary(),
+                        const SizedBox(height: 24),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Row(
+                            children: [
+                              Text(
+                                'Atividades',
+                                style: GoogleFonts.outfit(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const Spacer(),
+                              Text(
+                                '${_filteredRuns.length} treinos',
+                                style: GoogleFonts.outfit(
+                                  color: AppColors.textMuted,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      _buildActivitiesList(),
-                      const SizedBox(height: 24),
-                    ],
+                        const SizedBox(height: 12),
+                        _buildActivitiesList(),
+                        const SizedBox(height: 24),
+                      ],
+                    ),
                   ),
-                ),
           ),
         ],
       ),
@@ -348,21 +586,31 @@ class _HistoryTabState extends State<HistoryTab> {
                   setState(() {
                     _selectedPeriodIndex = index;
                     _referenceDate = DateTime.now();
-                    _filterData();
                   });
+                  _filterData();
                 },
                 child: Container(
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: isSelected ? AppColors.primaryNeon.withValues(alpha: 0.1) : Colors.transparent,
+                    color: isSelected
+                        ? AppColors.primaryNeon.withValues(alpha: 0.1)
+                        : Colors.transparent,
                     borderRadius: BorderRadius.circular(8),
-                    border: isSelected ? Border.all(color: AppColors.primaryNeon.withValues(alpha: 0.3)) : null,
+                    border: isSelected
+                        ? Border.all(
+                            color: AppColors.primaryNeon.withValues(alpha: 0.3),
+                          )
+                        : null,
                   ),
                   child: Text(
                     _periods[index],
                     style: GoogleFonts.outfit(
-                      color: isSelected ? AppColors.primaryNeon : AppColors.textMuted,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      color: isSelected
+                          ? AppColors.primaryNeon
+                          : AppColors.textMuted,
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                       fontSize: 13,
                     ),
                   ),
@@ -378,7 +626,7 @@ class _HistoryTabState extends State<HistoryTab> {
   Widget _buildPaginationHeader() {
     final canPrev = _canGoPrevious();
     final canNext = _canGoNext();
-    
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
@@ -387,8 +635,10 @@ class _HistoryTabState extends State<HistoryTab> {
           IconButton(
             onPressed: canPrev ? _previousPeriod : null,
             icon: Icon(
-              LucideIcons.chevronLeft, 
-              color: canPrev ? AppColors.textMuted : AppColors.textMuted.withValues(alpha: 0.1)
+              LucideIcons.chevronLeft,
+              color: canPrev
+                  ? AppColors.textMuted
+                  : AppColors.textMuted.withValues(alpha: 0.1),
             ),
             visualDensity: VisualDensity.compact,
           ),
@@ -403,8 +653,10 @@ class _HistoryTabState extends State<HistoryTab> {
           IconButton(
             onPressed: canNext ? _nextPeriod : null,
             icon: Icon(
-              LucideIcons.chevronRight, 
-              color: canNext ? AppColors.textMuted : AppColors.textMuted.withValues(alpha: 0.1)
+              LucideIcons.chevronRight,
+              color: canNext
+                  ? AppColors.textMuted
+                  : AppColors.textMuted.withValues(alpha: 0.1),
             ),
             visualDensity: VisualDensity.compact,
           ),
@@ -418,8 +670,8 @@ class _HistoryTabState extends State<HistoryTab> {
     int totalDur = _filteredRuns.fold(0, (sum, r) => sum + r.durationSeconds);
     int totalCal = _filteredRuns.fold(0, (sum, r) => sum + r.calories);
     double weightLossKg = totalCal / 7700.0;
-    
-    double goal = (_selectedPeriodIndex == 0) ? (_userProfile?.weeklyGoal ?? 20.0) : (_userProfile?.monthlyGoal ?? 80.0);
+
+    double goal = _currentPeriodGoal;
     double rawProgress = goal > 0 ? totalKm / goal : 0.0;
     double progress = rawProgress.clamp(0.0, 1.0);
 
@@ -440,13 +692,13 @@ class _HistoryTabState extends State<HistoryTab> {
                     children: [
                       Text(
                         'Desempenho',
-                        style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12),
+                        style: GoogleFonts.outfit(
+                          color: AppColors.textMuted,
+                          fontSize: 12,
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      SizedBox(
-                        height: 100,
-                        child: _buildBarChart(),
-                      ),
+                      SizedBox(height: 100, child: _buildBarChart()),
                     ],
                   ),
                 ),
@@ -460,7 +712,10 @@ class _HistoryTabState extends State<HistoryTab> {
                     children: [
                       Text(
                         'Meta',
-                        style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12),
+                        style: GoogleFonts.outfit(
+                          color: AppColors.textMuted,
+                          fontSize: 12,
+                        ),
                       ),
                       const SizedBox(height: 16),
                       Stack(
@@ -479,9 +734,9 @@ class _HistoryTabState extends State<HistoryTab> {
                           Text(
                             '${(rawProgress * 100).toInt()}%',
                             style: GoogleFonts.outfit(
-                              color: _getGoalColor(rawProgress), 
-                              fontWeight: FontWeight.bold, 
-                              fontSize: 14
+                              color: _getGoalColor(rawProgress),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
                             ),
                           ),
                         ],
@@ -489,7 +744,10 @@ class _HistoryTabState extends State<HistoryTab> {
                       const SizedBox(height: 8),
                       Text(
                         '${totalKm.toStringAsFixed(1)} / ${goal.toInt()} km',
-                        style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 10),
+                        style: GoogleFonts.outfit(
+                          color: AppColors.textMuted,
+                          fontSize: 10,
+                        ),
                       ),
                     ],
                   ),
@@ -501,11 +759,19 @@ class _HistoryTabState extends State<HistoryTab> {
           // Row 2: Stats
           Row(
             children: [
-              _buildSmallStat('Duração', TimeUtils.formatDuration(totalDur), LucideIcons.timer),
+              _buildSmallStat(
+                'Duração',
+                TimeUtils.formatDuration(totalDur),
+                LucideIcons.timer,
+              ),
               const SizedBox(width: 12),
               _buildSmallStat('Calorias', '$totalCal kcal', LucideIcons.flame),
               const SizedBox(width: 12),
-              _buildSmallStat('Peso Est.', '${weightLossKg.toStringAsFixed(3)} kg', LucideIcons.scale),
+              _buildSmallStat(
+                'Peso Est.',
+                '${weightLossKg.toStringAsFixed(3)} kg',
+                LucideIcons.scale,
+              ),
             ],
           ),
         ],
@@ -523,12 +789,19 @@ class _HistoryTabState extends State<HistoryTab> {
             const SizedBox(height: 8),
             Text(
               value,
-              style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+              style: GoogleFonts.outfit(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
               textAlign: TextAlign.center,
             ),
             Text(
               label,
-              style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 10),
+              style: GoogleFonts.outfit(
+                color: AppColors.textMuted,
+                fontSize: 10,
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -541,33 +814,50 @@ class _HistoryTabState extends State<HistoryTab> {
     List<BarChartGroupData> barGroups = [];
     double maxDistance = 0;
 
-    if (_selectedPeriodIndex == 0) { // Semana
-      final startOfWeek = _referenceDate.subtract(Duration(days: _referenceDate.weekday % 7));
-      
+    if (_selectedPeriodIndex == 0) {
+      // Semana
+      final startOfWeek = _referenceDate.subtract(
+        Duration(days: _referenceDate.weekday % 7),
+      );
+
       for (int i = 0; i < 7; i++) {
-        final day = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day).add(Duration(days: i));
+        final day = DateTime(
+          startOfWeek.year,
+          startOfWeek.month,
+          startOfWeek.day,
+        ).add(Duration(days: i));
         double dailyTotal = _allRuns
-            .where((r) => r.date.year == day.year && r.date.month == day.month && r.date.day == day.day)
+            .where(
+              (r) =>
+                  r.date.year == day.year &&
+                  r.date.month == day.month &&
+                  r.date.day == day.day,
+            )
             .fold(0.0, (sum, r) => sum + r.distanceKm);
-        
+
         if (dailyTotal > maxDistance) maxDistance = dailyTotal;
         barGroups.add(_makeGroupData(i, dailyTotal, maxDistance));
       }
-    } else { // Mês
+    } else {
+      // Mês
       final year = _referenceDate.year;
       final month = _referenceDate.month;
       final firstDayOfMonth = DateTime(year, month, 1);
-      
+
       for (int i = 0; i < 4; i++) {
         final start = firstDayOfMonth.add(Duration(days: i * 7));
-        final end = i < 3 
-            ? firstDayOfMonth.add(Duration(days: (i + 1) * 7)) 
+        final end = i < 3
+            ? firstDayOfMonth.add(Duration(days: (i + 1) * 7))
             : DateTime(year, month + 1, 1);
-        
+
         double weeklyTotal = _allRuns
-            .where((r) => r.date.isAfter(start.subtract(const Duration(seconds: 1))) && r.date.isBefore(end))
+            .where(
+              (r) =>
+                  r.date.isAfter(start.subtract(const Duration(seconds: 1))) &&
+                  r.date.isBefore(end),
+            )
             .fold(0.0, (sum, r) => sum + r.distanceKm);
-            
+
         if (weeklyTotal > maxDistance) maxDistance = weeklyTotal;
         barGroups.add(_makeGroupData(i, weeklyTotal, maxDistance));
       }
@@ -587,7 +877,10 @@ class _HistoryTabState extends State<HistoryTab> {
             getTooltipItem: (group, groupIndex, rod, rodIndex) {
               return BarTooltipItem(
                 '${rod.toY.toStringAsFixed(1)} km',
-                GoogleFonts.outfit(color: AppColors.primaryNeon, fontWeight: FontWeight.bold),
+                GoogleFonts.outfit(
+                  color: AppColors.primaryNeon,
+                  fontWeight: FontWeight.bold,
+                ),
               );
             },
           ),
@@ -607,14 +900,26 @@ class _HistoryTabState extends State<HistoryTab> {
                 }
                 return Padding(
                   padding: const EdgeInsets.only(top: 8),
-                  child: Text(text, style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 10)),
+                  child: Text(
+                    text,
+                    style: GoogleFonts.outfit(
+                      color: AppColors.textMuted,
+                      fontSize: 10,
+                    ),
+                  ),
                 );
               },
             ),
           ),
-          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
         ),
         gridData: const FlGridData(show: false),
         borderData: FlBorderData(show: false),
@@ -650,9 +955,9 @@ class _HistoryTabState extends State<HistoryTab> {
   Widget _buildActivitiesList() {
     return Column(
       children: [
-        if (_recommendation != null && _selectedPeriodIndex == 0) 
+        if (_recommendation != null && _selectedPeriodIndex == 0)
           _buildRecommendationCard(),
-        _filteredRuns.isEmpty 
+        _filteredRuns.isEmpty
             ? _buildEmptyState()
             : ListView.builder(
                 padding: EdgeInsets.zero,
@@ -662,7 +967,10 @@ class _HistoryTabState extends State<HistoryTab> {
                 itemBuilder: (context, index) {
                   final run = _filteredRuns[index];
                   return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 6,
+                    ),
                     child: _buildRunCard(run),
                   );
                 },
@@ -673,24 +981,26 @@ class _HistoryTabState extends State<HistoryTab> {
 
   Widget _buildRecommendationCard() {
     final res = _recommendation!;
+    final isAlert = res.emoji == '🔴' || res.emoji == '🟡';
+    final isInfo = res.emoji == '📊' || res.emoji == '⏱️';
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       child: GlassContainer(
         padding: const EdgeInsets.all(16),
-        borderColor: res.isIncrease ? AppColors.primaryNeon.withValues(alpha: 0.3) : Colors.orangeAccent.withValues(alpha: 0.3),
+        borderColor: res.isIncrease
+            ? AppColors.primaryNeon.withValues(alpha: 0.3)
+            : isAlert
+            ? Colors.orangeAccent.withValues(alpha: 0.3)
+            : Colors.white12,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(
-                  res.isIncrease ? LucideIcons.trendingUp : LucideIcons.refreshCcw,
-                  color: res.isIncrease ? AppColors.primaryNeon : Colors.orangeAccent,
-                  size: 20,
-                ),
+                Text(res.emoji, style: const TextStyle(fontSize: 20)),
                 const SizedBox(width: 8),
                 Text(
-                  'Dica de Evolução',
+                  isInfo ? 'Status da Semana' : 'Dica de Evolução',
                   style: GoogleFonts.outfit(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -704,46 +1014,76 @@ class _HistoryTabState extends State<HistoryTab> {
               res.message,
               style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13),
             ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: res.isIncrease ? AppColors.primaryNeon : Colors.white10,
-                  foregroundColor: res.isIncrease ? Colors.black : Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                onPressed: () async {
-                  if (_userProfile != null) {
-                    final newProfile = UserProfile(
-                      name: _userProfile!.name,
-                      age: _userProfile!.age,
-                      weight: _userProfile!.weight,
-                      height: _userProfile!.height,
-                      profilePicturePath: _userProfile!.profilePicturePath,
-                      weeklyGoal: res.recommendedGoal,
-                      monthlyGoal: _userProfile!.monthlyGoal,
-                      lastGoalUpdate: DateTime.now(),
-                    );
-                    await _dbService.saveUserProfile(newProfile);
-                    setState(() {
-                      _userProfile = newProfile;
-                      _recommendation = null; // Remove card após aceitar
-                    });
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Nova meta semanal definida! 🚀')),
+            if (!isInfo && !isAlert) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: res.isIncrease
+                        ? AppColors.primaryNeon
+                        : Colors.white10,
+                    foregroundColor: res.isIncrease
+                        ? Colors.black
+                        : Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: () async {
+                    if (_userProfile != null) {
+                      // Snapshot next week's goal
+                      final now = DateTime.now();
+                      final nextWeekDate = now.add(const Duration(days: 7));
+                      final startOfNextWeek = nextWeekDate.subtract(
+                        Duration(days: nextWeekDate.weekday - 1),
                       );
+                      final day = startOfNextWeek
+                          .difference(DateTime(startOfNextWeek.year, 1, 1))
+                          .inDays;
+                      final weekNum = (day / 7).floor() + 1;
+                      final nextPeriodId =
+                          '${startOfNextWeek.year}-W${weekNum.toString().padLeft(2, '0')}';
+                      await _dbService.saveGoalHistory(
+                        nextPeriodId,
+                        'weekly',
+                        res.recommendedGoal,
+                      );
+
+                      final newProfile = UserProfile(
+                        name: _userProfile!.name,
+                        age: _userProfile!.age,
+                        weight: _userProfile!.weight,
+                        height: _userProfile!.height,
+                        profilePicturePath: _userProfile!.profilePicturePath,
+                        weeklyGoal: res.recommendedGoal,
+                        monthlyGoal: _userProfile!.monthlyGoal,
+                        lastGoalUpdate: DateTime.now(),
+                      );
+                      await _dbService.saveUserProfile(newProfile);
+                      setState(() {
+                        _userProfile = newProfile;
+                        _recommendation = null;
+                      });
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Meta da próxima semana definida! 🚀',
+                            ),
+                          ),
+                        );
+                      }
                     }
-                  }
-                },
-                child: Text(
-                  'DEFINIR META: ${res.recommendedGoal.toStringAsFixed(1)} KM',
-                  style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+                  },
+                  child: Text(
+                    'DEFINIR META PRÓX. SEMANA: ${res.recommendedGoal.toStringAsFixed(1)} KM',
+                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -764,12 +1104,18 @@ class _HistoryTabState extends State<HistoryTab> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: run.type == 'Caminhada' ? Colors.blue.withValues(alpha: 0.1) : AppColors.primaryNeon.withValues(alpha: 0.1),
+              color: run.type == 'Caminhada'
+                  ? Colors.blue.withValues(alpha: 0.1)
+                  : AppColors.primaryNeon.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
-              run.type == 'Caminhada' ? LucideIcons.footprints : LucideIcons.zap,
-              color: run.type == 'Caminhada' ? Colors.blueAccent : AppColors.primaryNeon,
+              run.type == 'Caminhada'
+                  ? LucideIcons.footprints
+                  : LucideIcons.zap,
+              color: run.type == 'Caminhada'
+                  ? Colors.blueAccent
+                  : AppColors.primaryNeon,
               size: 24,
             ),
           ),
@@ -780,11 +1126,18 @@ class _HistoryTabState extends State<HistoryTab> {
               children: [
                 Text(
                   '${run.distanceKm.toStringAsFixed(2)} km',
-                  style: GoogleFonts.outfit(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 Text(
                   '${_formatDateShort(run.date)} • ${TimeUtils.formatDuration(run.durationSeconds)}',
-                  style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12),
+                  style: GoogleFonts.outfit(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
@@ -794,11 +1147,18 @@ class _HistoryTabState extends State<HistoryTab> {
             children: [
               Text(
                 run.pace,
-                style: GoogleFonts.outfit(color: AppColors.primaryNeonLight, fontSize: 14, fontWeight: FontWeight.bold),
+                style: GoogleFonts.outfit(
+                  color: AppColors.primaryNeonLight,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               Text(
                 'ritmo',
-                style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 10),
+                style: GoogleFonts.outfit(
+                  color: AppColors.textMuted,
+                  fontSize: 10,
+                ),
               ),
             ],
           ),
@@ -815,7 +1175,11 @@ class _HistoryTabState extends State<HistoryTab> {
       child: Center(
         child: Column(
           children: [
-            Icon(LucideIcons.history, size: 48, color: AppColors.textMuted.withValues(alpha: 0.2)),
+            Icon(
+              LucideIcons.history,
+              size: 48,
+              color: AppColors.textMuted.withValues(alpha: 0.2),
+            ),
             const SizedBox(height: 16),
             Text(
               'Nenhuma atividade neste período.',
@@ -828,18 +1192,30 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   Color _getGoalColor(double progress) {
-    if (progress <= 0) return AppColors.primaryNeon.withOpacity(0.3);
-    
+    if (progress <= 0) return AppColors.primaryNeon.withValues(alpha: 0.3);
+
     // Dragon chasing tail: Chromatic progression
     if (progress < 0.5) {
       // 0 to 0.5: Cyan to Neon Green
-      return Color.lerp(Colors.cyanAccent, AppColors.primaryNeon, progress * 2)!;
+      return Color.lerp(
+        Colors.cyanAccent,
+        AppColors.primaryNeon,
+        progress * 2,
+      )!;
     } else if (progress < 1.0) {
       // 0.5 to 1.0: Neon Green to Orange
-      return Color.lerp(AppColors.primaryNeon, Colors.orangeAccent, (progress - 0.5) * 2)!;
+      return Color.lerp(
+        AppColors.primaryNeon,
+        Colors.orangeAccent,
+        (progress - 0.5) * 2,
+      )!;
     } else if (progress < 1.5) {
       // 1.0 to 1.5: Orange to Pink/Purple
-      return Color.lerp(Colors.orangeAccent, Colors.pinkAccent, (progress - 1.0) * 2)!;
+      return Color.lerp(
+        Colors.orangeAccent,
+        Colors.pinkAccent,
+        (progress - 1.0) * 2,
+      )!;
     } else {
       // Over 1.5: Deep Purple
       return Colors.deepPurpleAccent;
