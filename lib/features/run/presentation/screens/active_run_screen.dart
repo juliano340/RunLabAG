@@ -19,6 +19,7 @@ import '../../../../core/utils/time_utils.dart';
 import '../../../../core/services/achievement_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/services/notification_service.dart';
 
 class ActiveRunScreen extends StatefulWidget {
   final Map<String, dynamic>? restoredState;
@@ -342,8 +343,12 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               
               _lastKmNotified = currentKm;
               _persistState();
-              HapticFeedback.vibrate(); 
-              HapticFeedback.heavyImpact();
+
+              // Vibration + push notification (replaces ineffective HapticFeedback)
+              if (_userProfile?.kmNotificationsEnabled == true) {
+                final currentPace = _currentSmoothedPace.isNotEmpty ? _currentSmoothedPace : '--:--';
+                NotificationService.sendKmMilestone(currentKm, currentPace);
+              }
               
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(

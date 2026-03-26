@@ -13,12 +13,14 @@ import 'features/water/presentation/providers/water_provider.dart';
 import 'features/strength_training/presentation/providers/strength_workout_provider.dart';
 import 'features/strength_training/data/repositories/strength_workout_repository_impl.dart';
 import 'core/services/database_service.dart';
+import 'core/services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   // Inicialização de serviços
   await AdService().init();
+  await NotificationService.initialize();
   final prefs = await SharedPreferences.getInstance();
   final hasCompletedOnboarding = prefs.getBool('hasCompletedOnboarding') ?? false;
   

@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart';
 import 'package:runlabag/core/services/ad_service.dart';
 import 'package:runlabag/features/water/presentation/providers/water_provider.dart';
+import '../../../../core/services/notification_service.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -69,6 +70,7 @@ class _ProfileTabState extends State<ProfileTab> {
         weeklyGoal: _profile!.weeklyGoal,
         monthlyGoal: _profile!.monthlyGoal,
         waterGoal: _profile!.waterGoal,
+        kmNotificationsEnabled: _profile!.kmNotificationsEnabled,
       );
 
       await _dbService.saveUserProfile(updatedProfile);
@@ -139,6 +141,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   weeklyGoal: _parseNumber(weeklyGoalController.text),
                   monthlyGoal: _profile!.monthlyGoal,
                   waterGoal: _parseNumber(waterGoalController.text),
+                  kmNotificationsEnabled: _profile!.kmNotificationsEnabled,
                 );
                 await _dbService.saveUserProfile(updatedProfile);
                 if (context.mounted) {
@@ -350,6 +353,53 @@ class _ProfileTabState extends State<ProfileTab> {
                       );
                     },
                   ),
+                  const Divider(color: AppColors.cardBorder, height: 1),
+                  ListTile(
+                    leading: const Icon(LucideIcons.bell, color: AppColors.primaryNeon),
+                    title: Text(
+                      'Notificar a cada km',
+                      style: GoogleFonts.outfit(color: AppColors.textLight),
+                    ),
+                    subtitle: Text(
+                      'Vibração e push a cada km completado no treino',
+                      style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 11),
+                    ),
+                    trailing: Switch(
+                      value: _profile?.kmNotificationsEnabled ?? true,
+                      onChanged: _profile == null ? null : (value) async {
+                        final updated = UserProfile(
+                          name: _profile!.name,
+                          age: _profile!.age,
+                          weight: _profile!.weight,
+                          height: _profile!.height,
+                          profilePicturePath: _profile!.profilePicturePath,
+                          weeklyGoal: _profile!.weeklyGoal,
+                          monthlyGoal: _profile!.monthlyGoal,
+                          waterGoal: _profile!.waterGoal,
+                          lastGoalUpdate: _profile!.lastGoalUpdate,
+                          kmNotificationsEnabled: value,
+                        );
+                        await _dbService.saveUserProfile(updated);
+                        if (mounted) setState(() => _profile = updated);
+                      },
+                      activeThumbColor: AppColors.primaryNeon,
+                    ),
+                  ),
+                  if (_profile?.kmNotificationsEnabled == true)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8.0, right: 16.0),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () {
+                            // Dispara uma notificação de teste simulando o km 1
+                            NotificationService.sendKmMilestone(1, "5:30");
+                          },
+                          icon: const Icon(LucideIcons.playCircle, size: 16, color: AppColors.primaryNeon),
+                          label: const Text('Testar Notificação', style: TextStyle(color: AppColors.primaryNeon)),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),

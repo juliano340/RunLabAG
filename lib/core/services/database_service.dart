@@ -108,6 +108,7 @@ class UserProfile {
   final double monthlyGoal;
   final double waterGoal; // em ml
   final DateTime? lastGoalUpdate;
+  final bool kmNotificationsEnabled;
 
   UserProfile({
     required this.name,
@@ -119,6 +120,7 @@ class UserProfile {
     this.monthlyGoal = 80.0,
     this.waterGoal = 2000.0,
     this.lastGoalUpdate,
+    this.kmNotificationsEnabled = true,
   });
 
   Map<String, dynamic> toMap() {
@@ -133,6 +135,7 @@ class UserProfile {
       'monthlyGoal': monthlyGoal,
       'waterGoal': waterGoal,
       'lastGoalUpdate': lastGoalUpdate?.toIso8601String(),
+      'kmNotificationsEnabled': kmNotificationsEnabled ? 1 : 0,
     };
   }
 
@@ -147,6 +150,7 @@ class UserProfile {
       monthlyGoal: map['monthlyGoal'] ?? 80.0,
       waterGoal: map['waterGoal']?.toDouble() ?? 2000.0,
       lastGoalUpdate: map['lastGoalUpdate'] != null ? DateTime.parse(map['lastGoalUpdate']) : null,
+      kmNotificationsEnabled: (map['kmNotificationsEnabled'] ?? 1) == 1,
     );
   }
 
@@ -167,7 +171,7 @@ class UserProfile {
 class DatabaseService {
   static Database? _database;
 
-  static const _databaseVersion = 16;
+  static const _databaseVersion = 17;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -185,7 +189,7 @@ class DatabaseService {
           'CREATE TABLE runs(id TEXT PRIMARY KEY, date TEXT, distanceKm REAL, durationSeconds INTEGER, pace TEXT, calories INTEGER, route TEXT, type TEXT, mood TEXT, splits TEXT)',
         );
         await db.execute(
-          'CREATE TABLE user_profile(id TEXT PRIMARY KEY, name TEXT, age INTEGER, weight REAL, height REAL, profilePicturePath TEXT, weeklyGoal REAL, monthlyGoal REAL)',
+          'CREATE TABLE user_profile(id TEXT PRIMARY KEY, name TEXT, age INTEGER, weight REAL, height REAL, profilePicturePath TEXT, weeklyGoal REAL, monthlyGoal REAL, kmNotificationsEnabled INTEGER DEFAULT 1)',
         );
         await db.execute(
           'CREATE TABLE achievements(id TEXT PRIMARY KEY, title TEXT, description TEXT, iconCode INTEGER, earnedDate TEXT)',
@@ -298,6 +302,9 @@ class DatabaseService {
           await db.execute(
             'CREATE TABLE goal_history(periodId TEXT PRIMARY KEY, goalType TEXT, goalValue REAL)',
           );
+        }
+        if (oldVersion < 17) {
+          await db.execute('ALTER TABLE user_profile ADD COLUMN kmNotificationsEnabled INTEGER DEFAULT 1');
         }
       },
     );
