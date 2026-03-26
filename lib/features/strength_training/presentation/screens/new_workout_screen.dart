@@ -11,9 +11,15 @@ import '../providers/strength_workout_provider.dart';
 
 class NewWorkoutScreen extends StatefulWidget {
   final StrengthWorkout? template;
+  final StrengthWorkout? templateSession;
   final bool isEditing;
 
-  const NewWorkoutScreen({super.key, this.template, this.isEditing = false});
+  const NewWorkoutScreen({
+    super.key, 
+    this.template, 
+    this.templateSession,
+    this.isEditing = false
+  });
 
   @override
   State<NewWorkoutScreen> createState() => _NewWorkoutScreenState();
@@ -25,6 +31,7 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
   final TextEditingController _notesController = TextEditingController();
   
   List<WorkoutMuscleGroup> _muscleGroups = [];
+  final Set<int> _collapsedGroups = {}; 
   bool _isSaving = false;
 
   @override
@@ -40,15 +47,24 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
       if (widget.isEditing) {
         _muscleGroups = List.from(widget.template!.muscleGroups);
       } else {
-        // Clone the groups but reset sets if needed, for instance cloning a template
+        // Clone the groups but reset sets if needed
         _muscleGroups = widget.template!.muscleGroups.map((g) => g.copyWith(
-          id: const Uuid().v4(), // New ID for instance
+          id: const Uuid().v4(),
           exercises: g.exercises.map((e) => e.copyWith(
             id: const Uuid().v4(),
             sets: e.sets.map((s) => s.copyWith(id: const Uuid().v4(), isCompleted: false)).toList(),
           )).toList(),
         )).toList();
       }
+    } else if (widget.templateSession != null) {
+      _nameController.text = widget.templateSession!.name;
+      _muscleGroups = List.from(widget.templateSession!.muscleGroups);
+      _selectedDate = DateTime.now();
+    }
+    
+    // Initialize all groups as collapsed
+    for (int i = 0; i < _muscleGroups.length; i++) {
+      _collapsedGroups.add(i);
     }
   }
 
@@ -186,19 +202,49 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
     });
   }
   
-  void _removeExercise(int groupIndex, int exerciseIndex) {
-    setState(() {
-      final group = _muscleGroups[groupIndex];
-      final updatedExercises = List<WorkoutExercise>.from(group.exercises);
-      updatedExercises.removeAt(exerciseIndex);
-      _muscleGroups[groupIndex] = group.copyWith(exercises: updatedExercises);
-    });
+  Future<void> _removeExercise(int groupIndex, int exerciseIndex) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.backgroundDarkGreen,
+        title: Text('Remover Exercício?', style: GoogleFonts.outfit(color: AppColors.textLight)),
+        content: Text('Deseja realmente remover este exercício do treino?', style: GoogleFonts.outfit(color: AppColors.textMuted)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar', style: TextStyle(color: AppColors.textMuted))),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Remover', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold))),
+        ],
+      )
+    );
+
+    if (confirm == true) {
+      setState(() {
+        final group = _muscleGroups[groupIndex];
+        final updatedExercises = List<WorkoutExercise>.from(group.exercises);
+        updatedExercises.removeAt(exerciseIndex);
+        _muscleGroups[groupIndex] = group.copyWith(exercises: updatedExercises);
+      });
+    }
   }
   
-  void _removeMuscleGroup(int groupIndex) {
-    setState(() {
-      _muscleGroups.removeAt(groupIndex);
-    });
+  Future<void> _removeMuscleGroup(int groupIndex) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.backgroundDarkGreen,
+        title: Text('Remover Grupo?', style: GoogleFonts.outfit(color: AppColors.textLight)),
+        content: Text('Deseja remover este grupo muscular e todos os seus exercícios?', style: GoogleFonts.outfit(color: AppColors.textMuted)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar', style: TextStyle(color: AppColors.textMuted))),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Remover', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold))),
+        ],
+      )
+    );
+
+    if (confirm == true) {
+      setState(() {
+        _muscleGroups.removeAt(groupIndex);
+      });
+    }
   }
 
   Future<void> _showAddDialog({required String title, required String hint, String? initialValue, required Function(String) onSave}) async {
@@ -257,6 +303,60 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
       await context.read<StrengthWorkoutProvider>().deleteWorkout(widget.template!.id);
       if (mounted) Navigator.pop(context);
     }
+  }
+
+  void _completeExercise(int gIndex, int eIndex) {
+    setState(() {
+      final group = _muscleGroups[gIndex];
+      final exercise = group.exercises[eIndex];
+      
+      // Determine if all are already completed
+      final allCompleted = exercise.sets.isNotEmpty && exercise.sets.every((s) => s.isCompleted);
+      
+      // If all are completed, unmark all. Otherwise, mark all.
+      final updatedSets = exercise.sets.map((s) => s.copyWith(isCompleted: !allCompleted)).toList();
+      
+      final updatedExercises = List<WorkoutExercise>.from(group.exercises);
+      updatedExercises[eIndex] = exercise.copyWith(sets: updatedSets);
+      _muscleGroups[gIndex] = group.copyWith(exercises: updatedExercises);
+    });
+  }
+
+  void _completeGroup(int gIndex) {
+    setState(() {
+      final group = _muscleGroups[gIndex];
+      
+      // Determine if all sets in all exercises are already completed
+      bool allGroupCompleted = true;
+      for (var ex in group.exercises) {
+        if (ex.sets.isEmpty || !ex.sets.every((s) => s.isCompleted)) {
+          allGroupCompleted = false;
+          break;
+        }
+      }
+      
+      // If all are completed, unmark all. Otherwise, mark all.
+      final updatedExercises = group.exercises.map((e) => e.copyWith(
+        sets: e.sets.map((s) => s.copyWith(isCompleted: !allGroupCompleted)).toList(),
+      )).toList();
+      
+      _muscleGroups[gIndex] = group.copyWith(exercises: updatedExercises);
+    });
+  }
+
+  double _getGroupProgress(int gIndex) {
+    final group = _muscleGroups[gIndex];
+    if (group.exercises.isEmpty) return 0;
+    
+    int totalSets = 0;
+    int completedSets = 0;
+    
+    for (var ex in group.exercises) {
+      totalSets += ex.sets.length;
+      completedSets += ex.sets.where((s) => s.isCompleted).length;
+    }
+    
+    return totalSets == 0 ? 0 : completedSets / totalSets;
   }
 
   Future<void> _saveWorkout() async {
@@ -408,17 +508,87 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
   }
 
   Widget _buildMuscleGroupSection(int groupIndex, WorkoutMuscleGroup group) {
+    final progress = _getGroupProgress(groupIndex);
+    final isCompleted = progress == 1.0;
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 24),
+      margin: const EdgeInsets.only(bottom: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(
-                child: GestureDetector(
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  splashColor: AppColors.primaryNeon.withValues(alpha: 0.1),
+                  highlightColor: AppColors.primaryNeon.withValues(alpha: 0.05),
                   onTap: () {
+                    setState(() {
+                      if (_collapsedGroups.contains(groupIndex)) {
+                        _collapsedGroups.remove(groupIndex);
+                      } else {
+                        _collapsedGroups.add(groupIndex);
+                      }
+                    });
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _collapsedGroups.contains(groupIndex) ? LucideIcons.chevronRight : LucideIcons.chevronDown,
+                          color: isCompleted ? AppColors.primaryNeon.withValues(alpha: 0.5) : AppColors.textMuted,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${group.name.toUpperCase()} (${group.exercises.length})',
+                          style: GoogleFonts.outfit(
+                            color: isCompleted ? AppColors.primaryNeon.withValues(alpha: 0.6) : AppColors.primaryNeon,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            letterSpacing: 1.5,
+                            decoration: isCompleted ? TextDecoration.lineThrough : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Progress Circle
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  value: progress,
+                  strokeWidth: 2,
+                  backgroundColor: AppColors.cardBorder,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    isCompleted ? AppColors.primaryNeon : AppColors.textMuted,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: Icon(
+                  isCompleted ? LucideIcons.undo2 : LucideIcons.checkCheck, 
+                  color: isCompleted ? AppColors.textMuted : AppColors.primaryNeon, 
+                  size: 18
+                ),
+                onPressed: () => _completeGroup(groupIndex),
+                tooltip: isCompleted ? 'Desmarcar grupo' : 'Concluir grupo todo',
+                constraints: const BoxConstraints(),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              if (!isCompleted) ...[
+                IconButton(
+                  icon: const Icon(LucideIcons.edit2, color: AppColors.primaryNeon, size: 14),
+                  onPressed: () {
                     _showAddDialog(
                       title: 'Editar Grupo Muscular',
                       hint: 'Ex: Peito, Costas, Pernas',
@@ -430,53 +600,78 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
                       },
                     );
                   },
-                  child: Row(
-                    children: [
-                      Text(
-                        group.name.toUpperCase(),
-                        style: GoogleFonts.outfit(
-                          color: AppColors.primaryNeon,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Icon(LucideIcons.edit2, color: AppColors.primaryNeon, size: 14),
-                    ],
-                  ),
+                  constraints: const BoxConstraints(),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
-              ),
-              IconButton(
-                icon: const Icon(LucideIcons.trash2, color: AppColors.error, size: 18),
-                onPressed: () => _removeMuscleGroup(groupIndex),
-                constraints: const BoxConstraints(),
-                padding: EdgeInsets.zero,
-              ),
+                IconButton(
+                  icon: const Icon(LucideIcons.trash2, color: AppColors.error, size: 18),
+                  onPressed: () => _removeMuscleGroup(groupIndex),
+                  constraints: const BoxConstraints(),
+                  padding: EdgeInsets.zero,
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 12),
           
-          // Exercises
-          ...group.exercises.asMap().entries.map((exEntry) {
-            return _buildExerciseCard(groupIndex, exEntry.key, exEntry.value);
-          }),
-          
-          // Add Exercise Button (Small)
-          TextButton.icon(
-            onPressed: () => _addExercise(groupIndex),
-            icon: const Icon(LucideIcons.plus, size: 16, color: AppColors.textLight),
-            label: Text('Adicionar Exercício para ${group.name}', style: GoogleFonts.outfit(color: AppColors.textLight)),
-          ),
+          // Exercises (Hidden if collapsed)
+          if (!_collapsedGroups.contains(groupIndex)) ...[
+            ...group.exercises.asMap().entries.map((exEntry) {
+              return _buildExerciseCard(groupIndex, exEntry.key, exEntry.value);
+            }),
+            
+            // Add Exercise Button (Small)
+            TextButton.icon(
+              onPressed: () => _addExercise(groupIndex),
+              icon: const Icon(LucideIcons.plus, size: 16, color: AppColors.textLight),
+              label: Text('Adicionar Exercício para ${group.name}', style: GoogleFonts.outfit(color: AppColors.textLight)),
+            ),
+            
+            // Bottom Collapse Button
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _collapsedGroups.add(groupIndex);
+                  });
+                },
+                icon: const Icon(LucideIcons.chevronUp, size: 14, color: AppColors.textMuted),
+                label: Text(
+                  'RECOLHER ${group.name.toUpperCase()}', 
+                  style: GoogleFonts.outfit(
+                    color: AppColors.textMuted, 
+                    fontSize: 10, 
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2
+                  )
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
   Widget _buildExerciseCard(int groupIndex, int exerciseIndex, WorkoutExercise exercise) {
+    int totalSets = exercise.sets.length;
+    int completedSets = exercise.sets.where((s) => s.isCompleted).length;
+    double progress = totalSets == 0 ? 0 : completedSets / totalSets;
+    bool isCompleted = progress == 1.0;
+
     return GlassContainer(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
+      backgroundColor: isCompleted 
+        ? AppColors.primaryNeon.withValues(alpha: 0.05) 
+        : AppColors.cardBackground.withValues(alpha: 0.1),
+      borderColor: isCompleted 
+        ? AppColors.primaryNeon.withValues(alpha: 0.3) 
+        : AppColors.cardBorder,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -485,7 +680,7 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
             children: [
               Expanded(
                 child: GestureDetector(
-                  onTap: () {
+                  onTap: isCompleted ? null : () {
                     _showAddDialog(
                       title: 'Editar Exercício',
                       hint: 'Ex: Supino Reto',
@@ -502,23 +697,61 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
                   },
                   child: Row(
                     children: [
-                      Expanded(
-                        child: Text(
-                          exercise.name,
-                          style: GoogleFonts.outfit(color: AppColors.textLight, fontSize: 18, fontWeight: FontWeight.bold),
+                      // Exercise Progress Indicator
+                      SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          value: progress,
+                          strokeWidth: 2,
+                          backgroundColor: AppColors.cardBorder,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            isCompleted ? AppColors.primaryNeon : AppColors.textMuted,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Icon(LucideIcons.edit2, color: AppColors.textMuted, size: 14),
+                      Expanded(
+                        child: Text(
+                          exercise.name,
+                          style: GoogleFonts.outfit(
+                            color: isCompleted ? AppColors.textLight.withValues(alpha: 0.7) : AppColors.textLight, 
+                            fontSize: 18, 
+                            fontWeight: FontWeight.bold,
+                            decoration: isCompleted ? TextDecoration.lineThrough : null,
+                          ),
+                        ),
+                      ),
+                      if (!isCompleted) ...[
+                        const SizedBox(width: 8),
+                        const Icon(LucideIcons.edit2, color: AppColors.textMuted, size: 14),
+                      ],
                     ],
                   ),
                 ),
               ),
-              IconButton(
-                icon: const Icon(LucideIcons.x, color: AppColors.textMuted, size: 18),
-                onPressed: () => _removeExercise(groupIndex, exerciseIndex),
-                constraints: const BoxConstraints(),
-                padding: EdgeInsets.zero,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      isCompleted ? LucideIcons.undo2 : LucideIcons.checkCheck, 
+                      color: isCompleted ? AppColors.textMuted : AppColors.primaryNeon, 
+                      size: 18
+                    ),
+                    onPressed: () => _completeExercise(groupIndex, exerciseIndex),
+                    tooltip: isCompleted ? 'Desmarcar exercício' : 'Concluir exercício todo',
+                    constraints: const BoxConstraints(),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  if (!isCompleted)
+                    IconButton(
+                      icon: const Icon(LucideIcons.x, color: AppColors.textMuted, size: 18),
+                      onPressed: () => _removeExercise(groupIndex, exerciseIndex),
+                      constraints: const BoxConstraints(),
+                      padding: EdgeInsets.zero,
+                    ),
+                ],
               ),
             ],
           ),
@@ -565,6 +798,20 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
         padding: const EdgeInsets.only(right: 16),
         child: const Icon(LucideIcons.trash2, color: Colors.white),
       ),
+      confirmDismiss: (direction) async {
+        return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: AppColors.backgroundDarkGreen,
+            title: Text('Remover Série?', style: GoogleFonts.outfit(color: AppColors.textLight)),
+            content: Text('Deseja realmente remover esta série?', style: GoogleFonts.outfit(color: AppColors.textMuted)),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar', style: TextStyle(color: AppColors.textMuted))),
+              TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Remover', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold))),
+            ],
+          )
+        );
+      },
       onDismissed: (_) => _removeSet(groupIndex, exerciseIndex, setIndex),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -572,7 +819,32 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
         child: Row(
           children: [
             SizedBox(
-              width: 32,
+              width: 24,
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                icon: Icon(LucideIcons.minusCircle, color: AppColors.error.withValues(alpha: 0.5), size: 16),
+                onPressed: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      backgroundColor: AppColors.backgroundDarkGreen,
+                      title: Text('Remover Série?', style: GoogleFonts.outfit(color: AppColors.textLight)),
+                      content: Text('Deseja realmente remover esta série?', style: GoogleFonts.outfit(color: AppColors.textMuted)),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar', style: TextStyle(color: AppColors.textMuted))),
+                        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Remover', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold))),
+                      ],
+                    )
+                  );
+                  if (confirm == true) {
+                    _removeSet(groupIndex, exerciseIndex, setIndex);
+                  }
+                },
+              ),
+            ),
+            SizedBox(
+              width: 20,
               child: Center(
                 child: Text('${setIndex + 1}', style: GoogleFonts.outfit(color: AppColors.textMuted, fontWeight: FontWeight.bold)),
               ),

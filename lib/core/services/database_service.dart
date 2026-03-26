@@ -4,6 +4,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:path/path.dart';
 import '../../features/training/data/models/training_plan.dart';
 import '../../features/strength_training/domain/models/strength_workout.dart';
+import '../../features/strength_training/domain/models/workout_block.dart';
 
 class RunSplit {
   final int timeSeconds;
@@ -171,7 +172,7 @@ class UserProfile {
 class DatabaseService {
   static Database? _database;
 
-  static const _databaseVersion = 17;
+  static const _databaseVersion = 18;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -220,6 +221,19 @@ class DatabaseService {
         );
         await db.execute(
           'CREATE TABLE goal_history(periodId TEXT PRIMARY KEY, goalType TEXT, goalValue REAL)',
+        );
+        // Strength Blocks Evolution
+        await db.execute(
+          'CREATE TABLE workout_blocks(id TEXT PRIMARY KEY, name TEXT, description TEXT)',
+        );
+        await db.execute(
+          'CREATE TABLE block_exercises(id TEXT PRIMARY KEY, blockId TEXT, name TEXT, defaultSets INTEGER, defaultReps TEXT, defaultWeight REAL, isTimeBased INTEGER, orderIndex INTEGER)',
+        );
+        await db.execute(
+          'CREATE TABLE strength_workout_templates(id TEXT PRIMARY KEY, name TEXT)',
+        );
+        await db.execute(
+          'CREATE TABLE template_items(id TEXT PRIMARY KEY, templateId TEXT, type TEXT, itemId TEXT, orderIndex INTEGER, overrides TEXT)',
         );
         // Pre-populate defaults
         for (double dist in [1.0, 5.0, 10.0, 15.0]) {
@@ -305,6 +319,20 @@ class DatabaseService {
         }
         if (oldVersion < 17) {
           await db.execute('ALTER TABLE user_profile ADD COLUMN kmNotificationsEnabled INTEGER DEFAULT 1');
+        }
+        if (oldVersion < 18) {
+          await db.execute(
+            'CREATE TABLE workout_blocks(id TEXT PRIMARY KEY, name TEXT, description TEXT)',
+          );
+          await db.execute(
+            'CREATE TABLE block_exercises(id TEXT PRIMARY KEY, blockId TEXT, name TEXT, defaultSets INTEGER, defaultReps TEXT, defaultWeight REAL, isTimeBased INTEGER, orderIndex INTEGER)',
+          );
+          await db.execute(
+            'CREATE TABLE strength_workout_templates(id TEXT PRIMARY KEY, name TEXT)',
+          );
+          await db.execute(
+            'CREATE TABLE template_items(id TEXT PRIMARY KEY, templateId TEXT, type TEXT, itemId TEXT, orderIndex INTEGER, overrides TEXT)',
+          );
         }
       },
     );
@@ -827,5 +855,86 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> getExerciseDictionary(String muscleGroupId) async {
     final db = await database;
     return await db.query('exercise_dictionary', where: 'muscleGroupId = ?', whereArgs: [muscleGroupId]);
+  }
+
+  // --- Workout Blocks & Modular Templates ---
+
+  Future<void> saveWorkoutBlock(WorkoutBlock block) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.insert('workout_blocks', block.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+      // Remove previous exercises to overwrite
+      await txn.delete('block_exercises', where: 'blockId = ?', whereArgs: [block.id]);
+      for (var exercise in block.exercises) {
+        final map = exercise.toMap();
+        map['blockId'] = block.id;
+        await txn.insert('block_exercises', map);
+      }
+    });
+  }
+
+  Future<List<WorkoutBlock>> getWorkoutBlocks() async {
+    final db = await database;
+    final List<Map<String, dynamic>> blockMaps = await db.query('workout_blocks');
+    List<WorkoutBlock> blocks = [];
+    for (var map in blockMaps) {
+      final List<Map<String, dynamic>> exerciseMaps = await db.query(
+        'block_exercises',
+        where: 'blockId = ?',
+        whereArgs: [map['id']],
+        orderBy: 'orderIndex ASC',
+      );
+      blocks.add(WorkoutBlock.fromMap(
+        map,
+        exercises: exerciseMaps.map((e) => BlockExercise.fromMap(e)).toList(),
+      ));
+    }
+    return blocks;
+  }
+
+  Future<void> saveWorkoutTemplate(StrengthWorkoutTemplate template) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.insert('strength_workout_templates', template.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+      await txn.delete('template_items', where: 'templateId = ?', whereArgs: [template.id]);
+      for (var item in template.items) {
+        await txn.insert('template_items', item.toMap(template.id));
+      }
+    });
+  }
+
+  Future<List<StrengthWorkoutTemplate>> getWorkoutTemplates() async {
+    final db = await database;
+    final List<Map<String, dynamic>> templateMaps = await db.query('strength_workout_templates');
+    List<StrengthWorkoutTemplate> templates = [];
+    for (var map in templateMaps) {
+      final List<Map<String, dynamic>> itemMaps = await db.query(
+        'template_items',
+        where: 'templateId = ?',
+        whereArgs: [map['id']],
+        orderBy: 'orderIndex ASC',
+      );
+      templates.add(StrengthWorkoutTemplate.fromMap(
+        map,
+        items: itemMaps.map((i) => TemplateItem.fromMap(i)).toList(),
+      ));
+    }
+    return templates;
+  }
+
+  Future<void> deleteWorkoutBlock(String id) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('workout_blocks', where: 'id = ?', whereArgs: [id]);
+      await txn.delete('block_exercises', where: 'blockId = ?', whereArgs: [id]);
+    });
+  }
+
+  Future<void> deleteWorkoutTemplate(String id) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('strength_workout_templates', where: 'id = ?', whereArgs: [id]);
+      await txn.delete('template_items', where: 'templateId = ?', whereArgs: [id]);
+    });
   }
 }

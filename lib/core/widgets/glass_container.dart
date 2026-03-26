@@ -11,6 +11,7 @@ class GlassContainer extends StatelessWidget {
   final double borderRadius;
   final bool hasNeonBorder;
   final Color? borderColor;
+  final Color? backgroundColor;
   final VoidCallback? onTap;
 
   const GlassContainer({
@@ -23,6 +24,7 @@ class GlassContainer extends StatelessWidget {
     this.borderRadius = 16,
     this.hasNeonBorder = false,
     this.borderColor,
+    this.backgroundColor,
     this.onTap,
   });
 
@@ -35,9 +37,9 @@ class GlassContainer extends StatelessWidget {
       height: height,
       margin: margin,
       decoration: BoxDecoration(
-        color: isDark 
+        color: backgroundColor ?? (isDark 
             ? AppColors.cardBackground 
-            : Colors.white.withValues(alpha: 0.8),
+            : Colors.white.withValues(alpha: 0.8)),
         borderRadius: BorderRadius.circular(borderRadius),
         border: hasNeonBorder || isDark || borderColor != null
             ? Border.all(

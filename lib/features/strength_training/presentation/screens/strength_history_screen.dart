@@ -7,6 +7,7 @@ import '../../../../core/widgets/glass_container.dart';
 import '../providers/strength_workout_provider.dart';
 import '../../domain/models/strength_workout.dart';
 import 'new_workout_screen.dart';
+import 'workout_blocks_screen.dart';
 
 class StrengthHistoryScreen extends StatelessWidget {
   const StrengthHistoryScreen({super.key});
@@ -27,13 +28,17 @@ class StrengthHistoryScreen extends StatelessWidget {
         ),
         actions: [
           IconButton(
-            icon: const Icon(LucideIcons.plus, color: AppColors.primaryNeon),
+            icon: const Icon(LucideIcons.library, color: AppColors.primaryNeon),
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const NewWorkoutScreen()),
+                MaterialPageRoute(builder: (context) => const WorkoutBlocksScreen()),
               );
             },
+          ),
+          IconButton(
+            icon: const Icon(LucideIcons.plus, color: AppColors.primaryNeon),
+            onPressed: () => _showNewWorkoutOptions(context),
           ),
         ],
       ),
@@ -73,12 +78,7 @@ class StrengthHistoryScreen extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppColors.primaryNeon,
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const NewWorkoutScreen()),
-          );
-        },
+        onPressed: () => _showNewWorkoutOptions(context),
         icon: const Icon(LucideIcons.dumbbell, color: Colors.black),
         label: Text(
           'Novo Treino',
@@ -88,6 +88,108 @@ class StrengthHistoryScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  void _showNewWorkoutOptions(BuildContext context) {
+    final provider = context.read<StrengthWorkoutProvider>();
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.backgroundDarkGreen,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Iniciar Novo Treino',
+                style: GoogleFonts.outfit(
+                  color: AppColors.textLight,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              if (provider.templates.isNotEmpty) ...[
+                Text(
+                  'SEUS TEMPLATES',
+                  style: GoogleFonts.outfit(
+                    color: AppColors.primaryNeon,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: provider.templates.length,
+                    itemBuilder: (context, index) {
+                      final template = provider.templates[index];
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryNeon.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(LucideIcons.clipboardList, color: AppColors.primaryNeon, size: 20),
+                        ),
+                        title: Text(template.name, style: const TextStyle(color: AppColors.textLight)),
+                        subtitle: Text('${template.items.length} blocos/exercícios', style: const TextStyle(color: AppColors.textMuted)),
+                        onTap: () {
+                          final workout = provider.createWorkoutFromTemplate(template);
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => NewWorkoutScreen(templateSession: workout),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+                const Divider(color: AppColors.cardBorder, height: 32),
+              ],
+              
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.textMuted.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(LucideIcons.plus, color: AppColors.textLight, size: 20),
+                ),
+                title: const Text('Treino do Zero', style: TextStyle(color: AppColors.textLight)),
+                subtitle: const Text('Criar um treino totalmente novo', style: TextStyle(color: AppColors.textMuted)),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const NewWorkoutScreen()),
+                  );
+                },
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        );
+      },
     );
   }
 
