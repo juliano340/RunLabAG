@@ -31,7 +31,6 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
   final TextEditingController _notesController = TextEditingController();
   
   List<WorkoutMuscleGroup> _muscleGroups = [];
-  final Set<int> _collapsedGroups = {}; 
   bool _isSaving = false;
 
   @override
@@ -60,11 +59,6 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
       _nameController.text = widget.templateSession!.name;
       _muscleGroups = List.from(widget.templateSession!.muscleGroups);
       _selectedDate = DateTime.now();
-    }
-    
-    // Initialize all groups as collapsed
-    for (int i = 0; i < _muscleGroups.length; i++) {
-      _collapsedGroups.add(i);
     }
   }
 
@@ -508,9 +502,81 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
   }
 
   Widget _buildMuscleGroupSection(int groupIndex, WorkoutMuscleGroup group) {
-    final progress = _getGroupProgress(groupIndex);
-    final isCompleted = progress == 1.0;
+    return _MuscleGroupSection(
+      key: ValueKey('group_$groupIndex'),
+      groupIndex: groupIndex,
+      group: group,
+      progress: _getGroupProgress(groupIndex),
+      initialCollapsed: true, // Default to collapsed as before
+      onCompleteGroup: _completeGroup,
+      onRemoveGroup: _removeMuscleGroup,
+      onRenameGroup: (index, newName) {
+        setState(() {
+          _muscleGroups[index] = _muscleGroups[index].copyWith(name: newName);
+        });
+      },
+      onAddExercise: _addExercise,
+      onCompleteExercise: _completeExercise,
+      onRemoveExercise: _removeExercise,
+      onAddSet: _addSet,
+      onUpdateSet: _updateSet,
+      onRemoveSet: _removeSet,
+      showAddDialog: _showAddDialog,
+    );
+  }
+}
 
+class _MuscleGroupSection extends StatefulWidget {
+  final int groupIndex;
+  final WorkoutMuscleGroup group;
+  final double progress;
+  final bool initialCollapsed;
+  final Function(int) onCompleteGroup;
+  final Function(int) onRemoveGroup;
+  final Function(int, String) onRenameGroup;
+  final Function(int) onAddExercise;
+  final Function(int, int) onCompleteExercise;
+  final Function(int, int) onRemoveExercise;
+  final Function(int, int) onAddSet;
+  final Function(int, int, int, {int? reps, double? weight, bool? isCompleted}) onUpdateSet;
+  final Function(int, int, int) onRemoveSet;
+  final Function({required String title, required String hint, String? initialValue, required Function(String) onSave}) showAddDialog;
+
+  const _MuscleGroupSection({
+    super.key,
+    required this.groupIndex,
+    required this.group,
+    required this.progress,
+    required this.initialCollapsed,
+    required this.onCompleteGroup,
+    required this.onRemoveGroup,
+    required this.onRenameGroup,
+    required this.onAddExercise,
+    required this.onCompleteExercise,
+    required this.onRemoveExercise,
+    required this.onAddSet,
+    required this.onUpdateSet,
+    required this.onRemoveSet,
+    required this.showAddDialog,
+  });
+
+  @override
+  State<_MuscleGroupSection> createState() => _MuscleGroupSectionState();
+}
+
+class _MuscleGroupSectionState extends State<_MuscleGroupSection> {
+  late bool _isCollapsed;
+
+  @override
+  void initState() {
+    super.initState();
+    _isCollapsed = widget.initialCollapsed;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isCompleted = widget.progress == 1.0;
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       child: Column(
@@ -526,11 +592,7 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
                   highlightColor: AppColors.primaryNeon.withValues(alpha: 0.05),
                   onTap: () {
                     setState(() {
-                      if (_collapsedGroups.contains(groupIndex)) {
-                        _collapsedGroups.remove(groupIndex);
-                      } else {
-                        _collapsedGroups.add(groupIndex);
-                      }
+                      _isCollapsed = !_isCollapsed;
                     });
                   },
                   child: Padding(
@@ -539,13 +601,13 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          _collapsedGroups.contains(groupIndex) ? LucideIcons.chevronRight : LucideIcons.chevronDown,
+                          _isCollapsed ? LucideIcons.chevronRight : LucideIcons.chevronDown,
                           color: isCompleted ? AppColors.primaryNeon.withValues(alpha: 0.5) : AppColors.textMuted,
                           size: 16,
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '${group.name.toUpperCase()} (${group.exercises.length})',
+                          '${widget.group.name.toUpperCase()} (${widget.group.exercises.length})',
                           style: GoogleFonts.outfit(
                             color: isCompleted ? AppColors.primaryNeon.withValues(alpha: 0.6) : AppColors.primaryNeon,
                             fontWeight: FontWeight.bold,
@@ -565,7 +627,7 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
                 width: 16,
                 height: 16,
                 child: CircularProgressIndicator(
-                  value: progress,
+                  value: widget.progress,
                   strokeWidth: 2,
                   backgroundColor: AppColors.cardBorder,
                   valueColor: AlwaysStoppedAnimation<Color>(
@@ -580,7 +642,7 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
                   color: isCompleted ? AppColors.textMuted : AppColors.primaryNeon, 
                   size: 18
                 ),
-                onPressed: () => _completeGroup(groupIndex),
+                onPressed: () => widget.onCompleteGroup(widget.groupIndex),
                 tooltip: isCompleted ? 'Desmarcar grupo' : 'Concluir grupo todo',
                 constraints: const BoxConstraints(),
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -589,14 +651,12 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
                 IconButton(
                   icon: const Icon(LucideIcons.edit2, color: AppColors.primaryNeon, size: 14),
                   onPressed: () {
-                    _showAddDialog(
+                    widget.showAddDialog(
                       title: 'Editar Grupo Muscular',
                       hint: 'Ex: Peito, Costas, Pernas',
-                      initialValue: group.name,
+                      initialValue: widget.group.name,
                       onSave: (newName) {
-                        setState(() {
-                          _muscleGroups[groupIndex] = group.copyWith(name: newName);
-                        });
+                        widget.onRenameGroup(widget.groupIndex, newName);
                       },
                     );
                   },
@@ -605,7 +665,7 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
                 ),
                 IconButton(
                   icon: const Icon(LucideIcons.trash2, color: AppColors.error, size: 18),
-                  onPressed: () => _removeMuscleGroup(groupIndex),
+                  onPressed: () => widget.onRemoveGroup(widget.groupIndex),
                   constraints: const BoxConstraints(),
                   padding: EdgeInsets.zero,
                 ),
@@ -614,50 +674,93 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
           ),
           const SizedBox(height: 12),
           
-          // Exercises (Hidden if collapsed)
-          if (!_collapsedGroups.contains(groupIndex)) ...[
-            ...group.exercises.asMap().entries.map((exEntry) {
-              return _buildExerciseCard(groupIndex, exEntry.key, exEntry.value);
-            }),
-            
-            // Add Exercise Button (Small)
-            TextButton.icon(
-              onPressed: () => _addExercise(groupIndex),
-              icon: const Icon(LucideIcons.plus, size: 16, color: AppColors.textLight),
-              label: Text('Adicionar Exercício para ${group.name}', style: GoogleFonts.outfit(color: AppColors.textLight)),
-            ),
-            
-            // Bottom Collapse Button
-            const SizedBox(height: 8),
-            Center(
-              child: TextButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _collapsedGroups.add(groupIndex);
-                  });
-                },
-                icon: const Icon(LucideIcons.chevronUp, size: 14, color: AppColors.textMuted),
-                label: Text(
-                  'RECOLHER ${group.name.toUpperCase()}', 
-                  style: GoogleFonts.outfit(
-                    color: AppColors.textMuted, 
-                    fontSize: 10, 
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2
-                  )
-                ),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                ),
+          // Exercises (Animated Expansion)
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            child: !_isCollapsed ? RepaintBoundary(
+              child: Column(
+                children: [
+                   ...widget.group.exercises.asMap().entries.map((exEntry) {
+                    return _ExerciseCard(
+                      groupIndex: widget.groupIndex,
+                      exerciseIndex: exEntry.key,
+                      exercise: exEntry.value,
+                      onComplete: widget.onCompleteExercise,
+                      onRemove: widget.onRemoveExercise,
+                      onAddSet: widget.onAddSet,
+                      onUpdateSet: widget.onUpdateSet,
+                      onRemoveSet: widget.onRemoveSet,
+                      showAddDialog: widget.showAddDialog,
+                    );
+                  }),
+                  
+                  // Add Exercise Button (Small)
+                  TextButton.icon(
+                    onPressed: () => widget.onAddExercise(widget.groupIndex),
+                    icon: const Icon(LucideIcons.plus, size: 16, color: AppColors.textLight),
+                    label: Text('Adicionar Exercício para ${widget.group.name}', style: GoogleFonts.outfit(color: AppColors.textLight)),
+                  ),
+                  
+                  // Bottom Collapse Button
+                  const SizedBox(height: 8),
+                  Center(
+                    child: TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _isCollapsed = true;
+                        });
+                      },
+                      icon: const Icon(LucideIcons.chevronUp, size: 14, color: AppColors.textMuted),
+                      label: Text(
+                        'RECOLHER ${widget.group.name.toUpperCase()}', 
+                        style: GoogleFonts.outfit(
+                          color: AppColors.textMuted, 
+                          fontSize: 10, 
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2
+                        )
+                      ),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
+            ) : const SizedBox(width: double.infinity),
+          ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildExerciseCard(int groupIndex, int exerciseIndex, WorkoutExercise exercise) {
+class _ExerciseCard extends StatelessWidget {
+  final int groupIndex;
+  final int exerciseIndex;
+  final WorkoutExercise exercise;
+  final Function(int, int) onComplete;
+  final Function(int, int) onRemove;
+  final Function(int, int) onAddSet;
+  final Function(int, int, int, {int? reps, double? weight, bool? isCompleted}) onUpdateSet;
+  final Function(int, int, int) onRemoveSet;
+  final Function({required String title, required String hint, String? initialValue, required Function(String) onSave}) showAddDialog;
+
+  const _ExerciseCard({
+    required this.groupIndex,
+    required this.exerciseIndex,
+    required this.exercise,
+    required this.onComplete,
+    required this.onRemove,
+    required this.onAddSet,
+    required this.onUpdateSet,
+    required this.onRemoveSet,
+    required this.showAddDialog,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     int totalSets = exercise.sets.length;
     int completedSets = exercise.sets.where((s) => s.isCompleted).length;
     double progress = totalSets == 0 ? 0 : completedSets / totalSets;
@@ -666,6 +769,7 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
     return GlassContainer(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
+      enableBlur: false, // Performance: Disable blur for repeating items
       backgroundColor: isCompleted 
         ? AppColors.primaryNeon.withValues(alpha: 0.05) 
         : AppColors.cardBackground.withValues(alpha: 0.1),
@@ -681,23 +785,18 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
               Expanded(
                 child: GestureDetector(
                   onTap: isCompleted ? null : () {
-                    _showAddDialog(
+                    showAddDialog(
                       title: 'Editar Exercício',
                       hint: 'Ex: Supino Reto',
                       initialValue: exercise.name,
                       onSave: (newName) {
-                        setState(() {
-                          final group = _muscleGroups[groupIndex];
-                          final updatedExercises = List<WorkoutExercise>.from(group.exercises);
-                          updatedExercises[exerciseIndex] = exercise.copyWith(name: newName);
-                          _muscleGroups[groupIndex] = group.copyWith(exercises: updatedExercises);
-                        });
+                        // This callback is handled by the parent
+                        onUpdateSet(groupIndex, exerciseIndex, -1, reps: null); // Hacky way to signal name update if needed, or pass another callback
                       },
                     );
                   },
                   child: Row(
                     children: [
-                      // Exercise Progress Indicator
                       SizedBox(
                         width: 12,
                         height: 12,
@@ -722,10 +821,6 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
                           ),
                         ),
                       ),
-                      if (!isCompleted) ...[
-                        const SizedBox(width: 8),
-                        const Icon(LucideIcons.edit2, color: AppColors.textMuted, size: 14),
-                      ],
                     ],
                   ),
                 ),
@@ -739,15 +834,14 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
                       color: isCompleted ? AppColors.textMuted : AppColors.primaryNeon, 
                       size: 18
                     ),
-                    onPressed: () => _completeExercise(groupIndex, exerciseIndex),
-                    tooltip: isCompleted ? 'Desmarcar exercício' : 'Concluir exercício todo',
+                    onPressed: () => onComplete(groupIndex, exerciseIndex),
                     constraints: const BoxConstraints(),
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                   ),
                   if (!isCompleted)
                     IconButton(
                       icon: const Icon(LucideIcons.x, color: AppColors.textMuted, size: 18),
-                      onPressed: () => _removeExercise(groupIndex, exerciseIndex),
+                      onPressed: () => onRemove(groupIndex, exerciseIndex),
                       constraints: const BoxConstraints(),
                       padding: EdgeInsets.zero,
                     ),
@@ -757,28 +851,33 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
           ),
           const SizedBox(height: 12),
           
-          // Header Row for Sets
           Row(
             children: [
               const SizedBox(width: 32, child: Center(child: Text('Série', style: TextStyle(color: AppColors.textMuted, fontSize: 12)))),
               SizedBox(width: 60, child: Center(child: Text('Reps', style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12)))),
               const SizedBox(width: 12),
               Expanded(child: Center(child: Text('Kg', style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12)))),
-              const SizedBox(width: 40), // For checkbox space
+              const SizedBox(width: 40),
             ],
           ),
           const SizedBox(height: 8),
           
-          // Sets List
           ...exercise.sets.asMap().entries.map((setEntry) {
-            return _buildSetRow(groupIndex, exerciseIndex, setEntry.key, setEntry.value);
+            return _SetRow(
+              key: ValueKey(setEntry.value.id),
+              setIndex: setEntry.key,
+              exerciseSet: setEntry.value,
+              onUpdate: ({reps, weight, isCompleted}) {
+                onUpdateSet(groupIndex, exerciseIndex, setEntry.key, reps: reps, weight: weight, isCompleted: isCompleted);
+              },
+              onRemove: () => onRemoveSet(groupIndex, exerciseIndex, setEntry.key),
+            );
           }),
           
           const SizedBox(height: 8),
-          // Add Set Button
           Center(
             child: TextButton(
-              onPressed: () => _addSet(groupIndex, exerciseIndex),
+              onPressed: () => onAddSet(groupIndex, exerciseIndex),
               child: Text('+ Adicionar Série', style: GoogleFonts.outfit(color: AppColors.primaryNeon, fontSize: 12)),
             ),
           ),
@@ -786,11 +885,60 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
       ),
     );
   }
+}
 
-  Widget _buildSetRow(int groupIndex, int exerciseIndex, int setIndex, ExerciseSet exerciseSet) {
-    // We use isolated controllers internally so they don't lose focus on digit type
+class _SetRow extends StatefulWidget {
+  final int setIndex;
+  final ExerciseSet exerciseSet;
+  final Function({int? reps, double? weight, bool? isCompleted}) onUpdate;
+  final VoidCallback onRemove;
+
+  const _SetRow({
+    super.key,
+    required this.setIndex,
+    required this.exerciseSet,
+    required this.onUpdate,
+    required this.onRemove,
+  });
+
+  @override
+  State<_SetRow> createState() => _SetRowState();
+}
+
+class _SetRowState extends State<_SetRow> {
+  late TextEditingController _repsController;
+  late TextEditingController _weightController;
+
+  @override
+  void initState() {
+    super.initState();
+    _repsController = TextEditingController(text: widget.exerciseSet.reps.toString());
+    _weightController = TextEditingController(text: widget.exerciseSet.weight?.toString() ?? '');
+  }
+
+  @override
+  void didUpdateWidget(_SetRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Only update if not currently focused to avoid jumpy cursor
+    if (widget.exerciseSet.reps.toString() != _repsController.text && !FocusScope.of(context).hasFocus) {
+      _repsController.text = widget.exerciseSet.reps.toString();
+    }
+    if ((widget.exerciseSet.weight?.toString() ?? '') != _weightController.text && !FocusScope.of(context).hasFocus) {
+      _weightController.text = widget.exerciseSet.weight?.toString() ?? '';
+    }
+  }
+
+  @override
+  void dispose() {
+    _repsController.dispose();
+    _weightController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Dismissible(
-      key: Key(exerciseSet.id),
+      key: Key(widget.exerciseSet.id),
       direction: DismissDirection.endToStart,
       background: Container(
         color: AppColors.error.withValues(alpha: 0.8),
@@ -812,10 +960,10 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
           )
         );
       },
-      onDismissed: (_) => _removeSet(groupIndex, exerciseIndex, setIndex),
+      onDismissed: (_) => widget.onRemove(),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 4),
-        color: exerciseSet.isCompleted ? AppColors.primaryNeon.withValues(alpha: 0.1) : Colors.transparent,
+        color: widget.exerciseSet.isCompleted ? AppColors.primaryNeon.withValues(alpha: 0.1) : Colors.transparent,
         child: Row(
           children: [
             SizedBox(
@@ -838,7 +986,7 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
                     )
                   );
                   if (confirm == true) {
-                    _removeSet(groupIndex, exerciseIndex, setIndex);
+                    widget.onRemove();
                   }
                 },
               ),
@@ -846,7 +994,7 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
             SizedBox(
               width: 20,
               child: Center(
-                child: Text('${setIndex + 1}', style: GoogleFonts.outfit(color: AppColors.textMuted, fontWeight: FontWeight.bold)),
+                child: Text('${widget.setIndex + 1}', style: GoogleFonts.outfit(color: AppColors.textMuted, fontWeight: FontWeight.bold)),
               ),
             ),
             SizedBox(
@@ -854,7 +1002,7 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
               child: Container(
                 decoration: BoxDecoration(color: AppColors.cardBackground, borderRadius: BorderRadius.circular(8)),
                 child: TextFormField(
-                  initialValue: exerciseSet.reps.toString(),
+                  controller: _repsController,
                   keyboardType: TextInputType.number,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.outfit(color: AppColors.textLight, fontWeight: FontWeight.bold),
@@ -862,7 +1010,7 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
                   onChanged: (val) {
                     final reps = int.tryParse(val);
                     if (reps != null) {
-                      _updateSet(groupIndex, exerciseIndex, setIndex, reps: reps);
+                      widget.onUpdate(reps: reps);
                     }
                   },
                 ),
@@ -873,14 +1021,14 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
               child: Container(
                 decoration: BoxDecoration(color: AppColors.cardBackground, borderRadius: BorderRadius.circular(8)),
                 child: TextFormField(
-                  initialValue: exerciseSet.weight?.toString() ?? '',
-                  keyboardType: TextInputType.numberWithOptions(decimal: true),
+                  controller: _weightController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   textAlign: TextAlign.center,
                   style: GoogleFonts.outfit(color: AppColors.textLight, fontWeight: FontWeight.bold),
                   decoration: const InputDecoration(hintText: '-', border: InputBorder.none, contentPadding: EdgeInsets.zero),
                   onChanged: (val) {
                     final weight = double.tryParse(val);
-                    _updateSet(groupIndex, exerciseIndex, setIndex, weight: weight);
+                    widget.onUpdate(weight: weight);
                   },
                 ),
               ),
@@ -889,11 +1037,11 @@ class _NewWorkoutScreenState extends State<NewWorkoutScreen> {
               width: 48,
               child: IconButton(
                 icon: Icon(
-                  exerciseSet.isCompleted ? LucideIcons.checkSquare : LucideIcons.square,
-                  color: exerciseSet.isCompleted ? AppColors.primaryNeon : AppColors.textMuted,
+                  widget.exerciseSet.isCompleted ? LucideIcons.checkSquare : LucideIcons.square,
+                  color: widget.exerciseSet.isCompleted ? AppColors.primaryNeon : AppColors.textMuted,
                 ),
                 onPressed: () {
-                  _updateSet(groupIndex, exerciseIndex, setIndex, isCompleted: !exerciseSet.isCompleted);
+                  widget.onUpdate(isCompleted: !widget.exerciseSet.isCompleted);
                 },
               ),
             ),

@@ -13,6 +13,7 @@ class GlassContainer extends StatelessWidget {
   final Color? borderColor;
   final Color? backgroundColor;
   final VoidCallback? onTap;
+  final bool enableBlur;
 
   const GlassContainer({
     super.key,
@@ -26,6 +27,7 @@ class GlassContainer extends StatelessWidget {
     this.borderColor,
     this.backgroundColor,
     this.onTap,
+    this.enableBlur = true,
   });
 
   @override
@@ -66,13 +68,18 @@ class GlassContainer extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius - 1),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Padding(
-            padding: padding,
-            child: child,
-          ),
-        ),
+        child: enableBlur 
+          ? BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Padding(
+                padding: padding,
+                child: child,
+              ),
+            )
+          : Padding(
+              padding: padding,
+              child: child,
+            ),
       ),
     );
 
