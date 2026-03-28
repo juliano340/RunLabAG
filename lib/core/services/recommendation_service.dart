@@ -158,7 +158,8 @@ class RecommendationService {
       }
       if (moodSignal > 0) inc += 0.02; // bonus for positive mood
 
-      double nextGoal = (weekKm * (1 + inc) * 2).roundToDouble() / 2;
+      // PROPOSAL FIX: Use goalKm as base for progression calculation
+      double nextGoal = (goalKm * (1 + inc) * 2).roundToDouble() / 2;
       return RecommendationResult(
         recommendedGoal: nextGoal,
         emoji: '🚀',
@@ -169,16 +170,34 @@ class RecommendationService {
       );
     }
 
-    if (achievementRatio < 0.5 && weekKm > 0) {
-      double nextGoal = (goalKm * 0.9 * 2).roundToDouble() / 2;
-      return RecommendationResult(
-        recommendedGoal: nextGoal,
-        emoji: '🟡',
-        message:
-            'Semana desafiadora (${weekKm.toStringAsFixed(1)} km de ${goalKm.toStringAsFixed(1)} km). '
-            'Que tal ajustar para ${nextGoal.toStringAsFixed(1)} km e retomar o fôlego?',
-        isIncrease: false,
-      );
+    if (achievementRatio < 0.5) {
+      if (weekKm > 0) {
+        // PROPOSAL FIX: Use weekKm as base for a realistic reset after a rough week
+        double nextGoal = (weekKm * 1.1 * 2).roundToDouble() / 2;
+        if (nextGoal < 5.0) nextGoal = 5.0; // Floor for reset
+
+        return RecommendationResult(
+          recommendedGoal: nextGoal,
+          emoji: '🟡',
+          message:
+              'Semana desafiadora (${weekKm.toStringAsFixed(1)} km de ${goalKm.toStringAsFixed(1)} km). '
+              'Vamos reiniciar com ${nextGoal.toStringAsFixed(1)} km para recuperar o fôlego com segurança.',
+          isIncrease: false,
+        );
+      } else {
+        // NEW: Handle zero-activity week
+        double nextGoal = (goalKm * 0.8 * 2).roundToDouble() / 2;
+        if (nextGoal < 5.0) nextGoal = 5.0;
+
+        return RecommendationResult(
+          recommendedGoal: nextGoal,
+          emoji: '😴',
+          message:
+              'Nenhuma atividade detectada esta semana. Sugerimos reduzir a meta para '
+              '${nextGoal.toStringAsFixed(1)} km para facilitar seu retorno aos treinos.',
+          isIncrease: false,
+        );
+      }
     }
 
     // Default: maintain

@@ -200,11 +200,14 @@ class _HistoryTabState extends State<HistoryTab> {
   bool _canGoNext() {
     // We should ALWAYS be able to see the current week/month even if there's no data yet.
     final now = DateTime.now();
-    final effectiveMax = _maxDate == null || now.isAfter(_maxDate!)
+    DateTime effectiveMax = _maxDate == null || now.isAfter(_maxDate!)
         ? now
         : _maxDate!;
 
     if (_selectedPeriodIndex == 0) {
+      // PROPOSAL: Allow one future week (+ 7 days) to see upcoming goals
+      effectiveMax = effectiveMax.add(const Duration(days: 7));
+
       // Semana
       final startOfCurrentWeek = _referenceDate.subtract(
         Duration(days: _referenceDate.weekday % 7),
@@ -843,23 +846,30 @@ class _HistoryTabState extends State<HistoryTab> {
       final year = _referenceDate.year;
       final month = _referenceDate.month;
       final firstDayOfMonth = DateTime(year, month, 1);
+      final lastDayOfMonth = DateTime(year, month + 1, 0);
 
-      for (int i = 0; i < 4; i++) {
-        final start = firstDayOfMonth.add(Duration(days: i * 7));
-        final end = i < 3
-            ? firstDayOfMonth.add(Duration(days: (i + 1) * 7))
-            : DateTime(year, month + 1, 1);
+      int weekIndex = 0;
+      DateTime currentStart = firstDayOfMonth;
+
+      while (currentStart.isBefore(lastDayOfMonth.add(const Duration(seconds: 1)))) {
+        final currentEnd = currentStart.add(const Duration(days: 7));
+        final effectiveEnd = currentEnd.isAfter(lastDayOfMonth)
+            ? lastDayOfMonth.add(const Duration(seconds: 1))
+            : currentEnd;
 
         double weeklyTotal = _allRuns
             .where(
               (r) =>
-                  r.date.isAfter(start.subtract(const Duration(seconds: 1))) &&
-                  r.date.isBefore(end),
+                  r.date.isAfter(currentStart.subtract(const Duration(seconds: 1))) &&
+                  r.date.isBefore(effectiveEnd),
             )
             .fold(0.0, (sum, r) => sum + r.distanceKm);
 
         if (weeklyTotal > maxDistance) maxDistance = weeklyTotal;
-        barGroups.add(_makeGroupData(i, weeklyTotal, maxDistance));
+        barGroups.add(_makeGroupData(weekIndex, weeklyTotal, maxDistance));
+
+        currentStart = currentEnd;
+        weekIndex++;
       }
     }
 
