@@ -11,6 +11,8 @@ import '../../../../features/run/presentation/screens/active_run_screen.dart';
 
 import 'package:runlabag/core/services/database_service.dart';
 import 'package:runlabag/features/water/presentation/widgets/water_card.dart';
+import '../../domain/models/weekly_evolution_stats.dart';
+import 'package:intl/intl.dart';
 
 class HomeTab extends StatefulWidget {
   const HomeTab({super.key});
@@ -29,6 +31,7 @@ class _HomeTabState extends State<HomeTab> {
     'totalCalories': '0',
   };
   List<double> _weeklyProgress = List.filled(7, 0.0);
+  List<WeeklyEvolutionStats> _evolutionStats = [];
   UserProfile? _profile;
   RunModel? _lastRun;
   Map<String, dynamic>? _lastAchievement;
@@ -46,11 +49,13 @@ class _HomeTabState extends State<HomeTab> {
     final profile = await _dbService.getUserProfile();
     final lastRun = await _dbService.getLastRun();
     final lastAchievement = await _dbService.getLastAchievement();
+    final evolution = await _dbService.getWeeklyEvolution(3);
     
     if (mounted) {
       setState(() {
         _stats = stats;
         _weeklyProgress = progress;
+        _evolutionStats = evolution;
         _profile = profile;
         _lastRun = lastRun;
         _lastAchievement = lastAchievement;
@@ -487,6 +492,10 @@ class _HomeTabState extends State<HomeTab> {
               ),
               const SizedBox(height: 32),
 
+              // Evolution Analysis
+              _buildEvolutionAnalysis(),
+              const SizedBox(height: 32),
+
               // Achievement Spotlight
               if (_lastAchievement != null) ...[
                 Text(
@@ -553,5 +562,200 @@ class _HomeTabState extends State<HomeTab> {
       final s = seconds % 60;
       return '${m}m ${s.toString().padLeft(2, '0')}s';
     }
+  }
+
+  Widget _buildEvolutionAnalysis() {
+    if (_evolutionStats.length < 2) return const SizedBox.shrink();
+
+    final current = _evolutionStats[0];
+    final previous = _evolutionStats[1];
+
+    // Calculate Efficiency Trend (Pace)
+    final paceDiff = current.paceRaw - previous.paceRaw;
+    final isMoreEfficient = paceDiff < 0; // Lower pace = faster/more efficient
+    final pacePctChange = previous.paceRaw > 0 ? (paceDiff.abs() / previous.paceRaw) * 100 : 0.0;
+
+    // Calculate Duration Trend
+    final durationDiff = current.totalDurationSeconds - previous.totalDurationSeconds;
+    final durationIncreased = durationDiff > 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Análise de Evolução',
+              style: GoogleFonts.outfit(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: isMoreEfficient ? Colors.green.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    isMoreEfficient ? LucideIcons.trendingDown : LucideIcons.trendingUp,
+                    size: 14,
+                    color: isMoreEfficient ? Colors.greenAccent : Colors.orangeAccent,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${pacePctChange.toStringAsFixed(1)}% ${isMoreEfficient ? 'Eficiente' : 'Esforço'}',
+                    style: GoogleFonts.outfit(
+                      color: isMoreEfficient ? Colors.greenAccent : Colors.orangeAccent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        GlassContainer(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              // Current Week Row
+              _buildEvolutionRow(
+                current,
+                isCurrent: true,
+                distDiff: current.totalDistance - previous.totalDistance,
+                durDiff: current.totalDurationSeconds - previous.totalDurationSeconds,
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Divider(color: Colors.white10),
+              ),
+              // Previous Week Row
+              _buildEvolutionRow(
+                previous,
+                isCurrent: false,
+              ),
+              const SizedBox(height: 16),
+              // Interpretation
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      isMoreEfficient ? LucideIcons.sparkles : LucideIcons.info,
+                      color: isMoreEfficient ? Colors.amberAccent : AppColors.textMuted,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        isMoreEfficient
+                            ? 'Você está batendo suas metas com um ritmo melhor! Continue assim.'
+                            : 'O esforço aumentou esta semana. Fique atento à sua recuperação.',
+                        style: GoogleFonts.outfit(
+                          color: AppColors.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEvolutionRow(WeeklyEvolutionStats stats, {required bool isCurrent, double? distDiff, int? durDiff}) {
+    final dateFormat = DateFormat('dd/MM');
+    final dateRange = '${dateFormat.format(stats.startDate)} - ${dateFormat.format(stats.endDate)}';
+
+    return Row(
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isCurrent ? 'Esta Semana' : 'Semana Passada',
+              style: GoogleFonts.outfit(
+                color: isCurrent ? AppColors.primaryNeon : AppColors.textMuted,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text(
+              dateRange,
+              style: GoogleFonts.outfit(
+                color: Colors.white38,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+        const Spacer(),
+        _buildEvolutionMetric(
+          'Meta',
+          '${stats.achievementPercentage.toInt()}%',
+          stats.achievementPercentage >= 100 ? AppColors.primaryNeon : Colors.orangeAccent,
+        ),
+        const SizedBox(width: 20),
+        _buildEvolutionMetric(
+          'Distância',
+          '${stats.totalDistance.toStringAsFixed(1)}km',
+          Colors.white,
+          trendArrow: distDiff != null ? (distDiff >= 0 ? LucideIcons.arrowUp : LucideIcons.arrowDown) : null,
+          arrowColor: distDiff != null ? (distDiff >= 0 ? Colors.greenAccent : Colors.redAccent) : null,
+        ),
+        const SizedBox(width: 20),
+        _buildEvolutionMetric(
+          'Duração',
+          _formatRunDuration(stats.totalDurationSeconds),
+          Colors.white70,
+          trendArrow: durDiff != null ? (durDiff >= 0 ? LucideIcons.arrowUp : LucideIcons.arrowDown) : null,
+          arrowColor: durDiff != null ? (durDiff >= 0 ? Colors.greenAccent : Colors.redAccent) : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEvolutionMetric(String label, String value, Color valueColor, {IconData? trendArrow, Color? arrowColor}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 10),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (trendArrow != null) ...[
+              Icon(trendArrow, size: 10, color: arrowColor ?? Colors.white),
+              const SizedBox(width: 2),
+            ],
+            Text(
+              value,
+              style: GoogleFonts.outfit(
+                color: valueColor,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }

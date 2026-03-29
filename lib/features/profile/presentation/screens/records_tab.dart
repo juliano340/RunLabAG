@@ -389,7 +389,12 @@ class _RecordsTabState extends State<RecordsTab> {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 16, mainAxisSpacing: 16, childAspectRatio: 1.3),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2, 
+        crossAxisSpacing: 16, 
+        mainAxisSpacing: 16, 
+        childAspectRatio: 1.15, // Mais espaço vertical para evitar overflow no Android
+      ),
       itemCount: _monitoredDistances.length,
       itemBuilder: (context, index) {
         final dist = _monitoredDistances[index];
@@ -425,17 +430,32 @@ class _RecordsTabState extends State<RecordsTab> {
             ],
           ),
           const SizedBox(height: 4),
-          Text(time, style: GoogleFonts.outfit(color: hasData ? AppColors.textLight : AppColors.textMuted.withValues(alpha: 0.5), fontSize: 22, fontWeight: FontWeight.bold)),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              time, 
+              style: GoogleFonts.outfit(
+                color: hasData ? AppColors.textLight : AppColors.textMuted.withValues(alpha: 0.5), 
+                fontSize: 22, 
+                fontWeight: FontWeight.bold
+              )
+            ),
+          ),
           if (hasData) ...[
             const SizedBox(height: 4),
-            Row(
-              children: [
-                if (interval != null) ...[
-                  Text(interval, style: GoogleFonts.outfit(color: AppColors.primaryNeon.withValues(alpha: 0.7), fontSize: 11, fontWeight: FontWeight.bold)),
-                  Text(' • ', style: GoogleFonts.outfit(color: AppColors.textMuted.withValues(alpha: 0.5), fontSize: 11)),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Row(
+                children: [
+                  if (interval != null) ...[
+                    Text(interval, style: GoogleFonts.outfit(color: AppColors.primaryNeon.withValues(alpha: 0.7), fontSize: 11, fontWeight: FontWeight.bold)),
+                    Text(' • ', style: GoogleFonts.outfit(color: AppColors.textMuted.withValues(alpha: 0.5), fontSize: 11)),
+                  ],
+                  Text(date, style: GoogleFonts.outfit(color: AppColors.primaryNeon.withValues(alpha: 0.7), fontSize: 11)),
                 ],
-                Text(date, style: GoogleFonts.outfit(color: AppColors.primaryNeon.withValues(alpha: 0.7), fontSize: 11)),
-              ],
+              ),
             )
           ],
         ],

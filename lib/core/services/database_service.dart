@@ -5,6 +5,7 @@ import 'package:path/path.dart';
 import '../../features/training/data/models/training_plan.dart';
 import '../../features/strength_training/domain/models/strength_workout.dart';
 import '../../features/strength_training/domain/models/workout_block.dart';
+import '../../features/dashboard/domain/models/weekly_evolution_stats.dart';
 
 class RunSplit {
   final int timeSeconds;
@@ -453,6 +454,53 @@ class DatabaseService {
     );
   }
 
+  // --- Evolution Analysis ---
+  Future<List<WeeklyEvolutionStats>> getWeeklyEvolution(int numberOfWeeks) async {
+    List<WeeklyEvolutionStats> evolution = [];
+    final now = DateTime.now();
+    final startOfCurrentWeek = now.subtract(Duration(days: now.weekday % 7));
+    
+    for (int i = 0; i < numberOfWeeks; i++) {
+      final start = DateTime(startOfCurrentWeek.year, startOfCurrentWeek.month, startOfCurrentWeek.day)
+          .subtract(Duration(days: 7 * i));
+      final end = start.add(const Duration(days: 6, hours: 23, minutes: 59, seconds: 59));
+      
+      final runs = await getRunsBetween(start, end);
+      final periodId = _getWeekPeriodId(start);
+      
+      double totalDist = 0;
+      int totalSeconds = 0;
+      for (var r in runs) {
+        totalDist += r.distanceKm;
+        totalSeconds += r.durationSeconds;
+      }
+      
+      double? goal = await getGoalHistory(periodId, 'weekly');
+      if (goal == null && i == 0) {
+        final profile = await getUserProfile();
+        goal = profile?.weeklyGoal ?? 20.0;
+      }
+      
+      evolution.add(WeeklyEvolutionStats(
+        periodId: periodId,
+        startDate: start,
+        endDate: end,
+        totalDistance: totalDist,
+        totalDurationSeconds: totalSeconds,
+        goalDistance: goal ?? 20.0,
+        runCount: runs.length,
+      ));
+    }
+    return evolution;
+  }
+
+  String _getWeekPeriodId(DateTime date) {
+    final startOfWeek = date.subtract(Duration(days: date.weekday % 7));
+    final dayOfYear = startOfWeek.difference(DateTime(startOfWeek.year, 1, 1)).inDays;
+    final weekNum = (dayOfYear / 7).floor() + 1;
+    return '${startOfWeek.year}-W${weekNum.toString().padLeft(2, '0')}';
+  }
+
   Future<Map<String, dynamic>> getUserStats() async {
     final runs = await getRuns();
     double totalDistance = 0;
@@ -518,16 +566,30 @@ class DatabaseService {
     for (final run in runs) {
       // Logic for all-time bests for specific distances
       for (double targetDist in monitored) {
-        if (run.distanceKm >= targetDist) {
-          // 1. Initial estimation based on average pace (safest fallback)
-          double bestTimeInRun = (run.durationSeconds / run.distanceKm) * targetDist;
-          String currentInterval = "Média do Treino";
+        // Tolerância de 1% (ex: 4.95km conta como 5k para RP)
+        final double toleranceFactor = 0.99;
+        
+        if (run.distanceKm >= targetDist * toleranceFactor) {
+          // 1. Initial estimation based on average pace
+          // Se o treino for muito próximo da meta (ex: 5.0003km para 5k), usamos o tempo total direto
+          double bestTimeInRun;
+          String currentInterval;
+
+          if ((run.distanceKm - targetDist).abs() / targetDist < 0.005) {
+            // Extremamente próximo (menos de 0.5% de diferença): usar o tempo real do treino
+            bestTimeInRun = run.durationSeconds.toDouble();
+            currentInterval = "Tempo Total";
+          } else {
+            bestTimeInRun = (run.durationSeconds / run.distanceKm) * targetDist;
+            currentInterval = "Média do Treino";
+          }
           
           // 2. If we have splits, they are much more accurate for integer distances
           if (run.splits.isNotEmpty) {
             final int tDistInt = targetDist.round();
             // Check if it's very close to an integer (to handle 5.0, 10.0, etc.)
             if ((targetDist - tDistInt).abs() < 0.001) {
+              // Se tivermos splits suficientes para cobrir a distância inteira
               if (run.splits.length >= tDistInt) {
                 // Find fastest consecutive sequence of splits
                 for (int i = 0; i <= run.splits.length - tDistInt; i++) {
@@ -535,17 +597,12 @@ class DatabaseService {
                   for (int j = 0; j < tDistInt; j++) {
                     sequenceTime += run.splits[i + j].timeSeconds;
                   }
+                  
+                  // Se o segmento for mais rápido que a média/tempo total, ele vence
                   if (sequenceTime < bestTimeInRun) {
                     bestTimeInRun = sequenceTime.toDouble();
                     currentInterval = tDistInt == 1 ? "km ${i + 1}" : "km ${i + 1} a ${i + tDistInt}";
                   }
-                }
-              }
-            } else if (targetDist == 1.0) {
-              for (int i = 0; i < run.splits.length; i++) {
-                if (run.splits[i].timeSeconds < bestTimeInRun) {
-                  bestTimeInRun = run.splits[i].timeSeconds.toDouble();
-                  currentInterval = "km ${i + 1}";
                 }
               }
             }
@@ -553,7 +610,8 @@ class DatabaseService {
           
           String key = targetDist == 21.0975 ? '21km' : targetDist == 42.195 ? '42km' : '${targetDist.toStringAsFixed(targetDist == targetDist.toInt() ? 0 : 1)}km';
 
-          if (records[key]!['time'] == null || bestTimeInRun < records[key]!['time']) {
+          // Atualiza se for o primeiro registro ou se este for mais rápido
+          if (records[key]!['time'] == null || bestTimeInRun < (records[key]!['time'] as double)) {
             records[key] = {
               'time': bestTimeInRun,
               'date': run.date,
@@ -600,23 +658,34 @@ class DatabaseService {
     double? currentBest;
 
     for (final run in sortedRuns) {
-      if (run.distanceKm >= targetDist) {
+      final double toleranceFactor = 0.99;
+      if (run.distanceKm >= targetDist * toleranceFactor) {
         // 1. Initial estimation based on average pace
-        double bestTimeInRun = (run.durationSeconds / run.distanceKm) * targetDist;
-        String currentInterval = "Média do Treino";
+        double bestTimeInRun;
+        String currentInterval;
+
+        if ((run.distanceKm - targetDist).abs() / targetDist < 0.005) {
+          bestTimeInRun = run.durationSeconds.toDouble();
+          currentInterval = "Tempo Total";
+        } else {
+          bestTimeInRun = (run.durationSeconds / run.distanceKm) * targetDist;
+          currentInterval = "Média do Treino";
+        }
         
         // 2. Accurate calculation if splits are present
         if (run.splits.isNotEmpty) {
           final int tDistInt = targetDist.round();
-          if ((targetDist - tDistInt).abs() < 0.001 && run.splits.length >= tDistInt) {
-            for (int i = 0; i <= run.splits.length - tDistInt; i++) {
-              int sequenceTime = 0;
-              for (int j = 0; j < tDistInt; j++) {
-                sequenceTime += run.splits[i + j].timeSeconds;
-              }
-              if (sequenceTime < bestTimeInRun) {
-                bestTimeInRun = sequenceTime.toDouble();
-                currentInterval = tDistInt == 1 ? "km ${i + 1}" : "km ${i + 1} a ${i + tDistInt}";
+          if ((targetDist - tDistInt).abs() < 0.001) {
+            if (run.splits.length >= tDistInt) {
+              for (int i = 0; i <= run.splits.length - tDistInt; i++) {
+                int sequenceTime = 0;
+                for (int j = 0; j < tDistInt; j++) {
+                  sequenceTime += run.splits[i + j].timeSeconds;
+                }
+                if (sequenceTime < bestTimeInRun) {
+                  bestTimeInRun = sequenceTime.toDouble();
+                  currentInterval = tDistInt == 1 ? "km ${i + 1}" : "km ${i + 1} a ${i + tDistInt}";
+                }
               }
             }
           }

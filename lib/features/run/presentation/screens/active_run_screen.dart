@@ -227,14 +227,11 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _splits = [];
       _lastSplitTimeSeconds = 0;
       _lastSplitCalories = 0;
-      if (currentPos != null) {
-        _routePoints = [[LatLng(currentPos.latitude, currentPos.longitude)]];
-      } else {
-        _routePoints = [[]];
-      }
+      _routePoints = [[]]; // Start empty to wait for first LIVE point
       _isRunning = true;
       _isPaused = false;
       _isFinished = false;
+      _isFirstPointAfterResume = true; // Crucial: Treat start as a resume to ignore initial teleportation
     });
     
     _startTimersAndStreams(isNew: true);
@@ -273,9 +270,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _positionStream = _locationService.getLocationStream().listen((Position position) {
         if (_isPaused) return;
 
-        // 1. Filtro de Precisão
-        if (position.accuracy > 18) {
-          debugPrint("GPS impreciso ignorado: ${position.accuracy}m");
+        // 1. Filtro de Precisão (Mais rigoroso nos primeiros 30s)
+        double maxAllowedAccuracy = _secondsElapsed < 30 ? 15.0 : 25.0;
+        if (position.accuracy > maxAllowedAccuracy) {
+          debugPrint("GPS impreciso ignorado: ${position.accuracy}m (Max: $maxAllowedAccuracy)");
           return;
         }
 
@@ -317,8 +315,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             }
           }
 
-          // 3. Filtro de Jitter
-          if (distanceInMeters > 3.5) {
+          // 3. Filtro de Jitter (Aumentado de 3.5m para 6.0m para evitar drift parado)
+          if (distanceInMeters > 6.0) {
             setState(() {
               _distanceKm += distanceInMeters / 1000;
               _paceBuffer.add(position);
@@ -507,6 +505,21 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     if (_distanceKm < 0.1 && _secondsElapsed < 30) {
       _showShortRunWarning();
     } else {
+      // Adicionar último split se estivermos muito próximos de fechar um km (ex: 4.99km)
+      // ou se simplesmente sobrou uma parte significativa (> 100m)
+      int currentKm = _distanceKm.floor();
+      double decimalPart = _distanceKm - currentKm;
+      
+      // Se parou quase no cravo (ex: 4.99 ou 5.01) e o split final não foi salvo
+      if ((_distanceKm > _lastKmNotified) && (decimalPart > 0.99 || _distanceKm > _lastKmNotified + 0.99)) {
+        final splitTime = _secondsElapsed - _lastSplitTimeSeconds;
+        final totalCalories = _calculateCalories();
+        final splitCalories = totalCalories - _lastSplitCalories;
+        
+        _splits.add(RunSplit(timeSeconds: splitTime, calories: splitCalories));
+        _lastKmNotified = _distanceKm.round(); // Arredonda para o mais próximo
+      }
+
       setState(() {
         _isRunning = false;
         _isFinished = true;
