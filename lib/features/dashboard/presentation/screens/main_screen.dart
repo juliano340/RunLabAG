@@ -6,8 +6,8 @@ import '../../../../features/dashboard/presentation/screens/home_tab.dart';
 import '../../../../features/history/presentation/screens/history_tab.dart';
 import '../../../../features/profile/presentation/screens/records_tab.dart';
 import '../../../../features/profile/presentation/screens/profile_tab.dart';
-import '../../../../features/training/presentation/screens/training_tab.dart';
-import '../../../../features/strength_training/presentation/screens/strength_history_screen.dart';
+// import '../../../../features/training/presentation/screens/training_tab.dart';
+// import '../../../../features/strength_training/presentation/screens/strength_history_screen.dart';
 import '../../../../core/widgets/ad_banner_widget.dart';
 
 class MainScreen extends StatefulWidget {
@@ -23,8 +23,8 @@ class _MainScreenState extends State<MainScreen> {
   final List<Widget> _tabs = [
     const HomeTab(),
     const HistoryTab(),
-    const TrainingTab(),
-    const StrengthHistoryScreen(),
+    // const TrainingTab(),
+    // const StrengthHistoryScreen(),
     const RecordsTab(),
     const ProfileTab(),
   ];
@@ -101,8 +101,8 @@ class _MainScreenState extends State<MainScreen> {
               items: const [
                 BottomNavigationBarItem(icon: Icon(LucideIcons.home), label: 'Início'),
                 BottomNavigationBarItem(icon: Icon(LucideIcons.history), label: 'Histórico'),
-                BottomNavigationBarItem(icon: Icon(LucideIcons.award), label: 'Planos'),
-                BottomNavigationBarItem(icon: Icon(LucideIcons.dumbbell), label: 'Força'),
+                // BottomNavigationBarItem(icon: Icon(LucideIcons.award), label: 'Planos'),
+                // BottomNavigationBarItem(icon: Icon(LucideIcons.dumbbell), label: 'Força'),
                 BottomNavigationBarItem(icon: Icon(LucideIcons.trophy), label: 'Recordes'),
                 BottomNavigationBarItem(icon: Icon(LucideIcons.user), label: 'Perfil'),
               ],

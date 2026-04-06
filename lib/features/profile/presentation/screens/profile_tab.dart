@@ -81,6 +81,40 @@ class _ProfileTabState extends State<ProfileTab> {
     }
   }
 
+  Future<void> _removeProfilePicture() async {
+    if (_profile == null) return;
+
+    // Delete local file if it exists
+    if (_profile!.profilePicturePath != null) {
+      try {
+        final file = File(_profile!.profilePicturePath!);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        debugPrint('Error deleting profile pic: $e');
+      }
+    }
+
+    final updatedProfile = UserProfile(
+      name: _profile!.name,
+      age: _profile!.age,
+      weight: _profile!.weight,
+      height: _profile!.height,
+      profilePicturePath: null,
+      weeklyGoal: _profile!.weeklyGoal,
+      monthlyGoal: _profile!.monthlyGoal,
+      waterGoal: _profile!.waterGoal,
+      kmNotificationsEnabled: _profile!.kmNotificationsEnabled,
+    );
+
+    await _dbService.saveUserProfile(updatedProfile);
+    if (mounted) {
+      context.read<WaterProvider>().refresh();
+    }
+    _loadProfile();
+  }
+
   double _parseNumber(String value) {
     final sanitized = value.replaceAll(',', '.');
     return double.tryParse(sanitized) ?? 0.0;
@@ -200,6 +234,15 @@ class _ProfileTabState extends State<ProfileTab> {
                 _pickImage(ImageSource.gallery);
               },
             ),
+            if (_profile?.profilePicturePath != null)
+              ListTile(
+                leading: const Icon(LucideIcons.trash2, color: Colors.redAccent),
+                title: Text('Remover Foto', style: GoogleFonts.outfit(color: Colors.redAccent)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _removeProfilePicture();
+                },
+              ),
           ],
         ),
       ),
@@ -385,7 +428,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       activeThumbColor: AppColors.primaryNeon,
                     ),
                   ),
-                  if (_profile?.kmNotificationsEnabled == true)
+                  if (kDebugMode && _profile?.kmNotificationsEnabled == true)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8.0, right: 16.0),
                       child: Align(
