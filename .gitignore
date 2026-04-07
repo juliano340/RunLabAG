@@ -47,5 +47,9 @@ app.*.map.json
 # Environment variables
 *.env
 
+# Firebase — nunca commitar, contém API keys
+google-services.json
+GoogleService-Info.plist
+
 # Claude Code (machine-local)
 .claude/settings.local.json
