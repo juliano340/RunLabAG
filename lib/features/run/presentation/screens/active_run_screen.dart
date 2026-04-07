@@ -20,6 +20,8 @@ import '../../../../core/services/achievement_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/services/notification_service.dart';
+import '../../../../core/services/analytics_service.dart';
+import '../../../../core/services/ad_service.dart';
 
 class ActiveRunScreen extends StatefulWidget {
   final Map<String, dynamic>? restoredState;
@@ -235,6 +237,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     });
     
     _startTimersAndStreams(isNew: true);
+
+    AnalyticsService().logRunStarted(
+      runType: _distanceGoal != null ? 'meta_distancia' : 'livre',
+    );
   }
 
   void _startTimersAndStreams({required bool isNew}) {
@@ -1030,12 +1036,27 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                   );
                                   await dbService.saveRun(run);
                                   await dbService.clearActiveRun(); // Ensure recovery modal won't appear
-                                  
+
+                                  // Analytics: treino salvo com sucesso
+                                  await AnalyticsService().logRunCompleted(
+                                    distanceKm: run.distanceKm,
+                                    durationSeconds: run.durationSeconds,
+                                    pace: run.pace,
+                                    calories: run.calories,
+                                    runType: run.type ?? 'desconhecido',
+                                    mood: run.mood ?? '',
+                                  );
+
                                   // Verificar se o treino cumpre a sessão do plano de treinamento
                                   final trainingService = TrainingService(dbService);
                                   final isPlanSuccessful = await trainingService.matchRunToPlan(run);
-                                  
+
                                   final newAwards = await _achievementService.checkAwards(run);
+
+                                  for (final award in newAwards) {
+                                    AnalyticsService().logAchievementUnlocked(achievementId: award['id']);
+                                  }
+
                                   if (context.mounted) {
                                     String snackMessage = '';
                                     if (isPlanSuccessful) {
@@ -1056,6 +1077,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                         ),
                                       );
                                     }
+
                                     Navigator.of(context).pop();
                                   }
                                 },

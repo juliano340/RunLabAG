@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "729664921639",
+    "project_id": "runlab-ca45b",
+    "storage_bucket": "runlab-ca45b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:729664921639:android:eb866341c6ce1dc0ed2e02",
+        "android_client_info": {
+          "package_name": "com.runlab.performance.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCcKwYUioBxM2SfppAZo5neiSKAivQGHhQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

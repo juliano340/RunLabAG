@@ -9,6 +9,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/database_service.dart';
+import '../../../../core/services/ad_service.dart';
+import '../../../../core/services/analytics_service.dart';
 import '../../../../core/utils/time_utils.dart';
 
 enum ShareTemplate { boxed, center, bottomBar, minimalist, verticalModern }
@@ -51,6 +53,16 @@ class _RunShareScreenState extends State<RunShareScreen> {
   bool _showVerticalCenterGuide = false;
   bool _showHorizontalCenterGuide = false;
 
+  // Templates premium desbloqueados via rewarded ad (válido apenas nesta sessão)
+  final Set<ShareTemplate> _unlockedPremiumTemplates = {};
+  bool _isLoadingRewardedAd = false;
+
+  static const Set<ShareTemplate> _premiumTemplates = {
+    ShareTemplate.bottomBar,
+    ShareTemplate.minimalist,
+    ShareTemplate.verticalModern,
+  };
+
   Future<void> _pickImage(ImageSource source) async {
     final XFile? image = await _picker.pickImage(source: source);
     if (image != null) {
@@ -75,6 +87,8 @@ class _RunShareScreenState extends State<RunShareScreen> {
           [XFile(imagePath)],
           text: 'Meu treino no RunLab! 🔥 #RunLab #Corrida #Fitness',
         );
+
+        AnalyticsService().logShareCreated(template: _currentTemplate.name);
       }
     } catch (e) {
       debugPrint('Erro ao compartilhar: $e');
@@ -271,12 +285,7 @@ class _RunShareScreenState extends State<RunShareScreen> {
                         () => setState(() => _showRoute = !_showRoute)
                       ),
                       const SizedBox(width: 8),
-                      _buildOptionButton(
-                        LucideIcons.layers, 
-                        'ESTILO', 
-                        true, 
-                        _toggleTemplate
-                      ),
+                      _buildTemplateButton(),
                     ],
                   ),
                 ),
@@ -368,15 +377,169 @@ class _RunShareScreenState extends State<RunShareScreen> {
   }
 
   void _toggleTemplate() {
+    int next = (_currentTemplate.index + 1) % ShareTemplate.values.length;
+    final nextTemplate = ShareTemplate.values[next];
+    _selectTemplate(nextTemplate);
+  }
+
+  void _selectTemplate(ShareTemplate template) {
+    if (_premiumTemplates.contains(template) && !_unlockedPremiumTemplates.contains(template)) {
+      _showUnlockTemplateDialog(template);
+      return;
+    }
     setState(() {
-      int next = (_currentTemplate.index + 1) % ShareTemplate.values.length;
-      _currentTemplate = ShareTemplate.values[next];
-      // Reset position/scale for a fresh start with the new template
+      _currentTemplate = template;
       _statsScale = 1.0;
       _statsOffset = const Offset(0, 50);
       if (_currentTemplate == ShareTemplate.center) _statsOffset = const Offset(0, 0);
       if (_currentTemplate == ShareTemplate.verticalModern) _statsOffset = const Offset(0, -100);
     });
+  }
+
+  void _showUnlockTemplateDialog(ShareTemplate template) {
+    final templateName = _templateDisplayName(template);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Icon(LucideIcons.lock, color: AppColors.primaryNeon, size: 22),
+            const SizedBox(width: 10),
+            Text(
+              'Estilo Premium',
+              style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Text(
+          'Assista a um vídeo rápido para desbloquear o estilo "$templateName" nesta sessão.',
+          style: GoogleFonts.outfit(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('CANCELAR', style: GoogleFonts.outfit(color: Colors.white54)),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryNeon,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            icon: _isLoadingRewardedAd
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                : const Icon(LucideIcons.play, size: 16),
+            label: Text('ASSISTIR', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+            onPressed: _isLoadingRewardedAd
+                ? null
+                : () {
+                    Navigator.of(ctx).pop();
+                    _watchAdForTemplate(template);
+                  },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _watchAdForTemplate(ShareTemplate template) {
+    if (!AdService().isRewardedAdReady) {
+      // Ad não disponível: mostra mensagem e desbloqueia mesmo assim (evita bloquear usuário)
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Anúncio indisponível. Estilo desbloqueado!',
+            style: GoogleFonts.outfit(color: Colors.black, fontWeight: FontWeight.bold),
+          ),
+          backgroundColor: AppColors.primaryNeon,
+        ),
+      );
+      setState(() {
+        _unlockedPremiumTemplates.add(template);
+        _currentTemplate = template;
+      });
+      return;
+    }
+
+    setState(() => _isLoadingRewardedAd = true);
+
+    AnalyticsService().logRewardedAdShown(placement: 'share_template_${template.name}');
+
+    AdService().showRewardedAd(
+      onRewarded: () {
+        AnalyticsService().logPremiumTemplateUnlocked(template: template.name);
+        setState(() {
+          _unlockedPremiumTemplates.add(template);
+        });
+      },
+      onDismissed: () {
+        setState(() => _isLoadingRewardedAd = false);
+        if (_unlockedPremiumTemplates.contains(template)) {
+          _selectTemplate(template);
+        }
+      },
+    );
+  }
+
+  String _templateDisplayName(ShareTemplate template) {
+    switch (template) {
+      case ShareTemplate.boxed: return 'Caixinha';
+      case ShareTemplate.center: return 'Centralizado';
+      case ShareTemplate.bottomBar: return 'Barra Inferior';
+      case ShareTemplate.minimalist: return 'Minimalista';
+      case ShareTemplate.verticalModern: return 'Vertical Moderno';
+    }
+  }
+
+  bool _isTemplateLocked(ShareTemplate template) {
+    return _premiumTemplates.contains(template) && !_unlockedPremiumTemplates.contains(template);
+  }
+
+  /// Botão de seleção de estilo — mostra cadeado se o próximo for premium.
+  Widget _buildTemplateButton() {
+    int next = (_currentTemplate.index + 1) % ShareTemplate.values.length;
+    final nextTemplate = ShareTemplate.values[next];
+    final isNextLocked = _isTemplateLocked(nextTemplate);
+
+    return GestureDetector(
+      onTap: _toggleTemplate,
+      child: Container(
+        width: 100,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.primaryNeon.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.primaryNeon),
+        ),
+        child: Column(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(LucideIcons.layers, color: AppColors.primaryNeon, size: 20),
+                if (isNextLocked)
+                  Positioned(
+                    top: -4,
+                    right: -8,
+                    child: Icon(LucideIcons.lock, color: Colors.amber, size: 12),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'ESTILO',
+              style: GoogleFonts.outfit(
+                color: AppColors.primaryNeon,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildColorCircle(Color color) {

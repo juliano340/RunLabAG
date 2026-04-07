@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/theme/app_colors.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../../../features/dashboard/presentation/screens/home_tab.dart';
@@ -9,6 +10,8 @@ import '../../../../features/profile/presentation/screens/profile_tab.dart';
 // import '../../../../features/training/presentation/screens/training_tab.dart';
 // import '../../../../features/strength_training/presentation/screens/strength_history_screen.dart';
 import '../../../../core/widgets/ad_banner_widget.dart';
+import '../../../../core/services/ad_service.dart';
+import '../../../../core/services/analytics_service.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -19,6 +22,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
+  int _tabSwitchCount = 0;
 
   final List<Widget> _tabs = [
     const HomeTab(),
@@ -30,6 +34,35 @@ class _MainScreenState extends State<MainScreen> {
   ];
 
   DateTime? _lastBackPressTime;
+
+  // Mostra intersticial no máximo 1x por dia, somente a cada 3 trocas de aba.
+  // Nunca interrompe ação ativa — só em navegação passiva.
+  Future<void> _onTabChanged(int newIndex) async {
+    setState(() {
+      _currentIndex = newIndex;
+      _tabSwitchCount++;
+    });
+
+    if (_tabSwitchCount < 3) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final lastShownMs = prefs.getInt('last_interstitial_day') ?? 0;
+    final today = DateTime.now();
+    final lastShown = DateTime.fromMillisecondsSinceEpoch(lastShownMs);
+
+    final isSameDay = lastShown.year == today.year &&
+        lastShown.month == today.month &&
+        lastShown.day == today.day;
+
+    if (isSameDay) return;
+
+    // Resetar contador e registrar o dia
+    _tabSwitchCount = 0;
+    await prefs.setInt('last_interstitial_day', today.millisecondsSinceEpoch);
+
+    AnalyticsService().logInterstitialShown();
+    AdService().showInterstitialAd(onAdDismissed: () {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -89,7 +122,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
             child: BottomNavigationBar(
               currentIndex: _currentIndex,
-              onTap: (index) => setState(() => _currentIndex = index),
+              onTap: _onTabChanged,
               backgroundColor: Colors.transparent, // Uses container background
               type: BottomNavigationBarType.fixed,
               selectedItemColor: Theme.of(context).colorScheme.primary,
