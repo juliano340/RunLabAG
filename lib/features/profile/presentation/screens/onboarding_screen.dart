@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:runlabag/core/theme/app_colors.dart';
 import 'package:runlabag/core/services/database_service.dart';
 
@@ -24,7 +26,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _waterGoalController = TextEditingController(text: '2000');
 
   int _currentPage = 0;
-  final int _totalPages = 5;
+  final int _totalPages = 7;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -44,7 +47,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     return double.tryParse(sanitized) ?? 0.0;
   }
 
-  void _nextPage() {
+  void _nextPage() async {
     if (_formKey.currentState!.validate()) {
       if (_currentPage < _totalPages - 1) {
         _pageController.nextPage(
@@ -52,9 +55,26 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           curve: Curves.easeInOut,
         );
       } else {
-        _submit();
+        await _requestPermissionsAndSubmit();
       }
     }
+  }
+
+  Future<void> _requestPermissionsAndSubmit() async {
+    if (_isLoading) return;
+    
+    // First request basic permissions
+    await [
+      Permission.location,
+      Permission.notification,
+    ].request();
+
+    // If on Android, also prompt for Background Location if possible
+    if (Platform.isAndroid) {
+      await Permission.locationAlways.request();
+    }
+
+    _submit();
   }
 
   void _previousPage() {
@@ -67,23 +87,43 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   void _submit() async {
-    final profile = UserProfile(
-      name: _nameController.text,
-      age: int.tryParse(_ageController.text) ?? 0,
-      weight: _parseNumber(_weightController.text),
-      height: _parseNumber(_heightController.text),
-      weeklyGoal: _parseNumber(_weeklyGoalController.text),
-      waterGoal: _parseNumber(_waterGoalController.text),
-    );
+    if (_isLoading) return;
 
-    final dbService = DatabaseService();
-    await dbService.saveUserProfile(profile);
+    setState(() => _isLoading = true);
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('hasCompletedOnboarding', true);
+    try {
+      final profile = UserProfile(
+        name: _nameController.text,
+        age: int.tryParse(_ageController.text) ?? 0,
+        weight: _parseNumber(_weightController.text),
+        height: _parseNumber(_heightController.text),
+        weeklyGoal: _parseNumber(_weeklyGoalController.text),
+        waterGoal: _parseNumber(_waterGoalController.text),
+      );
 
-    if (mounted) {
-      Navigator.of(context).pushReplacementNamed('/dashboard');
+      final dbService = DatabaseService();
+      await dbService.saveUserProfile(profile);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('hasCompletedOnboarding', true);
+
+      if (mounted) {
+        Navigator.of(context).pushReplacementNamed('/dashboard');
+      }
+    } catch (e) {
+      debugPrint('Error saving onboarding: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao salvar perfil: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -151,6 +191,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       ),
                     ),
                     _buildStep(
+                      title: 'Qual o seu peso?',
+                      subtitle: 'Isso nos ajuda a calcular sua performance.',
+                      child: _buildTextField(
+                        controller: _weightController,
+                        label: 'Peso (kg)',
+                        icon: LucideIcons.scale,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        hint: 'Ex: 75,5',
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return 'Peso é obrigatório';
+                          if (_parseNumber(v) <= 0) return 'Peso inválido';
+                          return null;
+                        },
+                      ),
+                    ),
+                    _buildStep(
                       title: 'Qual a sua altura?',
                       subtitle: 'Precisamos disso para calcular o seu IMC.',
                       child: _buildTextField(
@@ -198,6 +254,39 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         },
                       ),
                     ),
+                    _buildStep(
+                      title: 'Permissões do Sistema',
+                      subtitle: 'Precisamos de acesso para garantir o melhor acompanhamento.',
+                      child: Column(
+                        children: [
+                          _buildPermissionItem(
+                            icon: LucideIcons.mapPin,
+                            title: 'Localização (GPS)',
+                            description: 'Para rastrear seu percurso e ritmo em tempo real.',
+                          ),
+                          const SizedBox(height: 16),
+                          _buildPermissionItem(
+                            icon: LucideIcons.bell,
+                            title: 'Notificações',
+                            description: 'Para avisos de KM, metas e lembretes de hidratação.',
+                          ),
+                          const SizedBox(height: 16),
+                          _buildPermissionItem(
+                            icon: LucideIcons.navigation,
+                            title: 'Sempre Ativo',
+                            description: 'Permite que o GPS funcione mesmo com a tela bloqueada.',
+                          ),
+                          const Spacer(),
+                          Text(
+                            'Clique em "FINALIZAR" para configurar.',
+                            style: GoogleFonts.outfit(
+                              color: AppColors.textMuted,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -233,15 +322,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      onPressed: _nextPage,
-                      child: Text(
-                        _currentPage == _totalPages - 1 ? 'FINALIZAR' : 'PRÓXIMO',
-                        style: GoogleFonts.outfit(
-                          color: Colors.black,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
+                      onPressed: _isLoading ? null : _nextPage,
+                      child: _isLoading 
+                        ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
+                        : Text(
+                            _currentPage == _totalPages - 1 ? 'FINALIZAR' : 'PRÓXIMO',
+                            style: GoogleFonts.outfit(
+                              color: Colors.black,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          ),
                     ),
                   ),
                 ],
@@ -249,6 +340,58 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildPermissionItem({
+    required IconData icon,
+    required String title,
+    required String description,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.1),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.primaryNeon.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: AppColors.primaryNeon, size: 24),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                Text(
+                  description,
+                  style: GoogleFonts.outfit(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
