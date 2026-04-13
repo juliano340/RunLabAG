@@ -21,7 +21,6 @@ class HomeTab extends StatefulWidget {
   State<HomeTab> createState() => _HomeTabState();
 }
 
-
 class _HomeTabState extends State<HomeTab> {
   final _dbService = DatabaseService();
   Map<String, dynamic> _stats = {
@@ -50,7 +49,7 @@ class _HomeTabState extends State<HomeTab> {
     final lastRun = await _dbService.getLastRun();
     final lastAchievement = await _dbService.getLastAchievement();
     final evolution = await _dbService.getWeeklyEvolution(3);
-    
+
     if (mounted) {
       setState(() {
         _stats = stats;
@@ -78,86 +77,105 @@ class _HomeTabState extends State<HomeTab> {
       isDismissible: false,
       enableDrag: false,
       backgroundColor: Colors.transparent,
-      builder: (context) => SafeArea(
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: AppColors.backgroundDarkGreen,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-            border: Border.all(color: AppColors.primaryNeon.withValues(alpha: 0.3)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.textMuted,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return SafeArea(
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: cs.surface,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(30),
               ),
-              const SizedBox(height: 24),
-              const Icon(LucideIcons.undo2, color: AppColors.primaryNeon, size: 48),
-              const SizedBox(height: 16),
-              Text(
-                'Treino não Finalizado!',
-                style: GoogleFonts.outfit(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Encontramos um treino que foi interrompido. Deseja retomar de onde parou?',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.outfit(color: AppColors.textMuted),
-              ),
-              const SizedBox(height: 32),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        side: const BorderSide(color: Colors.redAccent),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                      ),
-                      onPressed: () async {
-                        await _dbService.clearActiveRun();
-                        if (context.mounted) Navigator.pop(context);
-                      },
-                      child: const Text('DESCARTAR', style: TextStyle(color: Colors.redAccent)),
-                    ),
+              border: Border.all(color: cs.primary.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: cs.onSurfaceVariant.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        backgroundColor: AppColors.primaryNeon,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                      ),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ActiveRunScreen(restoredState: activeRun),
+                ),
+                const SizedBox(height: 24),
+                Icon(LucideIcons.undo2, color: cs.primary, size: 48),
+                const SizedBox(height: 16),
+                Text(
+                  'Treino não Finalizado!',
+                  style: GoogleFonts.outfit(
+                    color: cs.onSurface,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Encontramos um treino que foi interrompido. Deseja retomar de onde parou?',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.outfit(color: cs.onSurfaceVariant),
+                ),
+                const SizedBox(height: 32),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          side: BorderSide(color: cs.error),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
                           ),
-                        ).then((_) => _loadData());
-                      },
-                      child: const Text('RETOMAR', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                        ),
+                        onPressed: () async {
+                          await _dbService.clearActiveRun();
+                          if (context.mounted) Navigator.pop(context);
+                        },
+                        child: Text(
+                          'DESCARTAR',
+                          style: TextStyle(color: cs.error),
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-            ],
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          backgroundColor: cs.primary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  ActiveRunScreen(restoredState: activeRun),
+                            ),
+                          ).then((_) => _loadData());
+                        },
+                        child: Text(
+                          'RETOMAR',
+                          style: TextStyle(
+                            color: cs.onPrimary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -174,19 +192,27 @@ class _HomeTabState extends State<HomeTab> {
       if (dist > maxDist) maxDist = dist;
     }
     return maxDist > 10 ? maxDist + 2 : 10;
-  }  @override
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.primaryNeon));
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.primaryNeon),
+      );
     }
 
     double weeklyTotal = _weeklyProgress.fold(0, (sum, item) => sum + item);
     double weeklyGoal = _profile?.weeklyGoal ?? 20.0;
     double rawProgress = weeklyGoal > 0 ? weeklyTotal / weeklyGoal : 0.0;
     double goalProgress = rawProgress.clamp(0.0, 1.0);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return SafeArea(
-      child: RefreshIndicator(
+    return Material(
+      key: ValueKey(isDark ? 'home_dark' : 'home_light'),
+      color: Colors.transparent,
+      child: SafeArea(
+        child: RefreshIndicator(
         onRefresh: _loadData,
         color: AppColors.primaryNeon,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -210,8 +236,13 @@ class _HomeTabState extends State<HomeTab> {
                             child: CircularProgressIndicator(
                               value: goalProgress,
                               strokeWidth: 4,
-                              backgroundColor: _getGoalColor(rawProgress).withValues(alpha: 0.1),
-                              valueColor: AlwaysStoppedAnimation<Color>(_getGoalColor(rawProgress)),
+                              backgroundColor: _getGoalColor(
+                                rawProgress,
+                                isDark,
+                              ).withValues(alpha: 0.1),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                _getGoalColor(rawProgress, isDark),
+                              ),
                             ),
                           ),
                           GestureDetector(
@@ -219,11 +250,17 @@ class _HomeTabState extends State<HomeTab> {
                             child: CircleAvatar(
                               radius: 24,
                               backgroundColor: AppColors.cardBackground,
-                              backgroundImage: _profile?.profilePicturePath != null
-                                  ? FileImage(File(_profile!.profilePicturePath!))
+                              backgroundImage:
+                                  _profile?.profilePicturePath != null
+                                  ? FileImage(
+                                      File(_profile!.profilePicturePath!),
+                                    )
                                   : null,
                               child: _profile?.profilePicturePath == null
-                                  ? const Icon(LucideIcons.user, color: AppColors.primaryNeon)
+                                  ? const Icon(
+                                      LucideIcons.user,
+                                      color: AppColors.primaryNeon,
+                                    )
                                   : null,
                             ),
                           ),
@@ -236,8 +273,10 @@ class _HomeTabState extends State<HomeTab> {
                           Text(
                             _getGreeting(),
                             style: GoogleFonts.outfit(
-                              color: Theme.of(context).brightness == Brightness.dark 
-                                  ? AppColors.textMuted 
+                              color:
+                                  Theme.of(context).brightness ==
+                                      Brightness.dark
+                                  ? AppColors.textMuted
                                   : AppColors.textMutedDark,
                               fontSize: 14,
                             ),
@@ -261,7 +300,9 @@ class _HomeTabState extends State<HomeTab> {
                         'Meta Semanal',
                         style: GoogleFonts.outfit(
                           fontSize: 12,
-                          color: AppColors.textMuted,
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? AppColors.textMuted
+                              : AppColors.textMutedDark,
                         ),
                       ),
                       Text(
@@ -269,7 +310,7 @@ class _HomeTabState extends State<HomeTab> {
                         style: GoogleFonts.outfit(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
-                          color: _getGoalColor(rawProgress),
+                          color: _getGoalColor(rawProgress, isDark),
                         ),
                       ),
                     ],
@@ -277,14 +318,16 @@ class _HomeTabState extends State<HomeTab> {
                 ],
               ),
               const SizedBox(height: 32),
-  
+
               // Start Run Button (Center)
               Center(
                 child: StartRunButton(
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const ActiveRunScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const ActiveRunScreen(),
+                      ),
                     ).then((_) => _loadData());
                   },
                 ),
@@ -309,10 +352,19 @@ class _HomeTabState extends State<HomeTab> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: AppColors.primaryNeon.withValues(alpha: 0.1),
+                          color:
+                              (isDark
+                                      ? AppColors.primaryNeon
+                                      : AppColors.lightPrimary)
+                                  .withValues(alpha: 0.1),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(LucideIcons.navigation, color: AppColors.primaryNeon),
+                        child: Icon(
+                          LucideIcons.navigation,
+                          color: isDark
+                              ? AppColors.primaryNeon
+                              : AppColors.lightPrimary,
+                        ),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
@@ -322,7 +374,9 @@ class _HomeTabState extends State<HomeTab> {
                             Text(
                               '${_lastRun!.distanceKm.toStringAsFixed(2)} km em ${_formatRunDuration(_lastRun!.durationSeconds)}',
                               style: GoogleFonts.outfit(
-                                color: Colors.white,
+                                color: isDark
+                                    ? Colors.white
+                                    : AppColors.textDark,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
                               ),
@@ -330,24 +384,31 @@ class _HomeTabState extends State<HomeTab> {
                             Text(
                               'Ritmo: ${_lastRun!.pace}/km | Calorias: ${_lastRun!.calories} kcal',
                               style: GoogleFonts.outfit(
-                                color: AppColors.textMuted,
+                                color: isDark
+                                    ? AppColors.textMuted
+                                    : AppColors.textMutedDark,
                                 fontSize: 13,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const Icon(LucideIcons.chevronRight, color: AppColors.textMuted),
+                      Icon(
+                        LucideIcons.chevronRight,
+                        color: isDark
+                            ? AppColors.textMuted
+                            : AppColors.textMutedDark,
+                      ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 32),
               ],
-              
+
               // Water Intake Card
               const WaterCard(),
               const SizedBox(height: 32),
-  
+
               // Stats Grid
               Text(
                 'Visão Geral',
@@ -393,7 +454,7 @@ class _HomeTabState extends State<HomeTab> {
                 ],
               ),
               const SizedBox(height: 32),
-  
+
               // Progress Chart
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -406,43 +467,68 @@ class _HomeTabState extends State<HomeTab> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const Icon(LucideIcons.trendingUp, color: AppColors.primaryNeon, size: 20),
+                  Icon(
+                    LucideIcons.trendingUp,
+                    color: isDark
+                        ? AppColors.primaryNeon
+                        : AppColors.lightPrimary,
+                    size: 20,
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
               GlassContainer(
                 height: 220,
-                padding: const EdgeInsets.only(top: 24, bottom: 8, left: 16, right: 24),
+                padding: const EdgeInsets.only(
+                  top: 24,
+                  bottom: 8,
+                  left: 16,
+                  right: 24,
+                ),
                 child: LineChart(
                   LineChartData(
                     gridData: FlGridData(
                       show: true,
                       drawVerticalLine: false,
-                      getDrawingHorizontalLine: (value) => FlLine(
-                        color: Colors.white10,
-                        strokeWidth: 1,
-                      ),
+                      getDrawingHorizontalLine: (value) =>
+                          FlLine(color: Colors.white10, strokeWidth: 1),
                     ),
                     titlesData: FlTitlesData(
                       show: true,
-                      rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                      rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      leftTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
                       bottomTitles: AxisTitles(
                         sideTitles: SideTitles(
                           showTitles: true,
                           reservedSize: 30,
                           interval: 1,
                           getTitlesWidget: (value, meta) {
-                            const style = TextStyle(color: Colors.white54, fontSize: 10);
+                            const style = TextStyle(
+                              color: Colors.white54,
+                              fontSize: 10,
+                            );
                             switch (value.toInt()) {
-                              case 0: return const Text('Dom', style: style);
-                              case 1: return const Text('Seg', style: style);
-                              case 2: return const Text('Ter', style: style);
-                              case 3: return const Text('Qua', style: style);
-                              case 4: return const Text('Qui', style: style);
-                              case 5: return const Text('Sex', style: style);
-                              case 6: return const Text('Sáb', style: style);
+                              case 0:
+                                return const Text('Dom', style: style);
+                              case 1:
+                                return const Text('Seg', style: style);
+                              case 2:
+                                return const Text('Ter', style: style);
+                              case 3:
+                                return const Text('Qua', style: style);
+                              case 4:
+                                return const Text('Qui', style: style);
+                              case 5:
+                                return const Text('Sex', style: style);
+                              case 6:
+                                return const Text('Sáb', style: style);
                             }
                             return const Text('');
                           },
@@ -510,13 +596,27 @@ class _HomeTabState extends State<HomeTab> {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: AppColors.primaryNeon.withValues(alpha: 0.05),
+                    color:
+                        (isDark
+                                ? AppColors.primaryNeon
+                                : AppColors.lightPrimary)
+                            .withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.primaryNeon.withValues(alpha: 0.1)),
+                    border: Border.all(
+                      color:
+                          (isDark
+                                  ? AppColors.primaryNeon
+                                  : AppColors.lightPrimary)
+                              .withValues(alpha: 0.1),
+                    ),
                   ),
                   child: Row(
                     children: [
-                      const Icon(LucideIcons.trophy, color: Colors.orange, size: 32),
+                      Icon(
+                        LucideIcons.trophy,
+                        color: isDark ? Colors.orange : Colors.orange.shade700,
+                        size: 32,
+                      ),
                       const SizedBox(width: 16),
                       Expanded(
                         child: Column(
@@ -524,11 +624,21 @@ class _HomeTabState extends State<HomeTab> {
                           children: [
                             Text(
                               _lastAchievement!['title'],
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                color: isDark
+                                    ? Colors.white
+                                    : AppColors.textDark,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                             Text(
                               _lastAchievement!['description'],
-                              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                              style: TextStyle(
+                                color: isDark
+                                    ? AppColors.textMuted
+                                    : AppColors.textMutedDark,
+                                fontSize: 12,
+                              ),
                             ),
                           ],
                         ),
@@ -542,14 +652,18 @@ class _HomeTabState extends State<HomeTab> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
-  Color _getGoalColor(double progress) {
-    if (progress >= 1.5) return Colors.purpleAccent;
-    if (progress >= 1.25) return Colors.amberAccent;
-    if (progress >= 1.0) return Colors.orangeAccent;
-    return AppColors.primaryNeon;
+  Color _getGoalColor(double progress, bool isDark) {
+    if (progress >= 1.5)
+      return isDark ? Colors.purpleAccent : Colors.purple.shade700;
+    if (progress >= 1.25)
+      return isDark ? Colors.amberAccent : Colors.amber.shade700;
+    if (progress >= 1.0)
+      return isDark ? Colors.orangeAccent : Colors.orange.shade700;
+    return isDark ? AppColors.primaryNeon : AppColors.lightPrimary;
   }
 
   String _formatRunDuration(int seconds) {
@@ -569,15 +683,18 @@ class _HomeTabState extends State<HomeTab> {
 
     final current = _evolutionStats[0];
     final previous = _evolutionStats[1];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // Calculate Efficiency Trend (Pace)
     final paceDiff = current.paceRaw - previous.paceRaw;
     final isMoreEfficient = paceDiff < 0; // Lower pace = faster/more efficient
-    final pacePctChange = previous.paceRaw > 0 ? (paceDiff.abs() / previous.paceRaw) * 100 : 0.0;
+    final pacePctChange = previous.paceRaw > 0
+        ? (paceDiff.abs() / previous.paceRaw) * 100
+        : 0.0;
 
     // Calculate Duration Trend
-    final durationDiff = current.totalDurationSeconds - previous.totalDurationSeconds;
-    final durationIncreased = durationDiff > 0;
+    final durationDiff =
+        current.totalDurationSeconds - previous.totalDurationSeconds;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -596,21 +713,35 @@ class _HomeTabState extends State<HomeTab> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: isMoreEfficient ? Colors.green.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
+                color: isMoreEfficient
+                    ? Colors.green.withValues(alpha: 0.1)
+                    : Colors.orange.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
                 children: [
                   Icon(
-                    isMoreEfficient ? LucideIcons.trendingDown : LucideIcons.trendingUp,
+                    isMoreEfficient
+                        ? LucideIcons.trendingDown
+                        : LucideIcons.trendingUp,
                     size: 14,
-                    color: isMoreEfficient ? Colors.greenAccent : Colors.orangeAccent,
+                    color: isMoreEfficient
+                        ? (isDark ? Colors.greenAccent : Colors.green.shade700)
+                        : (isDark
+                              ? Colors.orangeAccent
+                              : Colors.orange.shade700),
                   ),
                   const SizedBox(width: 4),
                   Text(
                     '${pacePctChange.toStringAsFixed(1)}% ${isMoreEfficient ? 'Eficiente' : 'Esforço'}',
                     style: GoogleFonts.outfit(
-                      color: isMoreEfficient ? Colors.greenAccent : Colors.orangeAccent,
+                      color: isMoreEfficient
+                          ? (isDark
+                                ? Colors.greenAccent
+                                : Colors.green.shade700)
+                          : (isDark
+                                ? Colors.orangeAccent
+                                : Colors.orange.shade700),
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                     ),
@@ -630,30 +761,39 @@ class _HomeTabState extends State<HomeTab> {
                 current,
                 isCurrent: true,
                 distDiff: current.totalDistance - previous.totalDistance,
-                durDiff: current.totalDurationSeconds - previous.totalDurationSeconds,
+                durDiff:
+                    current.totalDurationSeconds -
+                    previous.totalDurationSeconds,
               ),
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Divider(color: Colors.white10),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Divider(
+                  color: isDark ? Colors.white10 : AppColors.borderLight,
+                ),
               ),
               // Previous Week Row
-              _buildEvolutionRow(
-                previous,
-                isCurrent: false,
-              ),
+              _buildEvolutionRow(previous, isCurrent: false),
               const SizedBox(height: 16),
               // Interpretation
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.05)
+                      : AppColors.surfaceContainerLight,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
                   children: [
                     Icon(
                       isMoreEfficient ? LucideIcons.sparkles : LucideIcons.info,
-                      color: isMoreEfficient ? Colors.amberAccent : AppColors.textMuted,
+                      color: isMoreEfficient
+                          ? (isDark
+                                ? Colors.amberAccent
+                                : Colors.amber.shade700)
+                          : (isDark
+                                ? AppColors.textMuted
+                                : AppColors.textMutedDark),
                       size: 16,
                     ),
                     const SizedBox(width: 12),
@@ -663,7 +803,9 @@ class _HomeTabState extends State<HomeTab> {
                             ? 'Você está batendo suas metas com um ritmo melhor! Continue assim.'
                             : 'O esforço aumentou esta semana. Fique atento à sua recuperação.',
                         style: GoogleFonts.outfit(
-                          color: AppColors.textMuted,
+                          color: isDark
+                              ? AppColors.textMuted
+                              : AppColors.textMutedDark,
                           fontSize: 12,
                         ),
                       ),
@@ -678,9 +820,16 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
-  Widget _buildEvolutionRow(WeeklyEvolutionStats stats, {required bool isCurrent, double? distDiff, int? durDiff}) {
+  Widget _buildEvolutionRow(
+    WeeklyEvolutionStats stats, {
+    required bool isCurrent,
+    double? distDiff,
+    int? durDiff,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final dateFormat = DateFormat('dd/MM');
-    final dateRange = '${dateFormat.format(stats.startDate)} - ${dateFormat.format(stats.endDate)}';
+    final dateRange =
+        '${dateFormat.format(stats.startDate)} - ${dateFormat.format(stats.endDate)}';
 
     return Row(
       children: [
@@ -690,7 +839,9 @@ class _HomeTabState extends State<HomeTab> {
             Text(
               isCurrent ? 'Esta Semana' : 'Semana Passada',
               style: GoogleFonts.outfit(
-                color: isCurrent ? AppColors.primaryNeon : AppColors.textMuted,
+                color: isCurrent
+                    ? (isDark ? AppColors.primaryNeon : AppColors.lightPrimary)
+                    : (isDark ? AppColors.textMuted : AppColors.textMutedDark),
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
               ),
@@ -698,7 +849,7 @@ class _HomeTabState extends State<HomeTab> {
             Text(
               dateRange,
               style: GoogleFonts.outfit(
-                color: Colors.white38,
+                color: isDark ? Colors.white38 : AppColors.textHintLight,
                 fontSize: 10,
               ),
             ),
@@ -708,41 +859,71 @@ class _HomeTabState extends State<HomeTab> {
         _buildEvolutionMetric(
           'Meta',
           '${stats.achievementPercentage.toInt()}%',
-          stats.achievementPercentage >= 100 ? AppColors.primaryNeon : Colors.orangeAccent,
+          stats.achievementPercentage >= 100
+              ? (isDark ? AppColors.primaryNeon : AppColors.lightPrimary)
+              : (isDark ? Colors.orangeAccent : Colors.orange.shade700),
         ),
         const SizedBox(width: 20),
         _buildEvolutionMetric(
           'Distância',
           '${stats.totalDistance.toStringAsFixed(1)}km',
-          Colors.white,
-          trendArrow: distDiff != null ? (distDiff >= 0 ? LucideIcons.arrowUp : LucideIcons.arrowDown) : null,
-          arrowColor: distDiff != null ? (distDiff >= 0 ? Colors.greenAccent : Colors.redAccent) : null,
+          isDark ? Colors.white : AppColors.textDark,
+          trendArrow: distDiff != null
+              ? (distDiff >= 0 ? LucideIcons.arrowUp : LucideIcons.arrowDown)
+              : null,
+          arrowColor: distDiff != null
+              ? (distDiff >= 0
+                    ? (isDark ? Colors.greenAccent : Colors.green.shade700)
+                    : (isDark ? Colors.redAccent : Colors.red.shade700))
+              : null,
         ),
         const SizedBox(width: 20),
         _buildEvolutionMetric(
           'Duração',
           _formatRunDuration(stats.totalDurationSeconds),
-          Colors.white70,
-          trendArrow: durDiff != null ? (durDiff >= 0 ? LucideIcons.arrowUp : LucideIcons.arrowDown) : null,
-          arrowColor: durDiff != null ? (durDiff >= 0 ? Colors.greenAccent : Colors.redAccent) : null,
+          isDark ? Colors.white70 : AppColors.textMutedDark,
+          trendArrow: durDiff != null
+              ? (durDiff >= 0 ? LucideIcons.arrowUp : LucideIcons.arrowDown)
+              : null,
+          arrowColor: durDiff != null
+              ? (durDiff >= 0
+                    ? (isDark ? Colors.greenAccent : Colors.green.shade700)
+                    : (isDark ? Colors.redAccent : Colors.red.shade700))
+              : null,
         ),
       ],
     );
   }
 
-  Widget _buildEvolutionMetric(String label, String value, Color valueColor, {IconData? trendArrow, Color? arrowColor}) {
+  Widget _buildEvolutionMetric(
+    String label,
+    String value,
+    Color valueColor, {
+    IconData? trendArrow,
+    Color? arrowColor,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Text(
           label,
-          style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 10),
+          style: GoogleFonts.outfit(
+            color: isDark ? AppColors.textMuted : AppColors.textMutedDark,
+            fontSize: 10,
+          ),
         ),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (trendArrow != null) ...[
-              Icon(trendArrow, size: 10, color: arrowColor ?? Colors.white),
+              Icon(
+                trendArrow,
+                size: 10,
+                color:
+                    arrowColor ?? (isDark ? Colors.white : AppColors.textDark),
+              ),
               const SizedBox(width: 2),
             ],
             Text(

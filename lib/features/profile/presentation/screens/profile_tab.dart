@@ -133,9 +133,11 @@ class _ProfileTabState extends State<ProfileTab> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.backgroundDarkGreen,
-        title: Text('Editar Perfil', style: GoogleFonts.outfit(color: Colors.white)),
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return AlertDialog(
+        backgroundColor: cs.surface,
+        title: Text('Editar Perfil', style: GoogleFonts.outfit(color: cs.onSurface)),
         content: SingleChildScrollView(
           child: Form(
             key: formKey,
@@ -160,10 +162,10 @@ class _ProfileTabState extends State<ProfileTab> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('CANCELAR', style: TextStyle(color: Colors.white70)),
+            child: Text('CANCELAR', style: TextStyle(color: cs.onSurfaceVariant)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryNeon),
+            style: ElevatedButton.styleFrom(backgroundColor: cs.primary),
             onPressed: () async {
               if (formKey.currentState!.validate()) {
                 final updatedProfile = UserProfile(
@@ -185,24 +187,26 @@ class _ProfileTabState extends State<ProfileTab> {
                 }
               }
             },
-            child: const Text('SALVAR', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+            child: Text('SALVAR', style: TextStyle(color: cs.onPrimary, fontWeight: FontWeight.bold)),
           ),
         ],
-      ),
+      );
+      },
     );
   }
 
   Widget _buildEditField(TextEditingController controller, String label, IconData icon, {TextInputType keyboardType = TextInputType.text}) {
+    final cs = Theme.of(context).colorScheme;
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
-      style: const TextStyle(color: Colors.white),
+      style: TextStyle(color: cs.onSurface),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: AppColors.textMuted),
-        prefixIcon: Icon(icon, color: AppColors.primaryNeon, size: 20),
-        enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppColors.cardBorder)),
-        focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppColors.primaryNeon)),
+        labelStyle: TextStyle(color: cs.onSurfaceVariant),
+        prefixIcon: Icon(icon, color: cs.primary, size: 20),
+        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: cs.outline)),
+        focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: cs.primary)),
       ),
       validator: (v) => v == null || v.isEmpty ? 'Obrigatório' : null,
     );
@@ -210,53 +214,61 @@ class _ProfileTabState extends State<ProfileTab> {
   void _showImagePickerOptions() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.backgroundDarkGreen,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(LucideIcons.camera, color: AppColors.primaryNeon),
-              title: Text('Câmera', style: GoogleFonts.outfit(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                _pickImage(ImageSource.camera);
-              },
-            ),
-            ListTile(
-              leading: const Icon(LucideIcons.image, color: AppColors.primaryNeon),
-              title: Text('Galeria', style: GoogleFonts.outfit(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context);
-                _pickImage(ImageSource.gallery);
-              },
-            ),
-            if (_profile?.profilePicturePath != null)
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               ListTile(
-                leading: const Icon(LucideIcons.trash2, color: Colors.redAccent),
-                title: Text('Remover Foto', style: GoogleFonts.outfit(color: Colors.redAccent)),
+                leading: Icon(LucideIcons.camera, color: cs.primary),
+                title: Text('Câmera', style: GoogleFonts.outfit(color: cs.onSurface)),
                 onTap: () {
                   Navigator.pop(context);
-                  _removeProfilePicture();
+                  _pickImage(ImageSource.camera);
                 },
               ),
-          ],
-        ),
-      ),
+              ListTile(
+                leading: Icon(LucideIcons.image, color: cs.primary),
+                title: Text('Galeria', style: GoogleFonts.outfit(color: cs.onSurface)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.gallery);
+                },
+              ),
+              if (_profile?.profilePicturePath != null)
+                ListTile(
+                  leading: Icon(LucideIcons.trash2, color: cs.error),
+                  title: Text('Remover Foto', style: GoogleFonts.outfit(color: cs.error)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _removeProfilePicture();
+                  },
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.primaryNeon));
+      return Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary));
     }
 
-    return SafeArea(
-      child: SingleChildScrollView(
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Material(
+      key: ValueKey(isDark ? 'profile_dark' : 'profile_light'),
+      color: Colors.transparent,
+      child: SafeArea(
+        child: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           children: [
@@ -268,11 +280,11 @@ class _ProfileTabState extends State<ProfileTab> {
                     height: 120,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: AppColors.cardBackground,
-                      border: Border.all(color: AppColors.primaryNeon, width: 2),
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      border: Border.all(color: Theme.of(context).colorScheme.primary, width: 2),
                       boxShadow: [
                         BoxShadow(
-                          color: AppColors.primaryNeon.withValues(alpha: 0.2),
+                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                           blurRadius: 15,
                         ),
                       ],
@@ -282,10 +294,10 @@ class _ProfileTabState extends State<ProfileTab> {
                           ? Image.file(
                               File(_profile!.profilePicturePath!),
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) => 
-                                const Icon(LucideIcons.user, size: 60, color: AppColors.primaryNeon),
+                              errorBuilder: (context, error, stackTrace) =>
+                                Icon(LucideIcons.user, size: 60, color: Theme.of(context).colorScheme.primary),
                             )
-                          : const Icon(LucideIcons.user, size: 60, color: AppColors.primaryNeon),
+                          : Icon(LucideIcons.user, size: 60, color: Theme.of(context).colorScheme.primary),
                     ),
                   ),
                   Positioned(
@@ -295,8 +307,8 @@ class _ProfileTabState extends State<ProfileTab> {
                       onTap: _showImagePickerOptions,
                       child: CircleAvatar(
                         radius: 18,
-                        backgroundColor: AppColors.primaryNeon,
-                        child: const Icon(LucideIcons.camera, color: Colors.black, size: 18),
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        child: Icon(LucideIcons.camera, color: Theme.of(context).colorScheme.onPrimary, size: 18),
                       ),
                     ),
                   ),
@@ -357,7 +369,7 @@ class _ProfileTabState extends State<ProfileTab> {
                           Text(
                             _profile!.bmiStatus,
                             style: GoogleFonts.outfit(
-                              color: AppColors.primaryNeon,
+                              color: Theme.of(context).colorScheme.primary,
                               fontSize: 14,
                             ),
                           ),
@@ -376,38 +388,42 @@ class _ProfileTabState extends State<ProfileTab> {
                   _buildProfileTile(context, LucideIcons.user, 'Editar Dados do Perfil', onTap: _showEditProfileDialog),
                   const Divider(color: AppColors.cardBorder, height: 1),
                   _buildProfileTile(context, LucideIcons.lock, 'Privacidade', onTap: () => Navigator.pushNamed(context, '/privacy')),
-                  const Divider(color: AppColors.cardBorder, height: 1),
-                  Consumer<ThemeService>(
-                    builder: (context, themeService, child) {
+                  Divider(color: Theme.of(context).colorScheme.outline, height: 1),
+                  Builder(
+                    builder: (context) {
+                      final cs = Theme.of(context).colorScheme;
+                      final isDark = Theme.of(context).brightness == Brightness.dark;
                       return ListTile(
                         leading: Icon(
-                          themeService.isDarkMode ? LucideIcons.moon : LucideIcons.sun,
-                          color: AppColors.primaryNeon,
+                          isDark ? LucideIcons.moon : LucideIcons.sun,
+                          color: cs.primary,
                         ),
                         title: Text(
                           'Modo Escuro',
-                          style: GoogleFonts.outfit(color: AppColors.textLight),
+                          style: GoogleFonts.outfit(color: cs.onSurface),
                         ),
                         trailing: Switch(
-                          value: themeService.isDarkMode,
-                          onChanged: (_) => themeService.toggleTheme(),
-                          activeThumbColor: AppColors.primaryNeon,
+                          key: const ValueKey('theme_switch'),
+                          value: isDark,
+                          onChanged: (_) => context.read<ThemeService>().toggleTheme(),
+                          activeThumbColor: cs.primary,
                         ),
                       );
                     },
                   ),
-                  const Divider(color: AppColors.cardBorder, height: 1),
+                  Divider(color: Theme.of(context).colorScheme.outline, height: 1),
                   ListTile(
-                    leading: const Icon(LucideIcons.bell, color: AppColors.primaryNeon),
+                    leading: Icon(LucideIcons.bell, color: Theme.of(context).colorScheme.primary),
                     title: Text(
                       'Notificar a cada km',
-                      style: GoogleFonts.outfit(color: AppColors.textLight),
+                      style: GoogleFonts.outfit(color: Theme.of(context).colorScheme.onSurface),
                     ),
                     subtitle: Text(
                       'Vibração e push a cada km completado no treino',
-                      style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 11),
+                      style: GoogleFonts.outfit(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 11),
                     ),
                     trailing: Switch(
+                      key: const ValueKey('notifications_switch'),
                       value: _profile?.kmNotificationsEnabled ?? true,
                       onChanged: _profile == null ? null : (value) async {
                         final updated = UserProfile(
@@ -425,7 +441,7 @@ class _ProfileTabState extends State<ProfileTab> {
                         await _dbService.saveUserProfile(updated);
                         if (mounted) setState(() => _profile = updated);
                       },
-                      activeThumbColor: AppColors.primaryNeon,
+                      activeThumbColor: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                   if (kDebugMode && _profile?.kmNotificationsEnabled == true)
@@ -438,8 +454,8 @@ class _ProfileTabState extends State<ProfileTab> {
                             // Dispara uma notificação de teste simulando o km 1
                             NotificationService.sendKmMilestone(1, "5:30");
                           },
-                          icon: const Icon(LucideIcons.playCircle, size: 16, color: AppColors.primaryNeon),
-                          label: const Text('Testar Notificação', style: TextStyle(color: AppColors.primaryNeon)),
+                          icon: Icon(LucideIcons.playCircle, size: 16, color: Theme.of(context).colorScheme.primary),
+                          label: Text('Testar Notificação', style: TextStyle(color: Theme.of(context).colorScheme.primary)),
                         ),
                       ),
                     ),
@@ -453,7 +469,7 @@ class _ProfileTabState extends State<ProfileTab> {
             Text(
               'DADOS E PRIVACIDADE',
               style: GoogleFonts.outfit(
-                color: AppColors.textMuted,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.2,
@@ -481,7 +497,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       }
                     },
                   ),
-                  const Divider(color: AppColors.cardBorder, height: 1),
+                  Divider(color: Theme.of(context).colorScheme.outline, height: 1),
                   _buildBackupTile(
                     context,
                     LucideIcons.download,
@@ -521,7 +537,7 @@ class _ProfileTabState extends State<ProfileTab> {
             Text(
               'AJUDA E SUPORTE',
               style: GoogleFonts.outfit(
-                color: AppColors.textMuted,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.2,
@@ -555,7 +571,7 @@ class _ProfileTabState extends State<ProfileTab> {
               Text(
                 'DESENVOLVEDOR',
                 style: GoogleFonts.outfit(
-                  color: AppColors.textMuted,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.2,
@@ -567,10 +583,10 @@ class _ProfileTabState extends State<ProfileTab> {
                 child: Column(
                   children: [
                     ListTile(
-                      leading: const Icon(LucideIcons.code, color: AppColors.primaryNeon),
+                      leading: Icon(LucideIcons.code, color: Theme.of(context).colorScheme.primary),
                       title: Text(
                         'Exibir Anúncios (Banner)',
-                        style: GoogleFonts.outfit(color: AppColors.textLight),
+                        style: GoogleFonts.outfit(color: Theme.of(context).colorScheme.onSurface),
                       ),
                       trailing: Switch(
                         value: AdService().adsEnabled,
@@ -578,7 +594,7 @@ class _ProfileTabState extends State<ProfileTab> {
                           await AdService().setAdsEnabled(value);
                           if (mounted) setState(() {});
                         },
-                        activeThumbColor: AppColors.primaryNeon,
+                        activeThumbColor: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                   ],
@@ -590,57 +606,61 @@ class _ProfileTabState extends State<ProfileTab> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildBackupTile(BuildContext context, IconData icon, String title, String subtitle, {required VoidCallback onTap}) {
+    final cs = Theme.of(context).colorScheme;
     return ListTile(
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: AppColors.primaryNeon.withValues(alpha: 0.1),
+          color: cs.primary.withValues(alpha: 0.1),
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: AppColors.primaryNeon, size: 20),
+        child: Icon(icon, color: cs.primary, size: 20),
       ),
       title: Text(
         title,
         style: GoogleFonts.outfit(
-          color: Theme.of(context).colorScheme.onSurface,
+          color: cs.onSurface,
           fontWeight: FontWeight.bold,
         ),
       ),
       subtitle: Text(
         subtitle,
-        style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+        style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
       ),
       onTap: onTap,
     );
   }
 
   Widget _buildInfoBadge(String text) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.cardBackground,
+        color: cs.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.cardBorder),
+        border: Border.all(color: cs.outline),
       ),
       child: Text(
         text,
-        style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12),
+        style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12),
       ),
     );
   }
 
   Widget _buildProfileTile(BuildContext context, IconData icon, String title, {VoidCallback? onTap}) {
+    final cs = Theme.of(context).colorScheme;
     return ListTile(
-      leading: Icon(icon, color: AppColors.primaryNeon),
+      leading: Icon(icon, color: cs.primary),
       title: Text(
         title,
-        style: GoogleFonts.outfit(color: Theme.of(context).colorScheme.onSurface),
+        style: GoogleFonts.outfit(color: cs.onSurface),
       ),
-      trailing: const Icon(LucideIcons.chevronRight, color: AppColors.textMuted),
+      trailing: Icon(LucideIcons.chevronRight, color: cs.onSurfaceVariant),
       onTap: onTap ?? () {},
     );
   }

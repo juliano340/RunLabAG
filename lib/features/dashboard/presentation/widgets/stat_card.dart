@@ -25,17 +25,19 @@ class StatCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: isDark ? AppColors.cardBackground : AppColors.cardLight,
         borderRadius: BorderRadius.circular(16),
-        border: isDark 
+        border: isDark
             ? Border.all(color: AppColors.cardBorder)
-            : null, // Pure White aesthetic uses shadows over borders
-        boxShadow: isDark ? null : [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 15,
-            spreadRadius: 2,
-            offset: const Offset(0, 4),
-          ),
-        ],
+            : Border.all(color: AppColors.borderLight),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 15,
+                  spreadRadius: 2,
+                  offset: const Offset(0, 4),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -43,16 +45,18 @@ class StatCard extends StatelessWidget {
           Row(
             children: [
               Icon(
-                icon, 
-                color: isDark ? AppColors.primaryNeon : AppColors.accentEmerald, 
-                size: 20
+                icon,
+                color: isDark ? AppColors.primaryNeon : AppColors.lightPrimary,
+                size: 20,
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   title,
                   style: GoogleFonts.outfit(
-                    color: isDark ? AppColors.textMuted : AppColors.textMutedDark,
+                    color: isDark
+                        ? AppColors.textMuted
+                        : AppColors.textMutedDark,
                     fontSize: 14,
                   ),
                   maxLines: 1,
@@ -61,7 +65,7 @@ class StatCard extends StatelessWidget {
               ),
             ],
           ),
-          const Spacer(),
+          const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -79,7 +83,9 @@ class StatCard extends StatelessWidget {
                 child: Text(
                   unit,
                   style: GoogleFonts.outfit(
-                    color: isDark ? AppColors.textMuted : AppColors.textMutedDark,
+                    color: isDark
+                        ? AppColors.textMuted
+                        : AppColors.textMutedDark,
                     fontSize: 14,
                   ),
                 ),

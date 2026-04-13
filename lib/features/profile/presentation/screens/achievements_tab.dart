@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/glass_container.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -36,6 +35,8 @@ class _AchievementsTabState extends State<AchievementsTab> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
     final achievements = [
       {'id': 'first_run', 'title': 'Primeiro Passo', 'desc': 'Complete sua primeira corrida', 'icon': LucideIcons.footprints},
       {'id': 'night_owl', 'title': 'Coruja Noturna', 'desc': 'Corra após as 20h', 'icon': LucideIcons.moon},
@@ -46,7 +47,7 @@ class _AchievementsTabState extends State<AchievementsTab> {
     ];
 
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.primaryNeon));
+      return Center(child: CircularProgressIndicator(color: cs.primary));
     }
 
     return SafeArea(
@@ -58,7 +59,7 @@ class _AchievementsTabState extends State<AchievementsTab> {
             Text(
               'Conquistas',
               style: GoogleFonts.outfit(
-                color: AppColors.textLight,
+                color: cs.onSurface,
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
               ),
@@ -67,7 +68,7 @@ class _AchievementsTabState extends State<AchievementsTab> {
             Text(
               '${_earnedIds.length} / ${achievements.length} Desbloqueado',
               style: GoogleFonts.outfit(
-                color: AppColors.textMuted,
+                color: cs.onSurfaceVariant,
                 fontSize: 16,
               ),
             ),
@@ -84,7 +85,7 @@ class _AchievementsTabState extends State<AchievementsTab> {
                 itemBuilder: (context, index) {
                   final badge = achievements[index];
                   final bool earned = _earnedIds.contains(badge['id']);
-                  
+
                   return GlassContainer(
                     hasNeonBorder: earned,
                     padding: const EdgeInsets.all(16),
@@ -94,14 +95,18 @@ class _AchievementsTabState extends State<AchievementsTab> {
                         Icon(
                           badge['icon'] as IconData,
                           size: 48,
-                          color: earned ? AppColors.primaryNeon : AppColors.textMuted.withValues(alpha: 0.3),
+                          color: earned
+                              ? cs.primary
+                              : cs.onSurfaceVariant.withValues(alpha: 0.3),
                         ),
                         const SizedBox(height: 16),
                         Text(
                           badge['title'] as String,
                           textAlign: TextAlign.center,
                           style: GoogleFonts.outfit(
-                            color: earned ? AppColors.textLight : AppColors.textMuted.withValues(alpha: 0.5),
+                            color: earned
+                                ? cs.onSurface
+                                : cs.onSurfaceVariant.withValues(alpha: 0.5),
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
                           ),
@@ -111,7 +116,9 @@ class _AchievementsTabState extends State<AchievementsTab> {
                           badge['desc'] as String,
                           textAlign: TextAlign.center,
                           style: GoogleFonts.outfit(
-                            color: earned ? AppColors.textMuted : AppColors.textMuted.withValues(alpha: 0.3),
+                            color: earned
+                                ? cs.onSurfaceVariant
+                                : cs.onSurfaceVariant.withValues(alpha: 0.35),
                             fontSize: 12,
                           ),
                         ),

@@ -337,248 +337,258 @@ class _HistoryTabState extends State<HistoryTab> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.backgroundDarkGreen,
-        title: Text(
-          'Configurar Meta',
-          style: GoogleFonts.outfit(color: Colors.white),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Per-period goal
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.primaryNeon.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: AppColors.primaryNeon.withValues(alpha: 0.2),
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return AlertDialog(
+          backgroundColor: cs.surface,
+          title: Text(
+            'Configurar Meta',
+            style: GoogleFonts.outfit(color: cs.onSurface),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Per-period goal
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: cs.primary.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: cs.primary.withValues(alpha: 0.2)),
                 ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.lock_clock,
-                        color: AppColors.primaryNeon,
-                        size: 14,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.lock_clock, color: cs.primary, size: 14),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Meta deste período',
+                          style: GoogleFonts.outfit(
+                            color: cs.primary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Altera apenas este período. Não afeta o histórico.',
+                      style: GoogleFonts.outfit(
+                        color: cs.onSurfaceVariant,
+                        fontSize: 11,
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Meta deste período',
-                        style: GoogleFonts.outfit(
-                          color: AppColors.primaryNeon,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: periodController,
+                      keyboardType: TextInputType.number,
+                      style: TextStyle(color: cs.onSurface),
+                      decoration: InputDecoration(
+                        labelText: 'Meta (km)',
+                        labelStyle: TextStyle(color: cs.onSurfaceVariant),
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: cs.outline),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Altera apenas este período. Não afeta o histórico.',
-                    style: GoogleFonts.outfit(
-                      color: Colors.white54,
-                      fontSize: 11,
                     ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Default / future goal
+              TextField(
+                controller: globalController,
+                keyboardType: TextInputType.number,
+                style: TextStyle(color: cs.onSurface),
+                decoration: InputDecoration(
+                  labelText: 'Meta padrão futura (km)',
+                  helperText: 'Aplicada a novos períodos',
+                  helperStyle: TextStyle(
+                    color: cs.onSurfaceVariant,
+                    fontSize: 11,
                   ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: periodController,
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      labelText: 'Meta (km)',
-                      labelStyle: TextStyle(color: AppColors.textMuted),
-                      enabledBorder: const UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.white24),
-                      ),
-                    ),
+                  labelStyle: TextStyle(color: cs.onSurfaceVariant),
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: cs.outline),
                   ),
-                ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                'CANCELAR',
+                style: TextStyle(color: cs.onSurfaceVariant),
               ),
             ),
-            const SizedBox(height: 16),
-            // Default / future goal
-            TextField(
-              controller: globalController,
-              keyboardType: TextInputType.number,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                labelText: 'Meta padrão futura (km)',
-                helperText: 'Aplicada a novos períodos',
-                helperStyle: TextStyle(color: Colors.white30, fontSize: 11),
-                labelStyle: TextStyle(color: AppColors.textMuted),
-                enabledBorder: const UnderlineInputBorder(
-                  borderSide: BorderSide(color: Colors.white24),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: cs.primary),
+              onPressed: () async {
+                final newPeriodGoal =
+                    double.tryParse(periodController.text) ??
+                    _currentPeriodGoal;
+                final newGlobalGoal =
+                    double.tryParse(globalController.text) ??
+                    (_userProfile?.weeklyGoal ?? 20.0);
+                final navigator = Navigator.of(context);
+
+                // Save per-period (historical) goal
+                await _dbService.saveGoalHistory(
+                  periodId,
+                  goalType,
+                  newPeriodGoal,
+                );
+
+                // Save global default for future periods
+                if (_userProfile != null) {
+                  final updatedProfile = UserProfile(
+                    name: _userProfile!.name,
+                    age: _userProfile!.age,
+                    weight: _userProfile!.weight,
+                    height: _userProfile!.height,
+                    profilePicturePath: _userProfile!.profilePicturePath,
+                    weeklyGoal: _selectedPeriodIndex == 0
+                        ? newGlobalGoal
+                        : _userProfile!.weeklyGoal,
+                    monthlyGoal: _selectedPeriodIndex == 1
+                        ? newGlobalGoal
+                        : _userProfile!.monthlyGoal,
+                    lastGoalUpdate: DateTime.now(),
+                  );
+                  await _dbService.saveUserProfile(updatedProfile);
+                  if (mounted) setState(() => _userProfile = updatedProfile);
+                }
+
+                if (mounted) {
+                  setState(() => _currentPeriodGoal = newPeriodGoal);
+                  navigator.pop();
+                }
+              },
+              child: Text(
+                'SALVAR',
+                style: TextStyle(
+                  color: cs.onPrimary,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ),
           ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'CANCELAR',
-              style: TextStyle(color: AppColors.textMuted),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primaryNeon,
-            ),
-            onPressed: () async {
-              final newPeriodGoal =
-                  double.tryParse(periodController.text) ?? _currentPeriodGoal;
-              final newGlobalGoal =
-                  double.tryParse(globalController.text) ??
-                  (_userProfile?.weeklyGoal ?? 20.0);
-              final navigator = Navigator.of(context);
-
-              // Save per-period (historical) goal
-              await _dbService.saveGoalHistory(
-                periodId,
-                goalType,
-                newPeriodGoal,
-              );
-
-              // Save global default for future periods
-              if (_userProfile != null) {
-                final updatedProfile = UserProfile(
-                  name: _userProfile!.name,
-                  age: _userProfile!.age,
-                  weight: _userProfile!.weight,
-                  height: _userProfile!.height,
-                  profilePicturePath: _userProfile!.profilePicturePath,
-                  weeklyGoal: _selectedPeriodIndex == 0
-                      ? newGlobalGoal
-                      : _userProfile!.weeklyGoal,
-                  monthlyGoal: _selectedPeriodIndex == 1
-                      ? newGlobalGoal
-                      : _userProfile!.monthlyGoal,
-                  lastGoalUpdate: DateTime.now(),
-                );
-                await _dbService.saveUserProfile(updatedProfile);
-                if (mounted) setState(() => _userProfile = updatedProfile);
-              }
-
-              if (mounted) {
-                setState(() => _currentPeriodGoal = newPeriodGoal);
-                navigator.pop();
-              }
-            },
-            child: const Text(
-              'SALVAR',
-              style: TextStyle(
-                color: Colors.black,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Dashboard',
-                  style: GoogleFonts.outfit(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Material(
+      key: ValueKey(isDark ? 'history_dark' : 'history_light'),
+      color: Colors.transparent,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Dashboard',
+                    style: GoogleFonts.outfit(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                IconButton(
-                  onPressed: _showGoalSettings,
-                  icon: const Icon(
-                    LucideIcons.settings,
-                    color: AppColors.textMuted,
-                    size: 20,
+                  IconButton(
+                    onPressed: _showGoalSettings,
+                    icon: Icon(
+                      LucideIcons.settings,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      size: 20,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
 
-          const SizedBox(height: 12),
-          _buildPeriodSelector(),
-          const SizedBox(height: 12),
-          _buildPaginationHeader(),
-          const SizedBox(height: 12),
+            const SizedBox(height: 12),
+            _buildPeriodSelector(),
+            const SizedBox(height: 12),
+            _buildPaginationHeader(),
+            const SizedBox(height: 12),
 
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      color: AppColors.primaryNeon,
-                    ),
-                  )
-                : SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    child: Column(
-                      children: [
-                        _buildAnalyticsSummary(),
-                        const SizedBox(height: 24),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: Row(
-                            children: [
-                              Text(
-                                'Atividades',
-                                style: GoogleFonts.outfit(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.primaryNeon,
+                      ),
+                    )
+                  : SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      child: Column(
+                        children: [
+                          _buildAnalyticsSummary(),
+                          const SizedBox(height: 24),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Row(
+                              children: [
+                                Text(
+                                  'Atividades',
+                                  style: GoogleFonts.outfit(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                              ),
-                              const Spacer(),
-                              Text(
-                                '${_filteredRuns.length} treinos',
-                                style: GoogleFonts.outfit(
-                                  color: AppColors.textMuted,
-                                  fontSize: 13,
+                                const Spacer(),
+                                Text(
+                                  '${_filteredRuns.length} treinos',
+                                  style: GoogleFonts.outfit(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                    fontSize: 13,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        _buildActivitiesList(),
-                        const SizedBox(height: 24),
-                      ],
+                          const SizedBox(height: 12),
+                          _buildActivitiesList(),
+                          const SizedBox(height: 24),
+                        ],
+                      ),
                     ),
-                  ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildPeriodSelector() {
+    final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Container(
         height: 40,
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: AppColors.backgroundDarkGreen.withValues(alpha: 0.5),
+          color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.white10),
+          border: Border.all(color: cs.outline.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: List.generate(_periods.length, (index) {
@@ -596,21 +606,17 @@ class _HistoryTabState extends State<HistoryTab> {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? AppColors.primaryNeon.withValues(alpha: 0.1)
+                        ? cs.primary.withValues(alpha: 0.12)
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(8),
                     border: isSelected
-                        ? Border.all(
-                            color: AppColors.primaryNeon.withValues(alpha: 0.3),
-                          )
+                        ? Border.all(color: cs.primary.withValues(alpha: 0.3))
                         : null,
                   ),
                   child: Text(
                     _periods[index],
                     style: GoogleFonts.outfit(
-                      color: isSelected
-                          ? AppColors.primaryNeon
-                          : AppColors.textMuted,
+                      color: isSelected ? cs.primary : cs.onSurfaceVariant,
                       fontWeight: isSelected
                           ? FontWeight.bold
                           : FontWeight.normal,
@@ -640,15 +646,17 @@ class _HistoryTabState extends State<HistoryTab> {
             icon: Icon(
               LucideIcons.chevronLeft,
               color: canPrev
-                  ? AppColors.textMuted
-                  : AppColors.textMuted.withValues(alpha: 0.1),
+                  ? Theme.of(context).colorScheme.onSurfaceVariant
+                  : Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant.withValues(alpha: 0.2),
             ),
             visualDensity: VisualDensity.compact,
           ),
           Text(
             _getPeriodTitle(),
             style: GoogleFonts.outfit(
-              color: Colors.white,
+              color: Theme.of(context).colorScheme.onSurface,
               fontWeight: FontWeight.bold,
               fontSize: 15,
             ),
@@ -658,8 +666,10 @@ class _HistoryTabState extends State<HistoryTab> {
             icon: Icon(
               LucideIcons.chevronRight,
               color: canNext
-                  ? AppColors.textMuted
-                  : AppColors.textMuted.withValues(alpha: 0.1),
+                  ? Theme.of(context).colorScheme.onSurfaceVariant
+                  : Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant.withValues(alpha: 0.2),
             ),
             visualDensity: VisualDensity.compact,
           ),
@@ -696,7 +706,7 @@ class _HistoryTabState extends State<HistoryTab> {
                       Text(
                         'Desempenho',
                         style: GoogleFonts.outfit(
-                          color: AppColors.textMuted,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 12,
                         ),
                       ),
@@ -716,7 +726,7 @@ class _HistoryTabState extends State<HistoryTab> {
                       Text(
                         'Meta',
                         style: GoogleFonts.outfit(
-                          color: AppColors.textMuted,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 12,
                         ),
                       ),
@@ -731,13 +741,19 @@ class _HistoryTabState extends State<HistoryTab> {
                               value: progress,
                               strokeWidth: 8,
                               color: _getGoalColor(rawProgress),
-                              backgroundColor: Colors.white12,
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.outline.withValues(alpha: 0.2),
                             ),
                           ),
                           Text(
                             '${(rawProgress * 100).toInt()}%',
                             style: GoogleFonts.outfit(
-                              color: _getGoalColor(rawProgress),
+                              color:
+                                  Theme.of(context).brightness ==
+                                      Brightness.dark
+                                  ? Colors.white
+                                  : AppColors.textDark,
                               fontWeight: FontWeight.bold,
                               fontSize: 14,
                             ),
@@ -748,7 +764,7 @@ class _HistoryTabState extends State<HistoryTab> {
                       Text(
                         '${totalKm.toStringAsFixed(1)} / ${goal.toInt()} km',
                         style: GoogleFonts.outfit(
-                          color: AppColors.textMuted,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 10,
                         ),
                       ),
@@ -783,17 +799,18 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   Widget _buildSmallStat(String label, String value, IconData icon) {
+    final cs = Theme.of(context).colorScheme;
     return Expanded(
       child: GlassContainer(
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
         child: Column(
           children: [
-            Icon(icon, color: AppColors.primaryNeon, size: 16),
+            Icon(icon, color: cs.primary, size: 16),
             const SizedBox(height: 8),
             Text(
               value,
               style: GoogleFonts.outfit(
-                color: Colors.white,
+                color: cs.onSurface,
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
               ),
@@ -802,7 +819,7 @@ class _HistoryTabState extends State<HistoryTab> {
             Text(
               label,
               style: GoogleFonts.outfit(
-                color: AppColors.textMuted,
+                color: cs.onSurfaceVariant,
                 fontSize: 10,
               ),
               textAlign: TextAlign.center,
@@ -851,7 +868,9 @@ class _HistoryTabState extends State<HistoryTab> {
       int weekIndex = 0;
       DateTime currentStart = firstDayOfMonth;
 
-      while (currentStart.isBefore(lastDayOfMonth.add(const Duration(seconds: 1)))) {
+      while (currentStart.isBefore(
+        lastDayOfMonth.add(const Duration(seconds: 1)),
+      )) {
         final currentEnd = currentStart.add(const Duration(days: 7));
         final effectiveEnd = currentEnd.isAfter(lastDayOfMonth)
             ? lastDayOfMonth.add(const Duration(seconds: 1))
@@ -860,7 +879,9 @@ class _HistoryTabState extends State<HistoryTab> {
         double weeklyTotal = _allRuns
             .where(
               (r) =>
-                  r.date.isAfter(currentStart.subtract(const Duration(seconds: 1))) &&
+                  r.date.isAfter(
+                    currentStart.subtract(const Duration(seconds: 1)),
+                  ) &&
                   r.date.isBefore(effectiveEnd),
             )
             .fold(0.0, (sum, r) => sum + r.distanceKm);
@@ -882,13 +903,17 @@ class _HistoryTabState extends State<HistoryTab> {
         barTouchData: BarTouchData(
           enabled: true,
           touchTooltipData: BarTouchTooltipData(
-            getTooltipColor: (_) => AppColors.backgroundDarkGreen,
-            tooltipBorder: const BorderSide(color: Colors.white10),
+            getTooltipColor: (_) => Theme.of(context).colorScheme.surface,
+            tooltipBorder: BorderSide(
+              color: Theme.of(
+                context,
+              ).colorScheme.outline.withValues(alpha: 0.3),
+            ),
             getTooltipItem: (group, groupIndex, rod, rodIndex) {
               return BarTooltipItem(
                 '${rod.toY.toStringAsFixed(1)} km',
                 GoogleFonts.outfit(
-                  color: AppColors.primaryNeon,
+                  color: Theme.of(context).colorScheme.primary,
                   fontWeight: FontWeight.bold,
                 ),
               );
@@ -913,7 +938,7 @@ class _HistoryTabState extends State<HistoryTab> {
                   child: Text(
                     text,
                     style: GoogleFonts.outfit(
-                      color: AppColors.textMuted,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 10,
                     ),
                   ),
@@ -993,15 +1018,16 @@ class _HistoryTabState extends State<HistoryTab> {
     final res = _recommendation!;
     final isAlert = res.emoji == '🔴' || res.emoji == '🟡';
     final isInfo = res.emoji == '📊' || res.emoji == '⏱️';
+    final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       child: GlassContainer(
         padding: const EdgeInsets.all(16),
         borderColor: res.isIncrease
-            ? AppColors.primaryNeon.withValues(alpha: 0.3)
+            ? cs.primary.withValues(alpha: 0.3)
             : isAlert
             ? Colors.orangeAccent.withValues(alpha: 0.3)
-            : Colors.white12,
+            : cs.outline.withValues(alpha: 0.2),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1012,7 +1038,7 @@ class _HistoryTabState extends State<HistoryTab> {
                 Text(
                   isInfo ? 'Status da Semana' : 'Dica de Evolução',
                   style: GoogleFonts.outfit(
-                    color: Colors.white,
+                    color: cs.onSurface,
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
                   ),
@@ -1022,7 +1048,10 @@ class _HistoryTabState extends State<HistoryTab> {
             const SizedBox(height: 12),
             Text(
               res.message,
-              style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13),
+              style: GoogleFonts.outfit(
+                color: cs.onSurfaceVariant,
+                fontSize: 13,
+              ),
             ),
             if (!isInfo && !isAlert) ...[
               const SizedBox(height: 16),
@@ -1031,11 +1060,11 @@ class _HistoryTabState extends State<HistoryTab> {
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: res.isIncrease
-                        ? AppColors.primaryNeon
-                        : Colors.white10,
+                        ? cs.primary
+                        : cs.outline.withValues(alpha: 0.15),
                     foregroundColor: res.isIncrease
-                        ? Colors.black
-                        : Colors.white,
+                        ? cs.onPrimary
+                        : cs.onSurface,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -1101,6 +1130,7 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   Widget _buildRunCard(RunModel run) {
+    final cs = Theme.of(context).colorScheme;
     return GlassContainer(
       padding: const EdgeInsets.all(16),
       onTap: () {
@@ -1116,16 +1146,14 @@ class _HistoryTabState extends State<HistoryTab> {
             decoration: BoxDecoration(
               color: run.type == 'Caminhada'
                   ? Colors.blue.withValues(alpha: 0.1)
-                  : AppColors.primaryNeon.withValues(alpha: 0.1),
+                  : cs.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
               run.type == 'Caminhada'
                   ? LucideIcons.footprints
                   : LucideIcons.zap,
-              color: run.type == 'Caminhada'
-                  ? Colors.blueAccent
-                  : AppColors.primaryNeon,
+              color: run.type == 'Caminhada' ? Colors.blueAccent : cs.primary,
               size: 24,
             ),
           ),
@@ -1137,7 +1165,7 @@ class _HistoryTabState extends State<HistoryTab> {
                 Text(
                   '${run.distanceKm.toStringAsFixed(2)} km',
                   style: GoogleFonts.outfit(
-                    color: Colors.white,
+                    color: cs.onSurface,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
@@ -1145,7 +1173,7 @@ class _HistoryTabState extends State<HistoryTab> {
                 Text(
                   '${_formatDateShort(run.date)} • ${TimeUtils.formatDuration(run.durationSeconds)}',
                   style: GoogleFonts.outfit(
-                    color: AppColors.textMuted,
+                    color: cs.onSurfaceVariant,
                     fontSize: 12,
                   ),
                 ),
@@ -1158,7 +1186,7 @@ class _HistoryTabState extends State<HistoryTab> {
               Text(
                 run.pace,
                 style: GoogleFonts.outfit(
-                  color: AppColors.primaryNeonLight,
+                  color: cs.primary,
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
                 ),
@@ -1166,20 +1194,25 @@ class _HistoryTabState extends State<HistoryTab> {
               Text(
                 'ritmo',
                 style: GoogleFonts.outfit(
-                  color: AppColors.textMuted,
+                  color: cs.onSurfaceVariant,
                   fontSize: 10,
                 ),
               ),
             ],
           ),
           const SizedBox(width: 8),
-          const Icon(LucideIcons.chevronRight, color: Colors.white12, size: 16),
+          Icon(
+            LucideIcons.chevronRight,
+            color: cs.outline.withValues(alpha: 0.4),
+            size: 16,
+          ),
         ],
       ),
     );
   }
 
   Widget _buildEmptyState() {
+    final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 40),
       child: Center(
@@ -1188,12 +1221,12 @@ class _HistoryTabState extends State<HistoryTab> {
             Icon(
               LucideIcons.history,
               size: 48,
-              color: AppColors.textMuted.withValues(alpha: 0.2),
+              color: cs.onSurfaceVariant.withValues(alpha: 0.25),
             ),
             const SizedBox(height: 16),
             Text(
               'Nenhuma atividade neste período.',
-              style: GoogleFonts.outfit(color: AppColors.textMuted),
+              style: GoogleFonts.outfit(color: cs.onSurfaceVariant),
             ),
           ],
         ),

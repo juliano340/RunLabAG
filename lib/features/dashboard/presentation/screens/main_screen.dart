@@ -104,7 +104,12 @@ class _MainScreenState extends State<MainScreen> {
       child: Scaffold(
         body: Column(
           children: [
-            Expanded(child: _tabs[_currentIndex]),
+            Expanded(
+              child: IndexedStack(
+                index: _currentIndex,
+                children: _tabs,
+              ),
+            ),
             const AdBannerWidget(),
           ],
         ),

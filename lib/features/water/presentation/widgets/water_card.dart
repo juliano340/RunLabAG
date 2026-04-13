@@ -12,10 +12,12 @@ class WaterCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Consumer<WaterProvider>(
       builder: (context, provider, child) {
         final percentage = provider.progress;
-        
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -38,21 +40,30 @@ class WaterCard extends StatelessWidget {
                     );
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
-                      color: AppColors.primaryNeon.withValues(alpha: 0.1),
+                      color: AppColors.lightPrimary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppColors.primaryNeon.withValues(alpha: 0.3)),
+                      border: Border.all(
+                        color: AppColors.lightPrimary.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(LucideIcons.plus, color: AppColors.primaryNeon, size: 16),
+                        Icon(
+                          LucideIcons.plus,
+                          color: AppColors.lightPrimary,
+                          size: 16,
+                        ),
                         const SizedBox(width: 4),
                         Text(
                           'Adicionar',
                           style: GoogleFonts.outfit(
-                            color: AppColors.primaryNeon,
+                            color: AppColors.lightPrimary,
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                           ),
@@ -78,10 +89,18 @@ class WaterCard extends StatelessWidget {
                           value: percentage,
                           strokeWidth: 6,
                           backgroundColor: Colors.blue.withValues(alpha: 0.1),
-                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            isDark ? Colors.blueAccent : Colors.blue.shade700,
+                          ),
                         ),
                       ),
-                      const Icon(LucideIcons.droplets, color: Colors.blueAccent, size: 24),
+                      Icon(
+                        LucideIcons.droplets,
+                        color: isDark
+                            ? Colors.blueAccent
+                            : Colors.blue.shade700,
+                        size: 24,
+                      ),
                     ],
                   ),
                   const SizedBox(width: 20),
@@ -92,7 +111,7 @@ class WaterCard extends StatelessWidget {
                         Text(
                           '${provider.dailyIntake} ml / ${provider.dailyGoal.toInt()} ml',
                           style: GoogleFonts.outfit(
-                            color: Colors.white,
+                            color: isDark ? Colors.white : AppColors.textDark,
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
@@ -102,18 +121,24 @@ class WaterCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4),
                           child: LinearProgressIndicator(
                             value: percentage,
-                            backgroundColor: Colors.white10,
-                            valueColor: const AlwaysStoppedAnimation<Color>(Colors.blueAccent),
+                            backgroundColor: isDark
+                                ? Colors.white10
+                                : AppColors.borderLight,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              isDark ? Colors.blueAccent : Colors.blue.shade700,
+                            ),
                             minHeight: 4,
                           ),
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          percentage >= 1.0 
-                              ? 'Meta batida! Parabéns! 🎉' 
+                          percentage >= 1.0
+                              ? 'Meta batida! Parabéns! 🎉'
                               : 'Faltam ${(provider.dailyGoal - provider.dailyIntake).clamp(0, double.infinity).toInt()} ml para a meta.',
                           style: GoogleFonts.outfit(
-                            color: AppColors.textMuted,
+                            color: isDark
+                                ? AppColors.textMuted
+                                : AppColors.textMutedDark,
                             fontSize: 12,
                           ),
                         ),

@@ -53,3 +53,4 @@ GoogleService-Info.plist
 
 # Claude Code (machine-local)
 .claude/settings.local.json
+assets/icons/capa.png

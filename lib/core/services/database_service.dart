@@ -173,7 +173,7 @@ class UserProfile {
 class DatabaseService {
   static Database? _database;
 
-  static const _databaseVersion = 18;
+  static const _databaseVersion = 19;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -197,7 +197,7 @@ class DatabaseService {
           'CREATE TABLE achievements(id TEXT PRIMARY KEY, title TEXT, description TEXT, iconCode INTEGER, earnedDate TEXT)',
         );
         await db.execute(
-          'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER, splits TEXT)',
+          'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER, splits TEXT, targetTimeSeconds INTEGER)',
         );
         await db.execute(
           'CREATE TABLE monitored_distances(distanceKm REAL PRIMARY KEY)',
@@ -334,6 +334,9 @@ class DatabaseService {
           await db.execute(
             'CREATE TABLE template_items(id TEXT PRIMARY KEY, templateId TEXT, type TEXT, itemId TEXT, orderIndex INTEGER, overrides TEXT)',
           );
+        }
+        if (oldVersion < 19) {
+          await db.execute('ALTER TABLE active_run ADD COLUMN targetTimeSeconds INTEGER');
         }
       },
     );

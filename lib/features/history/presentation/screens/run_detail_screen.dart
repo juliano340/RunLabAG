@@ -47,12 +47,14 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => Container(
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return Container(
         height: MediaQuery.of(context).size.height * 0.7,
         decoration: BoxDecoration(
-          color: AppColors.backgroundDarkGreen,
+          color: cs.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
-          border: Border.all(color: Colors.white10),
+          border: Border.all(color: cs.outline.withValues(alpha: 0.2)),
         ),
         child: Column(
           children: [
@@ -61,7 +63,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white24,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -69,7 +71,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
             Text(
               'VOLTAS (KM)',
               style: GoogleFonts.outfit(
-                color: Colors.white,
+                color: cs.onSurface,
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.2,
@@ -82,9 +84,9 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                 child: Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
+                    color: cs.onSurface.withValues(alpha: 0.03),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                    border: Border.all(color: cs.outline.withValues(alpha: 0.15)),
                   ),
                   child: Column(
                     children: [
@@ -92,47 +94,44 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         child: Row(
                           children: [
-                            Expanded(flex: 1, child: Text('KM', style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12))),
-                            Expanded(flex: 2, child: Text('TEMPO', style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12))),
-                            Expanded(flex: 2, child: Text('RITMO', style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12))),
-                            Expanded(flex: 1, child: Text('KCAL', style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 12), textAlign: TextAlign.right)),
+                            Expanded(flex: 1, child: Text('KM', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12))),
+                            Expanded(flex: 2, child: Text('TEMPO', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12))),
+                            Expanded(flex: 2, child: Text('RITMO', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12))),
+                            Expanded(flex: 1, child: Text('KCAL', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12), textAlign: TextAlign.right)),
                           ],
                         ),
                       ),
-                      const Divider(color: Colors.white10, height: 1),
+                      Divider(color: cs.outline.withValues(alpha: 0.2), height: 1),
                       ...List.generate(widget.run.splits.length, (index) {
                         final split = widget.run.splits[index];
                         final splitTime = split.timeSeconds;
                         final minutes = splitTime ~/ 60;
                         final seconds = splitTime % 60;
                         final paceStr = '$minutes:${seconds.toString().padLeft(2, '0')}';
-                        
+
                         return Container(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           decoration: BoxDecoration(
-                            border: const Border(bottom: BorderSide(color: Colors.white10, width: 0.5)),
+                            border: Border(bottom: BorderSide(color: cs.outline.withValues(alpha: 0.15), width: 0.5)),
                           ),
                           child: Row(
                             children: [
-                              Expanded(flex: 1, child: Text('${index + 1}', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold))),
-                              Expanded(flex: 2, child: Text(_formatDuration(splitTime), style: GoogleFonts.outfit(color: Colors.white))),
-                              Expanded(flex: 2, child: Text('$paceStr/km', style: GoogleFonts.outfit(color: AppColors.primaryNeon, fontWeight: FontWeight.w600))),
+                              Expanded(flex: 1, child: Text('${index + 1}', style: GoogleFonts.outfit(color: cs.onSurface, fontWeight: FontWeight.bold))),
+                              Expanded(flex: 2, child: Text(_formatDuration(splitTime), style: GoogleFonts.outfit(color: cs.onSurface))),
+                              Expanded(flex: 2, child: Text('$paceStr/km', style: GoogleFonts.outfit(color: cs.primary, fontWeight: FontWeight.w600))),
                               Expanded(flex: 1, child: Text('${split.calories}', style: GoogleFonts.outfit(color: Colors.orangeAccent, fontSize: 13), textAlign: TextAlign.right)),
                             ],
                           ),
                         );
                       }),
-                      
-                      // Adicionar o trecho final (parcial)
+
                       if (widget.run.distanceKm > widget.run.splits.length + 0.01) (() {
                         final remainingDist = widget.run.distanceKm - widget.run.splits.length;
                         final consumedTime = widget.run.splits.fold(0, (sum, s) => sum + s.timeSeconds);
                         final remainingTime = (widget.run.durationSeconds - consumedTime).clamp(0, widget.run.durationSeconds);
-                        
                         final consumedCals = widget.run.splits.fold(0, (sum, s) => sum + s.calories);
                         final remainingCals = (widget.run.calories - consumedCals).clamp(0, widget.run.calories);
 
-                        // Calcular ritmo para o trecho parcial
                         String partialPace = '--:--';
                         if (remainingDist > 0 && remainingTime > 0) {
                           double paceInMinutes = (remainingTime / 60) / remainingDist;
@@ -143,14 +142,12 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
 
                         return Container(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.05),
-                          ),
+                          decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.03)),
                           child: Row(
                             children: [
-                              Expanded(flex: 1, child: Text('RESTO', style: GoogleFonts.outfit(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.bold))),
-                              Expanded(flex: 2, child: Text('${remainingDist.toStringAsFixed(2)} km', style: GoogleFonts.outfit(color: Colors.white70, fontSize: 13))),
-                              Expanded(flex: 2, child: Text('$partialPace/km', style: GoogleFonts.outfit(color: AppColors.primaryNeon.withValues(alpha: 0.8), fontSize: 13))),
+                              Expanded(flex: 1, child: Text('RESTO', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 10, fontWeight: FontWeight.bold))),
+                              Expanded(flex: 2, child: Text('${remainingDist.toStringAsFixed(2)} km', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 13))),
+                              Expanded(flex: 2, child: Text('$partialPace/km', style: GoogleFonts.outfit(color: cs.primary.withValues(alpha: 0.8), fontSize: 13))),
                               Expanded(flex: 1, child: Text('$remainingCals', style: GoogleFonts.outfit(color: Colors.orangeAccent.withValues(alpha: 0.8), fontSize: 13), textAlign: TextAlign.right)),
                             ],
                           ),
@@ -163,14 +160,15 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
             ),
           ],
         ),
-      ),
+      );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.backgroundDarkGreen,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -179,12 +177,12 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
           style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
         ),
         leading: IconButton(
-          icon: const Icon(LucideIcons.arrowLeft, color: Colors.white),
+          icon: Icon(LucideIcons.arrowLeft, color: Theme.of(context).colorScheme.onSurface),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
           IconButton(
-            icon: const Icon(LucideIcons.share2, color: AppColors.primaryNeon),
+            icon: Icon(LucideIcons.share2, color: Theme.of(context).colorScheme.primary),
             onPressed: () {
               Navigator.push(
                 context,
@@ -274,10 +272,10 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          AppColors.backgroundDarkGreen.withValues(alpha: 0.4),
+                          Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.4),
                           Colors.transparent,
                           Colors.transparent,
-                          AppColors.backgroundDarkGreen,
+                          Theme.of(context).scaffoldBackgroundColor,
                         ],
                         stops: const [0.0, 0.2, 0.8, 1.0],
                       ),
@@ -293,9 +291,9 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
             top: false,
             child: Container(
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
-              decoration: const BoxDecoration(
-                color: AppColors.backgroundDarkGreen,
-                borderRadius: BorderRadius.only(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(30),
                   topRight: Radius.circular(30),
                 ),
@@ -306,45 +304,47 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
-                      color: (widget.run.type == 'Caminhada' 
-                          ? Colors.blueAccent 
-                          : widget.run.type == 'Corrida/Caminhada' 
-                              ? Colors.orangeAccent 
-                              : AppColors.primaryNeon).withValues(alpha: 0.2),
+                      color: (widget.run.type == 'Caminhada'
+                              ? Colors.blueAccent
+                              : widget.run.type == 'Corrida/Caminhada'
+                                  ? Colors.orangeAccent
+                                  : Theme.of(context).colorScheme.primary)
+                          .withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: (widget.run.type == 'Caminhada' 
-                            ? Colors.blueAccent 
-                            : widget.run.type == 'Corrida/Caminhada' 
-                                ? Colors.orangeAccent 
-                                : AppColors.primaryNeon).withValues(alpha: 0.5)
+                        color: (widget.run.type == 'Caminhada'
+                                ? Colors.blueAccent
+                                : widget.run.type == 'Corrida/Caminhada'
+                                    ? Colors.orangeAccent
+                                    : Theme.of(context).colorScheme.primary)
+                            .withValues(alpha: 0.4),
                       ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          widget.run.type == 'Caminhada' 
-                              ? LucideIcons.footprints 
-                              : widget.run.type == 'Corrida/Caminhada' 
-                                  ? LucideIcons.timer 
-                                  : LucideIcons.zap, 
-                          color: widget.run.type == 'Caminhada' 
-                              ? Colors.blueAccent 
-                              : widget.run.type == 'Corrida/Caminhada' 
-                                  ? Colors.orangeAccent 
-                                  : AppColors.primaryNeon,
+                          widget.run.type == 'Caminhada'
+                              ? LucideIcons.footprints
+                              : widget.run.type == 'Corrida/Caminhada'
+                                  ? LucideIcons.timer
+                                  : LucideIcons.zap,
+                          color: widget.run.type == 'Caminhada'
+                              ? Colors.blueAccent
+                              : widget.run.type == 'Corrida/Caminhada'
+                                  ? Colors.orangeAccent
+                                  : Theme.of(context).colorScheme.primary,
                           size: 16,
                         ),
                         const SizedBox(width: 8),
                         Text(
                           widget.run.type.toUpperCase(),
                           style: GoogleFonts.outfit(
-                            color: widget.run.type == 'Caminhada' 
-                                ? Colors.blueAccent 
-                                : widget.run.type == 'Corrida/Caminhada' 
-                                    ? Colors.orangeAccent 
-                                    : AppColors.primaryNeon,
+                            color: widget.run.type == 'Caminhada'
+                                ? Colors.blueAccent
+                                : widget.run.type == 'Corrida/Caminhada'
+                                    ? Colors.orangeAccent
+                                    : Theme.of(context).colorScheme.primary,
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
                             letterSpacing: 1.2,
@@ -423,17 +423,17 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                     child: OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-                        side: BorderSide(color: AppColors.primaryNeon.withValues(alpha: 0.5)),
+                        side: BorderSide(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(30),
                         ),
                       ),
                       onPressed: _showSplitsModal,
-                      icon: const Icon(LucideIcons.list, color: AppColors.primaryNeon, size: 18),
+                      icon: Icon(LucideIcons.list, color: Theme.of(context).colorScheme.primary, size: 18),
                       label: Text(
                         'VER VOLTAS',
                         style: GoogleFonts.outfit(
-                          color: AppColors.primaryNeon,
+                          color: Theme.of(context).colorScheme.primary,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 1.1,
                         ),
@@ -446,16 +446,16 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                   child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      backgroundColor: AppColors.primaryNeon,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30),
                       ),
                     ),
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(LucideIcons.check, color: Colors.black),
-                    label: const Text(
+                    icon: Icon(LucideIcons.check, color: Theme.of(context).colorScheme.onPrimary),
+                    label: Text(
                       'VOLTAR',
-                      style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: Theme.of(context).colorScheme.onPrimary, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
@@ -472,24 +472,26 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   void _showDeleteConfirmation(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.backgroundDarkGreen,
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return AlertDialog(
+        backgroundColor: cs.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: Colors.redAccent, width: 1),
+          side: BorderSide(color: cs.error, width: 1),
         ),
         title: Text(
           'Excluir Treino?',
-          style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold),
+          style: GoogleFonts.outfit(color: cs.onSurface, fontWeight: FontWeight.bold),
         ),
         content: Text(
           'Esta ação não pode ser desfeita. Deseja realmente remover este registro?',
-          style: GoogleFonts.outfit(color: AppColors.textMuted),
+          style: GoogleFonts.outfit(color: cs.onSurfaceVariant),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('CANCELAR', style: GoogleFonts.outfit(color: AppColors.textMuted)),
+            child: Text('CANCELAR', style: GoogleFonts.outfit(color: cs.onSurfaceVariant)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -516,7 +518,8 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
             ),
           ),
         ],
-      ),
+      );
+      },
     );
   }
 }

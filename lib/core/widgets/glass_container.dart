@@ -39,18 +39,16 @@ class GlassContainer extends StatelessWidget {
       height: height,
       margin: margin,
       decoration: BoxDecoration(
-        color: backgroundColor ?? (isDark 
-            ? AppColors.cardBackground 
-            : Colors.white.withValues(alpha: 0.8)),
+        color: backgroundColor ?? (isDark
+            ? AppColors.cardBackground
+            : AppColors.cardLight),
         borderRadius: BorderRadius.circular(borderRadius),
-        border: hasNeonBorder || isDark || borderColor != null
-            ? Border.all(
-                color: borderColor ?? (hasNeonBorder 
-                    ? AppColors.primaryNeon 
-                    : AppColors.cardBorder),
-                width: hasNeonBorder || borderColor != null ? 1.5 : 1.0,
-              )
-            : null,
+        border: Border.all(
+          color: borderColor ?? (hasNeonBorder
+              ? AppColors.primaryNeon
+              : isDark ? AppColors.cardBorder : AppColors.borderLight),
+          width: hasNeonBorder || borderColor != null ? 1.5 : 1.0,
+        ),
         boxShadow: [
           if (hasNeonBorder)
             BoxShadow(

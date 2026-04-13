@@ -65,6 +65,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   bool _isFirstPointAfterResume = false;
   
   bool _isScreenLocked = false;
+  bool _isSaving = false; // Guard contra double-save
   bool _showLockHint = false;
   Timer? _lockHintTimer;
   
@@ -1015,73 +1016,91 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                     borderRadius: BorderRadius.circular(30),
                                   ),
                                 ),
-                                onPressed: () async {
-                                  final String? selectedType = await _showTrainingTypePicker();
-                                  if (selectedType == null) return;
+                                onPressed: _isSaving ? null : () async {
+                                  // Guard: impede double-save por duplo clique ou fluxo inesperado
+                                  if (_isSaving) return;
+                                  setState(() => _isSaving = true);
 
-                                  final String selectedMood = await _showMoodPicker() ?? '';
-
-                                  final dbService = DatabaseService();
-                                  final run = RunModel(
-                                    id: DateTime.now().millisecondsSinceEpoch.toString(),
-                                    date: DateTime.now(),
-                                    distanceKm: _distanceKm,
-                                    durationSeconds: _secondsElapsed,
-                                    pace: _calculatePace(),
-                                    calories: _calculateCalories(),
-                                    route: List.from(_routePoints),
-                                    type: selectedType,
-                                    mood: selectedMood,
-                                    splits: List.from(_splits),
-                                  );
-                                  await dbService.saveRun(run);
-                                  await dbService.clearActiveRun(); // Ensure recovery modal won't appear
-
-                                  // Analytics: treino salvo com sucesso
-                                  await AnalyticsService().logRunCompleted(
-                                    distanceKm: run.distanceKm,
-                                    durationSeconds: run.durationSeconds,
-                                    pace: run.pace,
-                                    calories: run.calories,
-                                    runType: run.type ?? 'desconhecido',
-                                    mood: run.mood ?? '',
-                                  );
-
-                                  // Verificar se o treino cumpre a sessão do plano de treinamento
-                                  final trainingService = TrainingService(dbService);
-                                  final isPlanSuccessful = await trainingService.matchRunToPlan(run);
-
-                                  final newAwards = await _achievementService.checkAwards(run);
-
-                                  for (final award in newAwards) {
-                                    AnalyticsService().logAchievementUnlocked(achievementId: award['id']);
-                                  }
-
-                                  if (context.mounted) {
-                                    String snackMessage = '';
-                                    if (isPlanSuccessful) {
-                                      snackMessage = 'SESSÃO DO PLANO CONCLUÍDA! 🎯';
-                                    } else if (newAwards.isNotEmpty) {
-                                      snackMessage = 'PARABÉNS! Você ganhou ${newAwards.length} novas conquistas! 🏆';
+                                  try {
+                                    final String? selectedType = await _showTrainingTypePicker();
+                                    if (selectedType == null) {
+                                      setState(() => _isSaving = false);
+                                      return;
                                     }
 
-                                    if (snackMessage.isNotEmpty) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            snackMessage,
-                                            style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                                    final String selectedMood = await _showMoodPicker() ?? '';
+
+                                    final dbService = DatabaseService();
+                                    final run = RunModel(
+                                      id: DateTime.now().millisecondsSinceEpoch.toString(),
+                                      date: DateTime.now(),
+                                      distanceKm: _distanceKm,
+                                      durationSeconds: _secondsElapsed,
+                                      pace: _calculatePace(),
+                                      calories: _calculateCalories(),
+                                      route: List.from(_routePoints),
+                                      type: selectedType,
+                                      mood: selectedMood,
+                                      splits: List.from(_splits),
+                                    );
+                                    await dbService.saveRun(run);
+                                    await dbService.clearActiveRun();
+
+                                    // Analytics: treino salvo com sucesso
+                                    await AnalyticsService().logRunCompleted(
+                                      distanceKm: run.distanceKm,
+                                      durationSeconds: run.durationSeconds,
+                                      pace: run.pace,
+                                      calories: run.calories,
+                                      runType: run.type ?? 'desconhecido',
+                                      mood: run.mood ?? '',
+                                    );
+
+                                    // Verificar se o treino cumpre a sessão do plano de treinamento
+                                    final trainingService = TrainingService(dbService);
+                                    final isPlanSuccessful = await trainingService.matchRunToPlan(run);
+
+                                    final newAwards = await _achievementService.checkAwards(run);
+
+                                    for (final award in newAwards) {
+                                      AnalyticsService().logAchievementUnlocked(achievementId: award['id']);
+                                    }
+
+                                    if (context.mounted) {
+                                      String snackMessage = '';
+                                      if (isPlanSuccessful) {
+                                        snackMessage = 'SESSÃO DO PLANO CONCLUÍDA! 🎯';
+                                      } else if (newAwards.isNotEmpty) {
+                                        snackMessage = 'PARABÉNS! Você ganhou ${newAwards.length} novas conquistas! 🏆';
+                                      }
+
+                                      if (snackMessage.isNotEmpty) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              snackMessage,
+                                              style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                                            ),
+                                            backgroundColor: AppColors.primaryNeon,
+                                            duration: const Duration(seconds: 5),
                                           ),
-                                          backgroundColor: AppColors.primaryNeon,
-                                          duration: const Duration(seconds: 5),
-                                        ),
-                                      );
-                                    }
+                                        );
+                                      }
 
-                                    Navigator.of(context).pop();
+                                      Navigator.of(context).pop();
+                                    }
+                                  } catch (e) {
+                                    // Em caso de erro, libera o botão para tentar novamente
+                                    if (mounted) setState(() => _isSaving = false);
+                                    AnalyticsService().recordError(e, StackTrace.current, reason: 'save_run_failed');
                                   }
                                 },
-                                child: const Text('SALVAR TREINO', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                                child: _isSaving
+                                    ? const SizedBox(
+                                        width: 20, height: 20,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                                      )
+                                    : const Text('SALVAR TREINO', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                               ),
                             ),
                           ],

@@ -446,16 +446,9 @@ class _RunShareScreenState extends State<RunShareScreen> {
 
   void _watchAdForTemplate(ShareTemplate template) {
     if (!AdService().isRewardedAdReady) {
-      // Ad não disponível: mostra mensagem e desbloqueia mesmo assim (evita bloquear usuário)
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Anúncio indisponível. Estilo desbloqueado!',
-            style: GoogleFonts.outfit(color: Colors.black, fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: AppColors.primaryNeon,
-        ),
-      );
+      // Ad ainda não carregado: desbloqueia silenciosamente sem mensagem confusa.
+      // Isso acontece quando o ad unit é novo (leva até 24h para preencher)
+      // ou quando não há anúncio disponível para o dispositivo no momento.
       setState(() {
         _unlockedPremiumTemplates.add(template);
         _currentTemplate = template;
@@ -926,8 +919,8 @@ class _RunShareScreenState extends State<RunShareScreen> {
 
   Widget _buildVerticalModernTemplate() {
     return Container(
-      width: 280,
-      padding: const EdgeInsets.all(32),
+      width: 260,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: _overlayOpacity * 0.4),
         borderRadius: BorderRadius.circular(24),
@@ -936,21 +929,21 @@ class _RunShareScreenState extends State<RunShareScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           _buildVerticalStat('Distância', '${widget.run.distanceKm.toStringAsFixed(2)} km'),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _buildVerticalStat('Ritmo', '${widget.run.pace} /km'),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _buildVerticalStat('Tempo', _formatDuration(widget.run.durationSeconds)),
-          const SizedBox(height: 32),
-          
-          Column(
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(LucideIcons.zap, color: _accentColor, size: 28),
-              const SizedBox(height: 8),
+              Icon(LucideIcons.zap, color: _accentColor, size: 16),
+              const SizedBox(width: 6),
               Text(
                 'RUNLAB',
                 style: GoogleFonts.outfit(
                   color: Colors.white,
-                  fontSize: 18,
+                  fontSize: 14,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 4,
                 ),
@@ -969,16 +962,16 @@ class _RunShareScreenState extends State<RunShareScreen> {
           label,
           style: GoogleFonts.outfit(
             color: Colors.white70,
-            fontSize: 14,
+            fontSize: 12,
             fontWeight: FontWeight.w500,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Text(
           value,
           style: GoogleFonts.outfit(
             color: Colors.white,
-            fontSize: 34,
+            fontSize: 28,
             fontWeight: FontWeight.w800,
             letterSpacing: -0.5,
           ),
