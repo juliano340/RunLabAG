@@ -485,95 +485,84 @@ class _HistoryTabState extends State<HistoryTab> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Material(
-      key: ValueKey(isDark ? 'history_dark' : 'history_light'),
-      color: Colors.transparent,
-      child: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Dashboard',
-                    style: GoogleFonts.outfit(
-                      color: Theme.of(context).colorScheme.onSurface,
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                    ),
+    return SafeArea(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Dashboard',
+                  style: GoogleFonts.outfit(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
                   ),
-                  IconButton(
-                    onPressed: _showGoalSettings,
-                    icon: Icon(
-                      LucideIcons.settings,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      size: 20,
-                    ),
+                ),
+                IconButton(
+                  onPressed: _showGoalSettings,
+                  icon: Icon(
+                    LucideIcons.settings,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    size: 20,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-
-            const SizedBox(height: 12),
-            _buildPeriodSelector(),
-            const SizedBox(height: 12),
-            _buildPaginationHeader(),
-            const SizedBox(height: 12),
-
-            Expanded(
-              child: _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: AppColors.primaryNeon,
-                      ),
-                    )
-                  : SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      child: Column(
-                        children: [
-                          _buildAnalyticsSummary(),
-                          const SizedBox(height: 24),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 24),
-                            child: Row(
-                              children: [
-                                Text(
-                                  'Atividades',
-                                  style: GoogleFonts.outfit(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+          ),
+          const SizedBox(height: 12),
+          _buildPeriodSelector(),
+          const SizedBox(height: 12),
+          _buildPaginationHeader(),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.primaryNeon,
+                    ),
+                  )
+                : SingleChildScrollView(
+                    key: const PageStorageKey('history_scroll'),
+                    physics: const BouncingScrollPhysics(),
+                    child: Column(
+                      children: [
+                        _buildAnalyticsSummary(),
+                        const SizedBox(height: 24),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Row(
+                            children: [
+                              Text(
+                                'Atividades',
+                                style: GoogleFonts.outfit(
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
                                 ),
-                                const Spacer(),
-                                Text(
-                                  '${_filteredRuns.length} treinos',
-                                  style: GoogleFonts.outfit(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                                    fontSize: 13,
-                                  ),
+                              ),
+                              const Spacer(),
+                              Text(
+                                '${_filteredRuns.length} treinos',
+                                style: GoogleFonts.outfit(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  fontSize: 13,
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 12),
-                          _buildActivitiesList(),
-                          const SizedBox(height: 24),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildActivitiesList(),
+                        const SizedBox(height: 24),
+                      ],
                     ),
-            ),
-          ],
-        ),
+                  ),
+          ),
+        ],
       ),
     );
   }

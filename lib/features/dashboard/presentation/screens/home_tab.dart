@@ -208,15 +208,13 @@ class _HomeTabState extends State<HomeTab> {
     double goalProgress = rawProgress.clamp(0.0, 1.0);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Material(
-      key: ValueKey(isDark ? 'home_dark' : 'home_light'),
-      color: Colors.transparent,
-      child: SafeArea(
-        child: RefreshIndicator(
+    return SafeArea(
+      child: RefreshIndicator(
         onRefresh: _loadData,
         color: AppColors.primaryNeon,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         child: SingleChildScrollView(
+          key: const PageStorageKey('home_scroll'),
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -652,9 +650,8 @@ class _HomeTabState extends State<HomeTab> {
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Color _getGoalColor(double progress, bool isDark) {
     if (progress >= 1.5)

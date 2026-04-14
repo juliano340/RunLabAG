@@ -262,13 +262,10 @@ class _ProfileTabState extends State<ProfileTab> {
       return Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary));
     }
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Material(
-      key: ValueKey(isDark ? 'profile_dark' : 'profile_light'),
-      color: Colors.transparent,
-      child: SafeArea(
-        child: SingleChildScrollView(
+    return SafeArea(
+      child: SingleChildScrollView(
+        key: const PageStorageKey('profile_scroll'),
         padding: const EdgeInsets.all(24.0),
         child: Column(
           children: [
@@ -386,7 +383,7 @@ class _ProfileTabState extends State<ProfileTab> {
               child: Column(
                 children: [
                   _buildProfileTile(context, LucideIcons.user, 'Editar Dados do Perfil', onTap: _showEditProfileDialog),
-                  const Divider(color: AppColors.cardBorder, height: 1),
+                  Divider(color: Theme.of(context).colorScheme.outline, height: 1),
                   _buildProfileTile(context, LucideIcons.lock, 'Privacidade', onTap: () => Navigator.pushNamed(context, '/privacy')),
                   Divider(color: Theme.of(context).colorScheme.outline, height: 1),
                   Builder(
@@ -403,9 +400,10 @@ class _ProfileTabState extends State<ProfileTab> {
                           style: GoogleFonts.outfit(color: cs.onSurface),
                         ),
                         trailing: Switch(
-                          key: const ValueKey('theme_switch'),
                           value: isDark,
-                          onChanged: (_) => context.read<ThemeService>().toggleTheme(),
+                          onChanged: context.watch<ThemeService>().isToggling
+                              ? null
+                              : (_) => context.read<ThemeService>().toggleTheme(),
                           activeThumbColor: cs.primary,
                         ),
                       );
@@ -606,9 +604,8 @@ class _ProfileTabState extends State<ProfileTab> {
           ],
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildBackupTile(BuildContext context, IconData icon, String title, String subtitle, {required VoidCallback onTap}) {
     final cs = Theme.of(context).colorScheme;

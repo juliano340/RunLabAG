@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/theme/app_colors.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -23,16 +24,6 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   int _tabSwitchCount = 0;
-
-  final List<Widget> _tabs = [
-    const HomeTab(),
-    const HistoryTab(),
-    // const TrainingTab(),
-    // const StrengthHistoryScreen(),
-    const RecordsTab(),
-    const ProfileTab(),
-  ];
-
   DateTime? _lastBackPressTime;
 
   // Mostra intersticial no máximo 1x por dia, somente a cada 3 trocas de aba.
@@ -77,22 +68,41 @@ class _MainScreenState extends State<MainScreen> {
           _lastBackPressTime = now;
           
           if (mounted) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Pressione novamente para sair', 
-                  style: TextStyle(color: Colors.red),
+              SnackBar(
+                content: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      LucideIcons.logOut, 
+                      size: 18, 
+                      color: isDark ? AppColors.primaryNeon : AppColors.lightPrimary,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Pressione novamente para sair',
+                      style: GoogleFonts.outfit(
+                        color: isDark ? Colors.white : AppColors.textDark,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
-                backgroundColor: AppColors.backgroundDarkGreen,                
-                duration: Duration(seconds: 2),
+                backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+                duration: const Duration(seconds: 2),
                 behavior: SnackBarBehavior.floating,
+                elevation: 4,
+                width: 280,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(10)),
-                  side: BorderSide(color: Colors.white, width: 2),
+                  borderRadius: BorderRadius.circular(100),
+                  side: BorderSide(
+                    color: isDark ? AppColors.cardBorder.withValues(alpha: 0.2) : AppColors.borderLight,
+                    width: 0.5,
+                  ),
                 ),
-
-                
-                 
               ),
             );
           }
@@ -102,15 +112,21 @@ class _MainScreenState extends State<MainScreen> {
         }
       },
       child: Scaffold(
+        key: ValueKey(Theme.of(context).brightness),
         body: Column(
           children: [
             Expanded(
               child: IndexedStack(
                 index: _currentIndex,
-                children: _tabs,
+                children: [
+                  HomeTab(key: PageStorageKey('tab_home')),
+                  HistoryTab(key: PageStorageKey('tab_history')),
+                  RecordsTab(key: PageStorageKey('tab_records')),
+                  ProfileTab(key: PageStorageKey('tab_profile')),
+                ],
               ),
             ),
-            const AdBannerWidget(),
+            AdBannerWidget(key: ValueKey('ad_banner_${Theme.of(context).brightness}')),
           ],
         ),
         bottomNavigationBar: Container(

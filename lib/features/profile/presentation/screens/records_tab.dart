@@ -378,38 +378,37 @@ class _RecordsTabState extends State<RecordsTab> {
       {'id': 'speed_demon', 'title': 'Demônio da Velocidade', 'desc': 'Ritmo abaixo de 4:30/km por 1km', 'icon': LucideIcons.zap},
     ];
 
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Material(
-      key: ValueKey(isDark ? 'records_dark' : 'records_light'),
-      color: Colors.transparent,
-      child: SafeArea(
-        child: SingleChildScrollView(
+    return SafeArea(
+      child: SingleChildScrollView(
+        key: const PageStorageKey('records_scroll'),
         padding: const EdgeInsets.all(24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Recordes Pessoais',
-                      style: GoogleFonts.outfit(
-                        color: cs.onSurface,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Recordes Pessoais',
+                        style: GoogleFonts.outfit(
+                          color: cs.onSurface,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Seu histórico de glórias',
-                      style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 16),
-                    ),
-                  ],
+                      const SizedBox(height: 4),
+                      Text(
+                        'Seu histórico de glórias',
+                        style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 16),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 12),
                 _buildAchievementCountBadge(cs),
               ],
             ),
@@ -419,6 +418,7 @@ class _RecordsTabState extends State<RecordsTab> {
               children: [
                 _buildSectionHeader(cs, LucideIcons.trophy, 'Melhores Marcas'),
                 TextButton.icon(
+                  key: const ValueKey('btn_manage_distances'),
                   onPressed: _manageDistances,
                   icon: const Icon(LucideIcons.settings, size: 14),
                   label: Text('Gerenciar', style: GoogleFonts.outfit(fontSize: 12)),
@@ -440,9 +440,8 @@ class _RecordsTabState extends State<RecordsTab> {
           ],
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildAchievementCountBadge(ColorScheme cs) {
     return Container(
@@ -493,6 +492,7 @@ class _RecordsTabState extends State<RecordsTab> {
     if (bests == null) return const SizedBox.shrink();
 
     return GridView.builder(
+      key: const ValueKey('records_bests_grid'),
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -605,6 +605,7 @@ class _RecordsTabState extends State<RecordsTab> {
     final bool hasData = value > 0;
 
     return GlassContainer(
+      key: const ValueKey('records_longest_run_card'),
       onTap: hasData ? _showLongestHistory : null,
       padding: const EdgeInsets.all(20),
       hasNeonBorder: true,
