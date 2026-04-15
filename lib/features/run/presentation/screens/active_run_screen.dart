@@ -22,6 +22,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../core/services/analytics_service.dart';
 import '../../../../core/services/ad_service.dart';
+import 'package:provider/provider.dart';
+import '../../../../core/providers/runs_provider.dart';
 
 class ActiveRunScreen extends StatefulWidget {
   final Map<String, dynamic>? restoredState;
@@ -1045,6 +1047,11 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                     );
                                     await dbService.saveRun(run);
                                     await dbService.clearActiveRun();
+
+                                    // Notifica o HistoryTab (e outros ouvintes) que há um novo treino.
+                                    if (context.mounted) {
+                                      context.read<RunsProvider>().notifyRunSaved();
+                                    }
 
                                     // Analytics: treino salvo com sucesso
                                     await AnalyticsService().logRunCompleted(

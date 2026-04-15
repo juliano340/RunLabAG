@@ -16,6 +16,7 @@ import 'features/strength_training/presentation/providers/strength_workout_provi
 import 'features/strength_training/data/repositories/strength_workout_repository_impl.dart';
 import 'core/services/database_service.dart';
 import 'core/services/notification_service.dart';
+import 'core/providers/runs_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +43,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeService()),
         ChangeNotifierProvider(create: (_) => WaterProvider()),
+        ChangeNotifierProvider(create: (_) => RunsProvider()),
         ChangeNotifierProvider(
           create: (_) => StrengthWorkoutProvider(
             StrengthWorkoutRepositoryImpl(DatabaseService()),

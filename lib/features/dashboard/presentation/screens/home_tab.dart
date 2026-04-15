@@ -11,6 +11,7 @@ import '../../../../features/run/presentation/screens/active_run_screen.dart';
 
 import 'package:runlabag/core/services/database_service.dart';
 import 'package:runlabag/features/water/presentation/widgets/water_card.dart';
+import '../../../history/presentation/screens/run_detail_screen.dart';
 import '../../domain/models/weekly_evolution_stats.dart';
 import 'package:intl/intl.dart';
 
@@ -343,61 +344,69 @@ class _HomeTabState extends State<HomeTab> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                GlassContainer(
-                  padding: const EdgeInsets.all(20),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color:
-                              (isDark
-                                      ? AppColors.primaryNeon
-                                      : AppColors.lightPrimary)
-                                  .withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
+                GestureDetector(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => RunDetailScreen(run: _lastRun!),
+                    ),
+                  ),
+                  child: GlassContainer(
+                    padding: const EdgeInsets.all(20),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color:
+                                (isDark
+                                        ? AppColors.primaryNeon
+                                        : AppColors.lightPrimary)
+                                    .withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            LucideIcons.navigation,
+                            color: isDark
+                                ? AppColors.primaryNeon
+                                : AppColors.lightPrimary,
+                          ),
                         ),
-                        child: Icon(
-                          LucideIcons.navigation,
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${_lastRun!.distanceKm.toStringAsFixed(2)} km em ${_formatRunDuration(_lastRun!.durationSeconds)}',
+                                style: GoogleFonts.outfit(
+                                  color: isDark
+                                      ? Colors.white
+                                      : AppColors.textDark,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              Text(
+                                'Ritmo: ${_lastRun!.pace}/km | Calorias: ${_lastRun!.calories} kcal',
+                                style: GoogleFonts.outfit(
+                                  color: isDark
+                                      ? AppColors.textMuted
+                                      : AppColors.textMutedDark,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(
+                          LucideIcons.chevronRight,
                           color: isDark
                               ? AppColors.primaryNeon
                               : AppColors.lightPrimary,
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${_lastRun!.distanceKm.toStringAsFixed(2)} km em ${_formatRunDuration(_lastRun!.durationSeconds)}',
-                              style: GoogleFonts.outfit(
-                                color: isDark
-                                    ? Colors.white
-                                    : AppColors.textDark,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                            Text(
-                              'Ritmo: ${_lastRun!.pace}/km | Calorias: ${_lastRun!.calories} kcal',
-                              style: GoogleFonts.outfit(
-                                color: isDark
-                                    ? AppColors.textMuted
-                                    : AppColors.textMutedDark,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        LucideIcons.chevronRight,
-                        color: isDark
-                            ? AppColors.textMuted
-                            : AppColors.textMutedDark,
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 32),

@@ -8,6 +8,8 @@ import '../../../../core/services/database_service.dart';
 import '../../../../core/utils/time_utils.dart';
 import '../../../../core/services/recommendation_service.dart';
 import 'run_detail_screen.dart';
+import 'package:provider/provider.dart';
+import '../../../../core/providers/runs_provider.dart';
 
 class HistoryTab extends StatefulWidget {
   const HistoryTab({super.key});
@@ -34,10 +36,29 @@ class _HistoryTabState extends State<HistoryTab> {
   DateTime? _maxDate;
   RecommendationResult? _recommendation;
 
+  RunsProvider? _runsProvider;
+
   @override
   void initState() {
     super.initState();
     _loadData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final runsProvider = Provider.of<RunsProvider>(context, listen: false);
+    if (_runsProvider != runsProvider) {
+      _runsProvider?.removeListener(_loadData);
+      _runsProvider = runsProvider;
+      _runsProvider!.addListener(_loadData);
+    }
+  }
+
+  @override
+  void dispose() {
+    _runsProvider?.removeListener(_loadData);
+    super.dispose();
   }
 
   Future<void> _loadData() async {
