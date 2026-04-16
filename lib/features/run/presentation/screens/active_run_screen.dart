@@ -36,7 +36,7 @@ class ActiveRunScreen extends StatefulWidget {
 class _ActiveRunScreenState extends State<ActiveRunScreen> {
   final Completer<GoogleMapController> _controller = Completer();
   final LocationService _locationService = LocationService();
-  
+
   StreamSubscription<Position>? _positionStream;
   List<List<LatLng>> _routePoints = []; // Lista de segmentos
   bool _isRunning = false;
@@ -45,7 +45,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   bool _hasPermissions = false;
   bool _showMinimalMap = false;
   String? _minimalMapStyle;
-  
+
   // Metrics
   double _distanceKm = 0.0;
   double? _distanceGoal;
@@ -60,17 +60,17 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   Timer? _timer;
   UserProfile? _userProfile;
   final AchievementService _achievementService = AchievementService();
-  
+
   // Smoothing fields
   List<Position> _paceBuffer = [];
   String _currentSmoothedPace = '0:00';
   bool _isFirstPointAfterResume = false;
-  
+
   bool _isScreenLocked = false;
   bool _isSaving = false; // Guard contra double-save
   bool _showLockHint = false;
   Timer? _lockHintTimer;
-  
+
   static const CameraPosition _initialPosition = CameraPosition(
     target: LatLng(0, 0),
     zoom: 15,
@@ -107,14 +107,14 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _lastKmNotified = state['lastKmNotified'] ?? 0;
       _distanceGoal = state['distanceGoal'];
       _targetTimeSeconds = state['targetTimeSeconds'];
-      
+
       if (_distanceGoal != null && _targetTimeSeconds != null) {
         _pacingService = PacingService(
           targetDistanceKm: _distanceGoal,
           targetTimeSeconds: _targetTimeSeconds,
         );
       }
-      
+
       final splitsJson = state['splits'];
       if (splitsJson != null) {
         final List<dynamic> decoded = jsonDecode(splitsJson);
@@ -124,7 +124,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
           return RunSplit(timeSeconds: 0, calories: 0);
         }).toList();
         // Estimar o tempo do último split a partir da soma dos splits restaurados
-        _lastSplitTimeSeconds = _splits.fold(0, (sum, s) => sum + s.timeSeconds);
+        _lastSplitTimeSeconds = _splits.fold(
+          0,
+          (sum, s) => sum + s.timeSeconds,
+        );
         _lastSplitCalories = _splits.fold(0, (sum, s) => sum + s.calories);
       } else {
         _splits = [];
@@ -133,23 +136,29 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       }
 
       _isPaused = (state['isPaused'] ?? 0) == 1;
-      
+
       final routeJson = state['route'];
       if (routeJson != null) {
         final List<dynamic> decoded = jsonDecode(routeJson);
         if (decoded.isNotEmpty && decoded.first is List) {
-          _routePoints = decoded.map((segment) => 
-            (segment as List).map((p) => LatLng(p['lat'], p['lng'])).toList()
-          ).toList();
+          _routePoints = decoded
+              .map(
+                (segment) => (segment as List)
+                    .map((p) => LatLng(p['lat'], p['lng']))
+                    .toList(),
+              )
+              .toList();
         } else {
           // Backward compatibility
-          _routePoints = [decoded.map((p) => LatLng(p['lat'], p['lng'])).toList()];
+          _routePoints = [
+            decoded.map((p) => LatLng(p['lat'], p['lng'])).toList(),
+          ];
         }
       }
-      
+
       _isRunning = true;
     });
-    
+
     // Resume core logic
     if (!_isPaused) {
       _startTimersAndStreams(isNew: false);
@@ -158,7 +167,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
 
   void _persistState() {
     if (!_isRunning || _isFinished) return;
-    
+
     DatabaseService().saveActiveRun({
       'startTime': DateTime.now().toIso8601String(),
       'distanceKm': _distanceKm,
@@ -167,9 +176,15 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       'distanceGoal': _distanceGoal,
       'targetTimeSeconds': _targetTimeSeconds,
       'isPaused': _isPaused ? 1 : 0,
-      'route': jsonEncode(_routePoints.map((segment) => 
-        segment.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList()
-      ).toList()),
+      'route': jsonEncode(
+        _routePoints
+            .map(
+              (segment) => segment
+                  .map((p) => {'lat': p.latitude, 'lng': p.longitude})
+                  .toList(),
+            )
+            .toList(),
+      ),
       'splits': jsonEncode(_splits.map((s) => s.toMap()).toList()),
     });
   }
@@ -183,7 +198,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
 
   Future<void> _loadMapStyle() async {
     try {
-      _minimalMapStyle = await rootBundle.loadString('assets/map_style_minimal.json');
+      _minimalMapStyle = await rootBundle.loadString(
+        'assets/map_style_minimal.json',
+      );
     } catch (e) {
       debugPrint("Error loading map style: $e");
     }
@@ -198,10 +215,12 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         });
         final pos = await _locationService.getCurrentLocation();
         final latLng = LatLng(pos.latitude, pos.longitude);
-        
+
         // Define o ponto inicial do traçado
         setState(() {
-          _routePoints = [[latLng]];
+          _routePoints = [
+            [latLng],
+          ];
         });
 
         final controller = await _controller.future;
@@ -217,7 +236,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   void _startRun() async {
     // Reset metrics for a fresh start
     _stopRunInternals(); // Clear any existing stream/timer
-    
+
     Position? currentPos;
     try {
       currentPos = await _locationService.getCurrentLocation();
@@ -236,9 +255,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _isRunning = true;
       _isPaused = false;
       _isFinished = false;
-      _isFirstPointAfterResume = true; // Crucial: Treat start as a resume to ignore initial teleportation
+      _isFirstPointAfterResume =
+          true; // Crucial: Treat start as a resume to ignore initial teleportation
     });
-    
+
     _startTimersAndStreams(isNew: true);
 
     AnalyticsService().logRunStarted(
@@ -253,11 +273,14 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         _secondsElapsed++;
         if (_pacingService != null) {
           final oldStatus = _pacingFeedback?.status;
-          _pacingFeedback = _pacingService!.getUpdate(_distanceKm, _secondsElapsed);
-          
+          _pacingFeedback = _pacingService!.getUpdate(
+            _distanceKm,
+            _secondsElapsed,
+          );
+
           // Vibrar se o status mudar para alertar o usuário sem precisar olhar o celular
-          if (_pacingFeedback != null && 
-              _pacingFeedback!.status != oldStatus && 
+          if (_pacingFeedback != null &&
+              _pacingFeedback!.status != oldStatus &&
               _pacingFeedback!.status != PacingStatus.none) {
             HapticFeedback.mediumImpact();
           }
@@ -276,24 +299,30 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     }
 
     try {
-      _positionStream = _locationService.getLocationStream().listen((Position position) {
+      _positionStream = _locationService.getLocationStream().listen((
+        Position position,
+      ) {
         if (_isPaused) return;
 
         // 1. Filtro de Precisão (Mais rigoroso nos primeiros 30s)
         double maxAllowedAccuracy = _secondsElapsed < 30 ? 15.0 : 25.0;
         if (position.accuracy > maxAllowedAccuracy) {
-          debugPrint("GPS impreciso ignorado: ${position.accuracy}m (Max: $maxAllowedAccuracy)");
+          debugPrint(
+            "GPS impreciso ignorado: ${position.accuracy}m (Max: $maxAllowedAccuracy)",
+          );
           return;
         }
 
         final newPoint = LatLng(position.latitude, position.longitude);
-        
+
         // Verifica se temos um ponto anterior no segmento ATUAL para calcular distância
         if (_routePoints.isNotEmpty && _routePoints.last.isNotEmpty) {
           final lastPoint = _routePoints.last.last;
           final distanceInMeters = Geolocator.distanceBetween(
-            lastPoint.latitude, lastPoint.longitude,
-            newPoint.latitude, newPoint.longitude,
+            lastPoint.latitude,
+            lastPoint.longitude,
+            newPoint.latitude,
+            newPoint.longitude,
           );
 
           if (_isFirstPointAfterResume) {
@@ -314,11 +343,15 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
           // 2. Filtro de Velocidade
           final lastPosition = _paceBuffer.isNotEmpty ? _paceBuffer.last : null;
           if (lastPosition != null) {
-            final timeDiff = position.timestamp.difference(lastPosition.timestamp).inSeconds;
+            final timeDiff = position.timestamp
+                .difference(lastPosition.timestamp)
+                .inSeconds;
             if (timeDiff > 0) {
               final speed = distanceInMeters / timeDiff;
               if (speed > 10.0) {
-                debugPrint("Salto de GPS detectado (velocidade excessiva): ${speed.toStringAsFixed(1)} m/s");
+                debugPrint(
+                  "Salto de GPS detectado (velocidade excessiva): ${speed.toStringAsFixed(1)} m/s",
+                );
                 return;
               }
             }
@@ -331,10 +364,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               _paceBuffer.add(position);
               if (_paceBuffer.length > 30) _paceBuffer.removeAt(0);
               _updateSmoothedPace();
-              
+
               _routePoints.last.add(newPoint);
             });
-            
+
             _updateCamera(newPoint);
 
             // 4. Notificação de Milestone
@@ -343,33 +376,50 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               final splitTime = _secondsElapsed - _lastSplitTimeSeconds;
               final totalCalories = _calculateCalories();
               final splitCalories = totalCalories - _lastSplitCalories;
-              
-              _splits.add(RunSplit(timeSeconds: splitTime, calories: splitCalories));
+
+              _splits.add(
+                RunSplit(timeSeconds: splitTime, calories: splitCalories),
+              );
               _lastSplitTimeSeconds = _secondsElapsed;
               _lastSplitCalories = totalCalories;
-              
+
               _lastKmNotified = currentKm;
               _persistState();
 
               // Vibration + push notification (replaces ineffective HapticFeedback)
               if (_userProfile?.kmNotificationsEnabled == true) {
-                final currentPace = _currentSmoothedPace.isNotEmpty ? _currentSmoothedPace : '--:--';
+                final currentPace = _currentSmoothedPace.isNotEmpty
+                    ? _currentSmoothedPace
+                    : '--:--';
                 NotificationService.sendKmMilestone(currentKm, currentPace);
               }
-              
+
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Row(
                       children: [
-                        const Icon(LucideIcons.trophy, color: AppColors.primaryNeon),
+                        const Icon(
+                          LucideIcons.trophy,
+                          color: AppColors.primaryNeon,
+                        ),
                         const SizedBox(width: 12),
-                        Expanded(child: Text(AchievementService.getIncentiveMessage(currentKm), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
+                        Expanded(
+                          child: Text(
+                            AchievementService.getIncentiveMessage(currentKm),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                     backgroundColor: AppColors.backgroundDarkGreen,
                     behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                     duration: const Duration(seconds: 4),
                   ),
                 );
@@ -380,7 +430,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
           // Primeiro ponto do primeiro segmento ou se resetado
           setState(() {
             if (_routePoints.isEmpty) {
-              _routePoints = [[newPoint]];
+              _routePoints = [
+                [newPoint],
+              ];
             } else if (_routePoints.last.isEmpty) {
               _routePoints.last.add(newPoint);
             } else {
@@ -406,29 +458,32 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
 
     final first = _paceBuffer.first;
     final last = _paceBuffer.last;
-    
+
     // Calcula a distância total percorrida DENTRO de todo o buffer para maior precisão
     double totalBufferDist = 0;
     for (int i = 0; i < _paceBuffer.length - 1; i++) {
       totalBufferDist += Geolocator.distanceBetween(
-        _paceBuffer[i].latitude, _paceBuffer[i].longitude,
-        _paceBuffer[i+1].latitude, _paceBuffer[i+1].longitude,
+        _paceBuffer[i].latitude,
+        _paceBuffer[i].longitude,
+        _paceBuffer[i + 1].latitude,
+        _paceBuffer[i + 1].longitude,
       );
     }
-    
+
     final timeSeconds = last.timestamp.difference(first.timestamp).inSeconds;
 
     // Se o deslocamento total no buffer for muito pequeno (< 10m), assume que está parado/muito lento
     if (timeSeconds > 0 && totalBufferDist > 10) {
       double paceInMinutes = (timeSeconds / 60) / (totalBufferDist / 1000);
-      if (paceInMinutes > 0 && paceInMinutes < 35) { // Limite razoável
+      if (paceInMinutes > 0 && paceInMinutes < 35) {
+        // Limite razoável
         int minutes = paceInMinutes.toInt();
         int seconds = ((paceInMinutes - minutes) * 60).toInt();
         _currentSmoothedPace = '$minutes:${seconds.toString().padLeft(2, '0')}';
       }
     } else if (timeSeconds > 10) {
       // Se passou muito tempo e não se mexeu 10m, o ritmo é muito baixo
-      _currentSmoothedPace = '0:00'; 
+      _currentSmoothedPace = '0:00';
     }
   }
 
@@ -456,13 +511,13 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
 
   void _stopRun() async {
     _pauseRun();
-    
+
     final bool? shouldStop = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).brightness == Brightness.dark 
-            ? AppColors.backgroundDarkGreen 
+        backgroundColor: Theme.of(context).brightness == Brightness.dark
+            ? AppColors.backgroundDarkGreen
             : Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
@@ -470,30 +525,41 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         ),
         title: Text(
           'Parar Treino?',
-          style: GoogleFonts.outfit(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.bold),
+          style: GoogleFonts.outfit(
+            color: Theme.of(context).colorScheme.onSurface,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         content: Text(
           'Deseja realmente encerrar este treino? Uma vez encerrado, não será possível retomá-lo.',
           style: GoogleFonts.outfit(
-            color: Theme.of(context).brightness == Brightness.dark 
-                ? AppColors.textMuted 
+            color: Theme.of(context).brightness == Brightness.dark
+                ? AppColors.textMuted
                 : AppColors.textMutedDark,
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('CONTINUAR', style: GoogleFonts.outfit(color: Colors.white)),
+            child: Text(
+              'CONTINUAR',
+              style: GoogleFonts.outfit(color: Colors.white),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: () => Navigator.pop(context, true),
             child: Text(
               'ENCERRAR',
-              style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold),
+              style: GoogleFonts.outfit(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -518,13 +584,14 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       // ou se simplesmente sobrou uma parte significativa (> 100m)
       int currentKm = _distanceKm.floor();
       double decimalPart = _distanceKm - currentKm;
-      
+
       // Se parou quase no cravo (ex: 4.99 ou 5.01) e o split final não foi salvo
-      if ((_distanceKm > _lastKmNotified) && (decimalPart > 0.99 || _distanceKm > _lastKmNotified + 0.99)) {
+      if ((_distanceKm > _lastKmNotified) &&
+          (decimalPart > 0.99 || _distanceKm > _lastKmNotified + 0.99)) {
         final splitTime = _secondsElapsed - _lastSplitTimeSeconds;
         final totalCalories = _calculateCalories();
         final splitCalories = totalCalories - _lastSplitCalories;
-        
+
         _splits.add(RunSplit(timeSeconds: splitTime, calories: splitCalories));
         _lastKmNotified = _distanceKm.round(); // Arredonda para o mais próximo
       }
@@ -542,8 +609,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).brightness == Brightness.dark 
-            ? AppColors.backgroundDarkGreen 
+        backgroundColor: Theme.of(context).brightness == Brightness.dark
+            ? AppColors.backgroundDarkGreen
             : Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
@@ -555,15 +622,18 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             const SizedBox(width: 10),
             Text(
               'Treino Curto',
-              style: GoogleFonts.outfit(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.bold),
+              style: GoogleFonts.outfit(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ],
         ),
         content: Text(
           'Este treino parece muito curto (${(_distanceKm * 1000).toInt()}m em $_secondsElapsed s). Deseja descartá-lo ou salvar assim mesmo?',
           style: GoogleFonts.outfit(
-            color: Theme.of(context).brightness == Brightness.dark 
-                ? AppColors.textMuted 
+            color: Theme.of(context).brightness == Brightness.dark
+                ? AppColors.textMuted
                 : AppColors.textMutedDark,
           ),
         ),
@@ -577,17 +647,23 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             },
             child: Text(
               'DESCARTAR',
-              style: GoogleFonts.outfit(color: Colors.redAccent, fontWeight: FontWeight.bold),
+              style: GoogleFonts.outfit(
+                color: Colors.redAccent,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primaryNeon,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: () {
               Navigator.pop(context);
-              DatabaseService().clearActiveRun(); // Mark as finalized so recovery modal won't show
+              DatabaseService()
+                  .clearActiveRun(); // Mark as finalized so recovery modal won't show
               setState(() {
                 _isRunning = false;
                 _isFinished = true;
@@ -595,7 +671,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             },
             child: Text(
               'SALVAR ASSIM MESMO',
-              style: GoogleFonts.outfit(color: Colors.black, fontWeight: FontWeight.bold),
+              style: GoogleFonts.outfit(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -611,46 +690,31 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   void _showGoalDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).brightness == Brightness.dark 
-            ? AppColors.backgroundDarkGreen 
-            : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'Definir Meta de Corrida', 
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurface)
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Distância Alvo:', style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-            const SizedBox(height: 8),
-            _goalOption(1.0, '1 km (Velocidade)'),
-            _goalOption(3.0, '3 km (Leve)'),
-            _goalOption(5.0, '5 km (Avançado)'),
-            _goalOption(10.0, '10 km (Resistência)'),
-            const Divider(color: Colors.white24),
-            ListTile(
-              title: const Text('Mais opções...', style: TextStyle(color: Colors.white70)),
-              onTap: () {
-                // TODO: Custom distance input
-              },
-            ),
-            const Divider(color: Colors.white24),
-            ListTile(
-              title: const Text('Sem meta', style: TextStyle(color: Colors.white70)),
-              onTap: () {
-                setState(() {
-                  _distanceGoal = null;
-                  _targetTimeSeconds = null;
-                  _pacingService = null;
-                  _pacingFeedback = null;
-                });
-                Navigator.pop(context);
-              },
-            ),
-          ],
-        ),
+      barrierDismissible: true,
+      builder: (ctx) => _GoalSelectionDialog(
+        initialDistanceGoal: _distanceGoal,
+        onGoalSelected: (distance, isCustom) {
+          if (isCustom) {
+            // Se for custom, fecha o seletor de distância e abre o de tempo
+            Navigator.pop(ctx);
+            Future.delayed(const Duration(milliseconds: 150), () {
+              if (mounted) _showTimeGoalDialog(distance);
+            });
+          } else {
+            // Se for preset, já abre o tempo direto (ou faz o que o preset fazia)
+            Navigator.pop(ctx);
+            _showTimeGoalDialog(distance);
+          }
+        },
+        onNoGoal: () {
+          setState(() {
+            _distanceGoal = null;
+            _targetTimeSeconds = null;
+            _pacingService = null;
+            _pacingFeedback = null;
+          });
+          Navigator.pop(ctx);
+        },
       ),
     );
   }
@@ -658,24 +722,30 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   void _showTimeGoalDialog(double distance) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).brightness == Brightness.dark 
-            ? AppColors.backgroundDarkGreen 
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(ctx).brightness == Brightness.dark
+            ? AppColors.backgroundDarkGreen
             : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          'Definir Tempo Alvo para ${distance.toInt()}km', 
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 18)
+          'Definir Tempo Alvo para ${distance.toInt()}km',
+          style: TextStyle(
+            color: Theme.of(ctx).colorScheme.onSurface,
+            fontSize: 18,
+          ),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _timeOption(distance, 5, 'Pace 5:00 (Forte)'),
-            _timeOption(distance, 6, 'Pace 6:00 (Moderado)'),
-            _timeOption(distance, 7, 'Pace 7:00 (Leve)'),
+            _timeOption(ctx, distance, 5, 'Pace 5:00 (Forte)'),
+            _timeOption(ctx, distance, 6, 'Pace 6:00 (Moderado)'),
+            _timeOption(ctx, distance, 7, 'Pace 7:00 (Leve)'),
             const Divider(color: Colors.white24),
             ListTile(
-              title: const Text('Sem tempo alvo', style: TextStyle(color: Colors.white70)),
+              title: const Text(
+                'Sem tempo alvo',
+                style: TextStyle(color: Colors.white70),
+              ),
               onTap: () {
                 setState(() {
                   _distanceGoal = distance;
@@ -683,7 +753,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                   _pacingService = null;
                   _pacingFeedback = null;
                 });
-                Navigator.pop(context); // Close time dialog
+                Navigator.pop(ctx); // Close time dialog
               },
             ),
           ],
@@ -692,11 +762,19 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     );
   }
 
-  Widget _timeOption(double distance, int paceMinutes, String label) {
+  Widget _timeOption(
+    BuildContext ctx,
+    double distance,
+    int paceMinutes,
+    String label,
+  ) {
     final int totalSeconds = (distance * paceMinutes * 60).toInt();
     return ListTile(
       title: Text(label, style: const TextStyle(color: Colors.white)),
-      subtitle: Text('Total: ${paceMinutes * distance.toInt()} min', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+      subtitle: Text(
+        'Total: ${paceMinutes * distance.toInt()} min',
+        style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+      ),
       onTap: () {
         setState(() {
           _distanceGoal = distance;
@@ -706,17 +784,19 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             targetTimeSeconds: _targetTimeSeconds,
           );
         });
-        Navigator.pop(context);
+        Navigator.pop(ctx);
       },
     );
   }
 
-  Widget _goalOption(double value, String label) {
+  Widget _goalOption(BuildContext ctx, double value, String label) {
     return ListTile(
       title: Text(label, style: const TextStyle(color: Colors.white)),
-      trailing: _distanceGoal == value ? const Icon(LucideIcons.check, color: AppColors.primaryNeon) : null,
+      trailing: _distanceGoal == value
+          ? const Icon(LucideIcons.check, color: AppColors.primaryNeon)
+          : null,
       onTap: () {
-        Navigator.pop(context);
+        Navigator.pop(ctx);
         _showTimeGoalDialog(value);
       },
     );
@@ -734,25 +814,35 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     return showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Theme.of(context).brightness == Brightness.dark 
-            ? AppColors.backgroundDarkGreen 
+        backgroundColor: Theme.of(context).brightness == Brightness.dark
+            ? AppColors.backgroundDarkGreen
             : Colors.white,
-        title: Text('Sair da Corrida?', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-        content: Text('Tem certeza que deseja sair? O progresso não salvo será perdido.', 
-            style: TextStyle(
-              color: Theme.of(context).brightness == Brightness.dark 
-                  ? Colors.white70 
-                  : AppColors.textMutedDark
-            )
+        title: Text(
+          'Sair da Corrida?',
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+        ),
+        content: Text(
+          'Tem certeza que deseja sair? O progresso não salvo será perdido.',
+          style: TextStyle(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Colors.white70
+                : AppColors.textMutedDark,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('CANCELAR', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'CANCELAR',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('SAIR', style: TextStyle(color: Colors.redAccent)),
+            child: const Text(
+              'SAIR',
+              style: TextStyle(color: Colors.redAccent),
+            ),
           ),
         ],
       ),
@@ -766,7 +856,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       if (mounted) Navigator.pop(context);
       return;
     }
-    
+
     final shouldExit = await _showExitConfirmation();
     if (shouldExit == true) {
       _stopRunInternals(); // cancel streams
@@ -785,7 +875,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   @override
   Widget build(BuildContext context) {
     final bool canExit = !_isRunning && !_isFinished;
-    
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final double safeTopInset = MediaQuery.viewPaddingOf(context).top;
+
     return PopScope(
       canPop: canExit,
       onPopInvokedWithResult: (didPop, result) {
@@ -793,50 +885,61 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         _handleBackPress();
       },
       child: Scaffold(
+        resizeToAvoidBottomInset: false,
         body: Stack(
           children: [
-            GoogleMap(
-              initialCameraPosition: _initialPosition,
-              myLocationEnabled: _hasPermissions,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              mapType: MapType.normal,
-              style: _showMinimalMap ? _minimalMapStyle : null,
-              padding: EdgeInsets.only(
-                bottom: (_distanceGoal != null && _distanceGoal! > 0) ? 380 : 280,
-                top: MediaQuery.of(context).padding.top + 60,
+            RepaintBoundary(
+              child: GoogleMap(
+                initialCameraPosition: _initialPosition,
+                myLocationEnabled: _hasPermissions,
+                myLocationButtonEnabled: false,
+                zoomControlsEnabled: false,
+                mapType: MapType.normal,
+                style: _showMinimalMap ? _minimalMapStyle : null,
+                padding: EdgeInsets.only(
+                  bottom: (_distanceGoal != null && _distanceGoal! > 0)
+                      ? 380
+                      : 280,
+                  top: safeTopInset + 60,
+                ),
+                onMapCreated: (GoogleMapController controller) {
+                  _controller.complete(controller);
+                },
+                markers: {
+                  if (_routePoints.isNotEmpty && _routePoints.first.isNotEmpty)
+                    Marker(
+                      markerId: const MarkerId('start'),
+                      position: _routePoints.first.first,
+                      icon: BitmapDescriptor.defaultMarkerWithHue(
+                        BitmapDescriptor.hueGreen,
+                      ),
+                      infoWindow: const InfoWindow(title: 'Início'),
+                    ),
+                  if (_isFinished &&
+                      _routePoints.isNotEmpty &&
+                      _routePoints.last.isNotEmpty)
+                    Marker(
+                      markerId: const MarkerId('finish'),
+                      position: _routePoints.last.last,
+                      icon: BitmapDescriptor.defaultMarkerWithHue(
+                        BitmapDescriptor.hueRed,
+                      ),
+                      infoWindow: const InfoWindow(title: 'Chegada'),
+                    ),
+                },
+                polylines: _routePoints.asMap().entries.map((entry) {
+                  final int idx = entry.key;
+                  final List<LatLng> segment = entry.value;
+                  return Polyline(
+                    polylineId: PolylineId('route_$idx'),
+                    points: segment,
+                    color: AppColors.primaryNeon,
+                    width: 5, // Slightly thinner as requested earlier
+                    startCap: Cap.roundCap,
+                    endCap: Cap.roundCap,
+                  );
+                }).toSet(),
               ),
-              onMapCreated: (GoogleMapController controller) {
-                _controller.complete(controller);
-              },
-              markers: {
-                if (_routePoints.isNotEmpty && _routePoints.first.isNotEmpty)
-                  Marker(
-                    markerId: const MarkerId('start'),
-                    position: _routePoints.first.first,
-                    icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-                    infoWindow: const InfoWindow(title: 'Início'),
-                  ),
-                if (_isFinished && _routePoints.isNotEmpty && _routePoints.last.isNotEmpty)
-                  Marker(
-                    markerId: const MarkerId('finish'),
-                    position: _routePoints.last.last,
-                    icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-                    infoWindow: const InfoWindow(title: 'Chegada'),
-                  ),
-              },
-              polylines: _routePoints.asMap().entries.map((entry) {
-                final int idx = entry.key;
-                final List<LatLng> segment = entry.value;
-                return Polyline(
-                  polylineId: PolylineId('route_$idx'),
-                  points: segment,
-                  color: AppColors.primaryNeon,
-                  width: 5, // Slightly thinner as requested earlier
-                  startCap: Cap.roundCap,
-                  endCap: Cap.roundCap,
-                );
-              }).toSet(),
             ),
 
             // Top bar: back button | ad | eye+lock column
@@ -852,18 +955,82 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                     children: [
                       // Botão Voltar (Esquerda)
                       CircleAvatar(
-                        backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                        backgroundColor: Theme.of(
+                          context,
+                        ).colorScheme.surface.withValues(alpha: 0.8),
                         child: IconButton(
-                          icon: Icon(LucideIcons.arrowLeft, color: Theme.of(context).colorScheme.onSurface),
+                          icon: Icon(
+                            LucideIcons.arrowLeft,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
                           onPressed: _handleBackPress,
                         ),
                       ),
-                      // Anúncio Centralizado
+                      // Título + Anúncio Centralizado
                       Expanded(
-                        child: Center(
-                          child: AdBannerWidget(
-                            adSize: AdSize(width: 200, height: 50),
-                          ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (isDark) ...[
+                              Text(
+                                'CORRIDA ATUAL',
+                                style: GoogleFonts.outfit(
+                                  color: AppColors.primaryNeon,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.2,
+                                  shadows: const [
+                                    Shadow(
+                                      color: Colors.black87,
+                                      blurRadius: 6,
+                                    ),
+                                    Shadow(
+                                      color: Colors.black54,
+                                      blurRadius: 14,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (_isRunning)
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 7,
+                                      height: 7,
+                                      decoration: BoxDecoration(
+                                        color: _isPaused
+                                            ? Colors.orange
+                                            : AppColors.primaryNeon,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      _isPaused ? 'PAUSADO' : 'GPS ATIVO',
+                                      style: GoogleFonts.outfit(
+                                        color: _isPaused
+                                            ? Colors.orange
+                                            : AppColors.primaryNeon,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 1.0,
+                                        shadows: const [
+                                          Shadow(
+                                            color: Colors.black87,
+                                            blurRadius: 6,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              const SizedBox(height: 4),
+                            ],
+                            AdBannerWidget(
+                              adSize: AdSize(width: 200, height: 50),
+                            ),
+                          ],
                         ),
                       ),
                       // Coluna direita: Olho (cima) + Cadeado (baixo)
@@ -871,10 +1038,14 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           CircleAvatar(
-                            backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.surface.withValues(alpha: 0.8),
                             child: IconButton(
                               icon: Icon(
-                                _showMinimalMap ? LucideIcons.eyeOff : LucideIcons.eye, 
+                                _showMinimalMap
+                                    ? LucideIcons.eyeOff
+                                    : LucideIcons.eye,
                                 color: AppColors.primaryNeon,
                               ),
                               onPressed: () {
@@ -886,12 +1057,17 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                               tooltip: 'Alternar Mapa Minimalista',
                             ),
                           ),
-                          if (_isRunning) ...[  
+                          if (_isRunning) ...[
                             const SizedBox(height: 8),
                             CircleAvatar(
-                              backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                              backgroundColor: Theme.of(
+                                context,
+                              ).colorScheme.surface.withValues(alpha: 0.8),
                               child: IconButton(
-                                icon: const Icon(LucideIcons.lock, color: Colors.white70),
+                                icon: const Icon(
+                                  LucideIcons.lock,
+                                  color: Colors.white70,
+                                ),
                                 onPressed: () {
                                   setState(() {
                                     _isScreenLocked = true;
@@ -899,13 +1075,16 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                   });
                                   HapticFeedback.heavyImpact();
                                   _lockHintTimer?.cancel();
-                                  _lockHintTimer = Timer(const Duration(seconds: 3), () {
-                                    if (mounted) {
-                                      setState(() {
-                                        _showLockHint = false;
-                                      });
-                                    }
-                                  });
+                                  _lockHintTimer = Timer(
+                                    const Duration(seconds: 3),
+                                    () {
+                                      if (mounted) {
+                                        setState(() {
+                                          _showLockHint = false;
+                                        });
+                                      }
+                                    },
+                                  );
                                 },
                                 tooltip: 'Bloquear Tela',
                               ),
@@ -918,20 +1097,24 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                 ),
               ),
             ),
-            
+
             // Bottom Dashboard Card
             Align(
               alignment: Alignment.bottomCenter,
               child: SafeArea(
                 child: Container(
                   margin: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).brightness == Brightness.dark 
-                        ? AppColors.backgroundDarkGreen.withValues(alpha: 0.95) 
+                    color: isDark
+                        ? const Color(0xFF0A120A).withValues(alpha: 0.97)
                         : Colors.white.withValues(alpha: 0.9),
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: AppColors.primaryNeon.withValues(alpha: 0.3)),
+                    border: Border.all(
+                      color: isDark
+                          ? AppColors.primaryNeon.withValues(alpha: 0.15)
+                          : AppColors.primaryNeon.withValues(alpha: 0.3),
+                    ),
                     boxShadow: [
                       if (Theme.of(context).brightness == Brightness.dark)
                         BoxShadow(
@@ -949,165 +1132,264 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          Expanded(
-                            child: MetricCard(
-                              label: 'Tempo',
-                              value: _formatTime(),
-                              unit: 'min',
-                            ),
-                          ),
-                          Expanded(
-                            child: MetricCard(
-                              label: 'Distância',
-                              value: _distanceKm.toStringAsFixed(2),
-                              unit: 'km',
-                            ),
-                          ),
-                        ],
+                      // ── Handle bar ──
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white24 : Colors.black12,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          Expanded(
-                            child: MetricCard(
-                              label: 'Ritmo',
-                              value: _calculatePace(),
-                              unit: '/km',
+                      // ── DURAÇÃO label ──
+                      Text(
+                        'DURAÇÃO',
+                        style: GoogleFonts.outfit(
+                          color: isDark
+                              ? AppColors.textMuted
+                              : AppColors.textMutedDark,
+                          fontSize: 11,
+                          letterSpacing: 1.8,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      // ── Timer grande ──
+                      Text(
+                        _formatTime(),
+                        style: GoogleFonts.outfit(
+                          color: isDark
+                              ? AppColors.primaryNeon
+                              : AppColors.lightPrimary,
+                          fontSize: 54,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
+                          height: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      // ── 3 métricas em linha ──
+                      IntrinsicHeight(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _buildMetricTile(
+                                isDark,
+                                LucideIcons.footprints,
+                                'DISTÂNCIA',
+                                _distanceKm.toStringAsFixed(2),
+                                'km',
+                              ),
                             ),
-                          ),
-                          Expanded(
-                            child: MetricCard(
-                              label: 'Calorias',
-                              value: _calculateCalories().toString(),
-                              unit: 'kcal',
+                            VerticalDivider(
+                              color: isDark ? Colors.white12 : Colors.black12,
+                              thickness: 1,
+                              width: 1,
                             ),
-                          ),
-                        ],
+                            Expanded(
+                              child: _buildMetricTile(
+                                isDark,
+                                LucideIcons.timer,
+                                'RITMO',
+                                _calculatePace(),
+                                'min/km',
+                              ),
+                            ),
+                            VerticalDivider(
+                              color: isDark ? Colors.white12 : Colors.black12,
+                              thickness: 1,
+                              width: 1,
+                            ),
+                            Expanded(
+                              child: _buildMetricTile(
+                                isDark,
+                                LucideIcons.zap,
+                                'CALORIAS',
+                                _calculateCalories().toString(),
+                                'kcal',
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 16),
                       // Circular Goal Progress (only when goal is set)
-                      if (_distanceGoal != null && _distanceGoal! > 0 && !_isFinished) _buildGoalProgress(),
-                      const SizedBox(height: 32),
+                      if (_distanceGoal != null &&
+                          _distanceGoal! > 0 &&
+                          !_isFinished)
+                        _buildGoalProgress(),
+                      const SizedBox(height: 20),
                       if (_isFinished)
                         Row(
                           children: [
                             Expanded(
                               child: OutlinedButton(
                                 style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                  side: const BorderSide(color: Colors.redAccent),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
+                                  side: const BorderSide(
+                                    color: Colors.redAccent,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(30),
                                   ),
                                 ),
                                 onPressed: () => Navigator.pop(context),
-                                child: const Text('DESCARTAR', style: TextStyle(color: Colors.redAccent)),
+                                child: const Text(
+                                  'DESCARTAR',
+                                  style: TextStyle(color: Colors.redAccent),
+                                ),
                               ),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
                               child: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
                                   backgroundColor: AppColors.primaryNeon,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(30),
                                   ),
                                 ),
-                                onPressed: _isSaving ? null : () async {
-                                  // Guard: impede double-save por duplo clique ou fluxo inesperado
-                                  if (_isSaving) return;
-                                  setState(() => _isSaving = true);
+                                onPressed: _isSaving
+                                    ? null
+                                    : () async {
+                                        // Guard: impede double-save por duplo clique ou fluxo inesperado
+                                        if (_isSaving) return;
+                                        setState(() => _isSaving = true);
 
-                                  try {
-                                    final String? selectedType = await _showTrainingTypePicker();
-                                    if (selectedType == null) {
-                                      setState(() => _isSaving = false);
-                                      return;
-                                    }
+                                        try {
+                                          final String? selectedType =
+                                              await _showTrainingTypePicker();
+                                          if (selectedType == null) {
+                                            setState(() => _isSaving = false);
+                                            return;
+                                          }
 
-                                    final String selectedMood = await _showMoodPicker() ?? '';
+                                          final String selectedMood =
+                                              await _showMoodPicker() ?? '';
 
-                                    final dbService = DatabaseService();
-                                    final run = RunModel(
-                                      id: DateTime.now().millisecondsSinceEpoch.toString(),
-                                      date: DateTime.now(),
-                                      distanceKm: _distanceKm,
-                                      durationSeconds: _secondsElapsed,
-                                      pace: _calculatePace(),
-                                      calories: _calculateCalories(),
-                                      route: List.from(_routePoints),
-                                      type: selectedType,
-                                      mood: selectedMood,
-                                      splits: List.from(_splits),
-                                    );
-                                    await dbService.saveRun(run);
-                                    await dbService.clearActiveRun();
+                                          final dbService = DatabaseService();
+                                          final run = RunModel(
+                                            id: DateTime.now()
+                                                .millisecondsSinceEpoch
+                                                .toString(),
+                                            date: DateTime.now(),
+                                            distanceKm: _distanceKm,
+                                            durationSeconds: _secondsElapsed,
+                                            pace: _calculatePace(),
+                                            calories: _calculateCalories(),
+                                            route: List.from(_routePoints),
+                                            type: selectedType,
+                                            mood: selectedMood,
+                                            splits: List.from(_splits),
+                                          );
+                                          await dbService.saveRun(run);
+                                          await dbService.clearActiveRun();
 
-                                    // Notifica o HistoryTab (e outros ouvintes) que há um novo treino.
-                                    if (context.mounted) {
-                                      context.read<RunsProvider>().notifyRunSaved();
-                                    }
+                                          // Notifica o HistoryTab (e outros ouvintes) que há um novo treino.
+                                          if (context.mounted) {
+                                            context
+                                                .read<RunsProvider>()
+                                                .notifyRunSaved();
+                                          }
 
-                                    // Analytics: treino salvo com sucesso
-                                    await AnalyticsService().logRunCompleted(
-                                      distanceKm: run.distanceKm,
-                                      durationSeconds: run.durationSeconds,
-                                      pace: run.pace,
-                                      calories: run.calories,
-                                      runType: run.type ?? 'desconhecido',
-                                      mood: run.mood ?? '',
-                                    );
+                                          // Analytics: treino salvo com sucesso
+                                          await AnalyticsService()
+                                              .logRunCompleted(
+                                                distanceKm: run.distanceKm,
+                                                durationSeconds:
+                                                    run.durationSeconds,
+                                                pace: run.pace,
+                                                calories: run.calories,
+                                                runType:
+                                                    run.type ?? 'desconhecido',
+                                                mood: run.mood ?? '',
+                                              );
 
-                                    // Verificar se o treino cumpre a sessão do plano de treinamento
-                                    final trainingService = TrainingService(dbService);
-                                    final isPlanSuccessful = await trainingService.matchRunToPlan(run);
+                                          // Verificar se o treino cumpre a sessão do plano de treinamento
+                                          final trainingService =
+                                              TrainingService(dbService);
+                                          final isPlanSuccessful =
+                                              await trainingService
+                                                  .matchRunToPlan(run);
 
-                                    final newAwards = await _achievementService.checkAwards(run);
+                                          final newAwards =
+                                              await _achievementService
+                                                  .checkAwards(run);
 
-                                    for (final award in newAwards) {
-                                      AnalyticsService().logAchievementUnlocked(achievementId: award['id']);
-                                    }
+                                          for (final award in newAwards) {
+                                            AnalyticsService()
+                                                .logAchievementUnlocked(
+                                                  achievementId: award['id'],
+                                                );
+                                          }
 
-                                    if (context.mounted) {
-                                      String snackMessage = '';
-                                      if (isPlanSuccessful) {
-                                        snackMessage = 'SESSÃO DO PLANO CONCLUÍDA! 🎯';
-                                      } else if (newAwards.isNotEmpty) {
-                                        snackMessage = 'PARABÉNS! Você ganhou ${newAwards.length} novas conquistas! 🏆';
-                                      }
+                                          if (context.mounted) {
+                                            String snackMessage = '';
+                                            if (isPlanSuccessful) {
+                                              snackMessage =
+                                                  'SESSÃO DO PLANO CONCLUÍDA! 🎯';
+                                            } else if (newAwards.isNotEmpty) {
+                                              snackMessage =
+                                                  'PARABÉNS! Você ganhou ${newAwards.length} novas conquistas! 🏆';
+                                            }
 
-                                      if (snackMessage.isNotEmpty) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              snackMessage,
-                                              style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-                                            ),
-                                            backgroundColor: AppColors.primaryNeon,
-                                            duration: const Duration(seconds: 5),
-                                          ),
-                                        );
-                                      }
+                                            if (snackMessage.isNotEmpty) {
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    snackMessage,
+                                                    style: const TextStyle(
+                                                      color: Colors.black,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                  backgroundColor:
+                                                      AppColors.primaryNeon,
+                                                  duration: const Duration(
+                                                    seconds: 5,
+                                                  ),
+                                                ),
+                                              );
+                                            }
 
-                                      Navigator.of(context).pop();
-                                    }
-                                  } catch (e) {
-                                    // Em caso de erro, libera o botão para tentar novamente
-                                    if (mounted) setState(() => _isSaving = false);
-                                    AnalyticsService().recordError(e, StackTrace.current, reason: 'save_run_failed');
-                                  }
-                                },
+                                            Navigator.of(context).pop();
+                                          }
+                                        } catch (e) {
+                                          // Em caso de erro, libera o botão para tentar novamente
+                                          if (mounted)
+                                            setState(() => _isSaving = false);
+                                          AnalyticsService().recordError(
+                                            e,
+                                            StackTrace.current,
+                                            reason: 'save_run_failed',
+                                          );
+                                        }
+                                      },
                                 child: _isSaving
                                     ? const SizedBox(
-                                        width: 20, height: 20,
-                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.black,
+                                        ),
                                       )
-                                    : const Text('SALVAR TREINO', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                                    : const Text(
+                                        'SALVAR TREINO',
+                                        style: TextStyle(
+                                          color: Colors.black,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
                               ),
                             ),
                           ],
@@ -1119,17 +1401,34 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                               width: double.infinity,
                               child: OutlinedButton.icon(
                                 style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  side: BorderSide(color: _distanceGoal != null ? AppColors.primaryNeon : Colors.white24),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  side: BorderSide(
+                                    color: _distanceGoal != null
+                                        ? AppColors.primaryNeon
+                                        : Colors.white24,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(30),
                                   ),
                                 ),
                                 onPressed: _showGoalDialog,
-                                icon: Icon(LucideIcons.target, color: _distanceGoal != null ? AppColors.primaryNeon : Colors.white70),
+                                icon: Icon(
+                                  LucideIcons.target,
+                                  color: _distanceGoal != null
+                                      ? AppColors.primaryNeon
+                                      : Colors.white70,
+                                ),
                                 label: Text(
-                                  _distanceGoal != null ? 'META: ${_distanceGoal!.toInt()}KM' : 'DEFINIR META',
-                                  style: TextStyle(color: _distanceGoal != null ? AppColors.primaryNeon : Colors.white70),
+                                  _distanceGoal != null
+                                      ? 'META: ${_distanceGoal!.toInt()}KM'
+                                      : 'DEFINIR META',
+                                  style: TextStyle(
+                                    color: _distanceGoal != null
+                                        ? AppColors.primaryNeon
+                                        : Colors.white70,
+                                  ),
                                 ),
                               ),
                             ),
@@ -1138,14 +1437,22 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                               width: double.infinity,
                               child: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
                                   backgroundColor: AppColors.primaryNeon,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(30),
                                   ),
                                 ),
                                 onPressed: _startRun,
-                                child: const Text('INICIAR', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                                child: const Text(
+                                  'INICIAR',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
                             ),
                           ],
@@ -1153,18 +1460,24 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                       else
                         Column(
                           children: [
-                            if (_pacingFeedback != null && _pacingFeedback!.status != PacingStatus.none)
+                            if (_pacingFeedback != null &&
+                                _pacingFeedback!.status != PacingStatus.none)
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 16),
                                 child: _buildPacingCard(),
                               )
-                            else if (_distanceGoal != null && _secondsElapsed >= 90)
+                            else if (_distanceGoal != null &&
+                                _secondsElapsed >= 90)
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 16),
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    const Icon(LucideIcons.clock, size: 16, color: AppColors.primaryNeon),
+                                    const Icon(
+                                      LucideIcons.clock,
+                                      size: 16,
+                                      color: AppColors.primaryNeon,
+                                    ),
                                     const SizedBox(width: 8),
                                     Text(
                                       'CHEGADA ESTIMADA: ${_calculateETA()}',
@@ -1178,30 +1491,104 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                 ),
                               ),
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                               children: [
                                 if (_isPaused)
-                                  FloatingActionButton.extended(
-                                    heroTag: 'resume',
-                                    backgroundColor: AppColors.primaryNeonLight,
-                                    onPressed: _resumeRun,
-                                    icon: const Icon(LucideIcons.play),
-                                    label: const Text('RETOMAR', style: TextStyle(color: Colors.black)),
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: isDark
+                                            ? const Color(0xFF1E3D1A)
+                                            : AppColors.lightPrimary,
+                                        foregroundColor: isDark
+                                            ? AppColors.primaryNeon
+                                            : Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 16,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
+                                        ),
+                                        elevation: 0,
+                                      ),
+                                      onPressed: _resumeRun,
+                                      icon: const Icon(
+                                        LucideIcons.play,
+                                        size: 20,
+                                      ),
+                                      label: const Text(
+                                        'RETOMAR',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 1.0,
+                                        ),
+                                      ),
+                                    ),
                                   )
                                 else
-                                  FloatingActionButton.extended(
-                                    heroTag: 'pause',
-                                    backgroundColor: Colors.orange,
-                                    onPressed: _pauseRun,
-                                    icon: const Icon(LucideIcons.pause),
-                                    label: const Text('PAUSAR', style: TextStyle(color: Colors.black)),
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: isDark
+                                            ? const Color(0xFF3D2B0E)
+                                            : Colors.orange.shade700,
+                                        foregroundColor: isDark
+                                            ? const Color(0xFFFFA726)
+                                            : Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 16,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
+                                        ),
+                                        elevation: 0,
+                                      ),
+                                      onPressed: _pauseRun,
+                                      icon: const Icon(
+                                        LucideIcons.pause,
+                                        size: 20,
+                                      ),
+                                      label: const Text(
+                                        'PAUSAR',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 1.0,
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                FloatingActionButton.extended(
-                                  heroTag: 'stop',
-                                  backgroundColor: Colors.redAccent,
-                                  onPressed: _stopRun,
-                                  icon: const Icon(LucideIcons.square),
-                                  label: const Text('PARAR', style: TextStyle(color: Colors.white)),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: isDark
+                                          ? const Color(0xFF2B0E0E)
+                                          : Colors.red.shade700,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 16,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      elevation: 0,
+                                    ),
+                                    onPressed: _stopRun,
+                                    icon: const Icon(
+                                      LucideIcons.square,
+                                      size: 20,
+                                    ),
+                                    label: const Text(
+                                      'PARAR',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1.0,
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
@@ -1212,7 +1599,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                 ),
               ),
             ),
-            
+
             // Screen Lock Overlay
             if (_isScreenLocked)
               Positioned.fill(
@@ -1242,11 +1629,18 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                   child: Container(
                     color: Colors.black.withValues(alpha: 0.7),
                     child: Align(
-                      alignment: const Alignment(0, -0.4), // Reposicionado para cima
+                      alignment: const Alignment(
+                        0,
+                        -0.4,
+                      ), // Reposicionado para cima
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(LucideIcons.lock, color: AppColors.primaryNeon, size: 64),
+                          const Icon(
+                            LucideIcons.lock,
+                            color: AppColors.primaryNeon,
+                            size: 64,
+                          ),
                           const SizedBox(height: 16),
                           AnimatedOpacity(
                             opacity: _showLockHint ? 1.0 : 0.0,
@@ -1283,7 +1677,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     if (_isRunning && !_isFinished) {
       return _currentSmoothedPace;
     }
-    
+
     if (_distanceKm == 0) return '0:00';
     double paceInMinutes = (_secondsElapsed / 60) / _distanceKm;
     int minutes = paceInMinutes.toInt();
@@ -1296,9 +1690,11 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     double paceInMinutes = (_secondsElapsed / 60) / _distanceKm;
     double remainingDistance = _distanceGoal! - _distanceKm;
     if (remainingDistance <= 0) return 'Chegou!';
-    
+
     double remainingMinutes = remainingDistance * paceInMinutes;
-    DateTime eta = DateTime.now().add(Duration(seconds: (remainingMinutes * 60).toInt()));
+    DateTime eta = DateTime.now().add(
+      Duration(seconds: (remainingMinutes * 60).toInt()),
+    );
     return '${eta.hour.toString().padLeft(2, '0')}:${eta.minute.toString().padLeft(2, '0')}';
   }
 
@@ -1306,18 +1702,79 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     return TimeUtils.formatDuration(_secondsElapsed);
   }
 
+  /// Card de métrica — layout unificado para dark e light mode
+  Widget _buildMetricTile(
+    bool isDark,
+    IconData icon,
+    String label,
+    String value,
+    String unit,
+  ) {
+    final Color accentColor = isDark
+        ? AppColors.primaryNeon
+        : AppColors.lightPrimary;
+    final Color labelColor = isDark
+        ? AppColors.textMuted
+        : AppColors.textMutedDark;
+    final Color valueColor = isDark ? Colors.white : AppColors.textDark;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: accentColor, size: 18),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: GoogleFonts.outfit(
+              color: labelColor,
+              fontSize: 9,
+              letterSpacing: 1.2,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              style: GoogleFonts.outfit(
+                color: valueColor,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          Text(
+            unit,
+            style: GoogleFonts.outfit(
+              color: accentColor,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGoalProgress() {
     final goal = _distanceGoal!;
     final progress = (_distanceKm / goal).clamp(0.0, 1.0);
     final remaining = (goal - _distanceKm).clamp(0.0, goal);
-    final goalColor = progress >= 1.0 ? Colors.greenAccent : AppColors.primaryNeon;
+    final goalColor = progress >= 1.0
+        ? Colors.greenAccent
+        : AppColors.primaryNeon;
 
     String etaText = '--:--';
     if (_distanceKm > 0.05 && _secondsElapsed > 0 && remaining > 0) {
-      final secsRemaining = (remaining / (_distanceKm / _secondsElapsed)).toInt();
+      final secsRemaining = (remaining / (_distanceKm / _secondsElapsed))
+          .toInt();
       final mins = secsRemaining ~/ 60;
       final secs = secsRemaining % 60;
-      etaText = '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+      etaText =
+          '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
     }
 
     final mutedColor = Theme.of(context).brightness == Brightness.dark
@@ -1358,9 +1815,24 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _goalStat('META', '${goal.toStringAsFixed(1)} km', Theme.of(context).colorScheme.onSurface, mutedColor),
-                _goalStat('FALTAM', '${remaining.toStringAsFixed(2)} km', AppColors.primaryNeonLight, mutedColor),
-                _goalStat('CHEGA EM', etaText, Theme.of(context).colorScheme.onSurface, mutedColor),
+                _goalStat(
+                  'META',
+                  '${goal.toStringAsFixed(1)} km',
+                  Theme.of(context).colorScheme.onSurface,
+                  mutedColor,
+                ),
+                _goalStat(
+                  'FALTAM',
+                  '${remaining.toStringAsFixed(2)} km',
+                  AppColors.primaryNeonLight,
+                  mutedColor,
+                ),
+                _goalStat(
+                  'CHEGA EM',
+                  etaText,
+                  Theme.of(context).colorScheme.onSurface,
+                  mutedColor,
+                ),
               ],
             ),
           ),
@@ -1369,13 +1841,32 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     );
   }
 
-  Widget _goalStat(String label, String value, Color valueColor, Color labelColor) {
+  Widget _goalStat(
+    String label,
+    String value,
+    Color valueColor,
+    Color labelColor,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(label, style: GoogleFonts.outfit(color: labelColor, fontSize: 10, letterSpacing: 0.5)),
+        Text(
+          label,
+          style: GoogleFonts.outfit(
+            color: labelColor,
+            fontSize: 10,
+            letterSpacing: 0.5,
+          ),
+        ),
         const SizedBox(height: 2),
-        Text(value, style: GoogleFonts.outfit(color: valueColor, fontSize: 14, fontWeight: FontWeight.bold)),
+        Text(
+          value,
+          style: GoogleFonts.outfit(
+            color: valueColor,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ],
     );
   }
@@ -1388,12 +1879,17 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       useSafeArea: true,
       builder: (context) => Container(
         decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark 
-              ? AppColors.backgroundDarkGreen 
+          color: Theme.of(context).brightness == Brightness.dark
+              ? AppColors.backgroundDarkGreen
               : Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
         ),
-        padding: EdgeInsets.fromLTRB(24, 32, 24, 32 + MediaQuery.of(context).padding.bottom),
+        padding: EdgeInsets.fromLTRB(
+          24,
+          32,
+          24,
+          32 + MediaQuery.of(context).padding.bottom,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1410,8 +1906,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             Text(
               'Classifique sua atividade para melhor acompanhamento.',
               style: GoogleFonts.outfit(
-                color: Theme.of(context).brightness == Brightness.dark 
-                    ? AppColors.textMuted 
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? AppColors.textMuted
                     : AppColors.textMutedDark,
                 fontSize: 16,
               ),
@@ -1503,8 +1999,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                   Text(
                     description,
                     style: GoogleFonts.outfit(
-                      color: Theme.of(context).brightness == Brightness.dark 
-                          ? AppColors.textMuted 
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? AppColors.textMuted
                           : AppColors.textMutedDark,
                       fontSize: 14,
                     ),
@@ -1532,7 +2028,12 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               : Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
         ),
-        padding: EdgeInsets.fromLTRB(24, 32, 24, 24 + MediaQuery.of(context).padding.bottom),
+        padding: EdgeInsets.fromLTRB(
+          24,
+          32,
+          24,
+          24 + MediaQuery.of(context).padding.bottom,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -1618,51 +2119,60 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                       style: GoogleFonts.outfit(
                         color: statusColor,
                         fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                        fontSize: 13,
                       ),
                     ),
-                    Text(
-                      'Pace Ideal: ${_pacingFeedback!.idealPace} min/km',
-                      style: GoogleFonts.outfit(
-                        color: isDark ? AppColors.textMuted : AppColors.textMutedDark,
-                        fontSize: 12,
-                      ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Text(
+                          'IDEAL: ${_pacingFeedback!.idealPace}/km',
+                          style: GoogleFonts.outfit(
+                            color: isDark
+                                ? AppColors.textMuted
+                                : AppColors.textMutedDark,
+                            fontSize: 11,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'ATUAL: ${_pacingFeedback!.currentPace}/km',
+                          style: GoogleFonts.outfit(
+                            color: isDark ? Colors.white70 : AppColors.textDark,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    _pacingFeedback!.currentPace,
-                    style: GoogleFonts.outfit(
-                      color: Theme.of(context).colorScheme.onSurface,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 20,
-                    ),
-                  ),
-                  Text(
-                    'ATUAL',
-                    style: GoogleFonts.outfit(
-                      color: AppColors.textMuted,
-                      fontSize: 10,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ],
-              ),
             ],
           ),
-          const SizedBox(height: 12),
-          // Barra de progresso da meta
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: _pacingFeedback!.progress,
-              backgroundColor: statusColor.withValues(alpha: 0.1),
-              valueColor: AlwaysStoppedAnimation<Color>(statusColor),
-              minHeight: 4,
+        ],
+      ),
+    );
+  }
+
+  Widget _moodOption(BuildContext context, String emoji, String label) {
+    return GestureDetector(
+      onTap: () => Navigator.pop(context, emoji),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 40)),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: GoogleFonts.outfit(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? AppColors.textMuted
+                  : AppColors.textMutedDark,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],
@@ -1672,14 +2182,14 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
 
   Color _pacingColor(PacingStatus status) {
     switch (status) {
-      case PacingStatus.onTrack:
-        return Colors.greenAccent;
       case PacingStatus.behind:
         return Colors.redAccent;
       case PacingStatus.ahead:
-        return Colors.orangeAccent;
-      default:
+        return Colors.orange;
+      case PacingStatus.onTrack:
         return AppColors.primaryNeon;
+      case PacingStatus.none:
+        return Colors.grey;
     }
   }
 
@@ -1687,45 +2197,17 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     switch (status) {
       case PacingStatus.onTrack:
         return LucideIcons.checkCircle;
-      case PacingStatus.behind:
-        return LucideIcons.trendingUp;
       case PacingStatus.ahead:
+        return LucideIcons.trendingUp;
+      case PacingStatus.behind:
         return LucideIcons.trendingDown;
-      default:
+      case PacingStatus.none:
         return LucideIcons.info;
     }
   }
-
-  Widget _moodOption(BuildContext context, String emoji, String label) {
-    return InkWell(
-      onTap: () => Navigator.pop(context, emoji),
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: AppColors.primaryNeon.withValues(alpha: 0.05),
-          border: Border.all(color: AppColors.primaryNeon.withValues(alpha: 0.15)),
-        ),
-        child: Column(
-          children: [
-            Text(emoji, style: const TextStyle(fontSize: 40)),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: GoogleFonts.outfit(
-                color: Theme.of(context).colorScheme.onSurface,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
+// ─── CustomPainter para o anel de progresso da meta ───────────────────────────
 class _GoalRingPainter extends CustomPainter {
   final double progress;
   final Color color;
@@ -1735,37 +2217,263 @@ class _GoalRingPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2 - 10;
-    const strokeWidth = 10.0;
-    const startAngle = -3.14159 / 2; // Start from top
-    const fullAngle = 2 * 3.14159;
+    final radius = size.width / 2 - 4;
+    const strokeWidth = 5.0;
 
-    // Background track
-    final trackPaint = Paint()
-      ..color = color.withValues(alpha: 0.15)
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
+    // Trilha de fundo
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = color.withAlpha(51)
+        ..strokeWidth = strokeWidth
+        ..style = PaintingStyle.stroke,
+    );
 
-    canvas.drawCircle(center, radius, trackPaint);
-
-    // Progress arc
-    final progressPaint = Paint()
-      ..color = color
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
+    // Arco de progresso
     canvas.drawArc(
       Rect.fromCircle(center: center, radius: radius),
-      startAngle,
-      fullAngle * progress,
+      -3.14159265 / 2,
+      2 * 3.14159265 * progress,
       false,
-      progressPaint,
+      Paint()
+        ..color = color
+        ..strokeWidth = strokeWidth
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round,
     );
   }
 
   @override
-  bool shouldRepaint(_GoalRingPainter old) =>
-      old.progress != progress || old.color != color;
+  bool shouldRepaint(_GoalRingPainter oldDelegate) =>
+      oldDelegate.progress != progress || oldDelegate.color != color;
+}
+
+// ─── Dialog customizado para seleção de meta ──────────────────────────────────
+class _GoalSelectionDialog extends StatefulWidget {
+  final double? initialDistanceGoal;
+  final Function(double distance, bool isCustom) onGoalSelected;
+  final VoidCallback onNoGoal;
+
+  const _GoalSelectionDialog({
+    required this.initialDistanceGoal,
+    required this.onGoalSelected,
+    required this.onNoGoal,
+  });
+
+  @override
+  State<_GoalSelectionDialog> createState() => _GoalSelectionDialogState();
+}
+
+class _GoalSelectionDialogState extends State<_GoalSelectionDialog> {
+  final _controller = TextEditingController();
+  final _focusNode = FocusNode();
+  final _formKey = GlobalKey<FormState>();
+  bool _showingCustom = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _switchToCustom() {
+    setState(() => _showingCustom = true);
+    // Pequeno atraso para garantir que o campo foi renderizado antes do foco
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _focusNode.canRequestFocus) {
+        _focusNode.requestFocus();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return AlertDialog(
+      backgroundColor: isDark ? AppColors.backgroundDarkGreen : Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(
+        _showingCustom ? 'Distância Personalizada' : 'Definir Meta de Corrida',
+        style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+      ),
+      content: _showingCustom
+          ? _buildCustomView(isDark)
+          : _buildPresetView(isDark),
+      actions: _showingCustom
+          ? [
+              TextButton(
+                onPressed: () {
+                  _focusNode.unfocus();
+                  setState(() {
+                    _showingCustom = false;
+                    _controller.clear();
+                  });
+                },
+                child: Text(
+                  'VOLTAR',
+                  style: TextStyle(
+                    color: isDark ? Colors.white54 : Colors.black54,
+                  ),
+                ),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isDark
+                      ? AppColors.primaryNeon
+                      : AppColors.lightPrimary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 10,
+                  ),
+                  elevation: 0,
+                ),
+                onPressed: () {
+                  if (_formKey.currentState!.validate()) {
+                    final distance = double.tryParse(
+                      _controller.text.replaceAll(',', '.'),
+                    );
+                    if (distance != null) {
+                      widget.onGoalSelected(distance, true);
+                    }
+                  }
+                },
+                child: Text(
+                  'CONFIRMAR',
+                  style: GoogleFonts.outfit(
+                    color: isDark ? Colors.black : Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ]
+          : null,
+    );
+  }
+
+  Widget _buildPresetView(bool isDark) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Distância Alvo:',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        _goalItem(1.0, '1 km (Velocidade)'),
+        _goalItem(3.0, '3 km (Leve)'),
+        _goalItem(5.0, '5 km (Avançado)'),
+        _goalItem(10.0, '10 km (Resistência)'),
+        Divider(color: isDark ? Colors.white24 : Colors.black12),
+        ListTile(
+          leading: Icon(
+            LucideIcons.pencil,
+            color: isDark ? Colors.white38 : Colors.black38,
+            size: 18,
+          ),
+          title: Text(
+            'Personalizado...',
+            style: TextStyle(color: isDark ? Colors.white70 : Colors.black87),
+          ),
+          onTap: _switchToCustom,
+        ),
+        Divider(color: isDark ? Colors.white24 : Colors.black12),
+        ListTile(
+          title: Text(
+            'Sem meta',
+            style: TextStyle(color: isDark ? Colors.white70 : Colors.black87),
+          ),
+          onTap: widget.onNoGoal,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCustomView(bool isDark) {
+    return Form(
+      key: _formKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Digite a distância desejada em km:',
+            style: TextStyle(
+              color: isDark ? AppColors.textMuted : AppColors.textMutedDark,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _controller,
+            focusNode: _focusNode,
+            autofocus: false,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: GoogleFonts.outfit(
+              color: isDark ? Colors.white : AppColors.textDark,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+            textAlign: TextAlign.center,
+            decoration: InputDecoration(
+              hintText: 'Ex: 7.5',
+              hintStyle: TextStyle(
+                color: isDark ? Colors.white24 : Colors.black26,
+                fontSize: 24,
+              ),
+              suffixText: 'km',
+              suffixStyle: TextStyle(
+                color: isDark ? AppColors.primaryNeon : AppColors.lightPrimary,
+                fontWeight: FontWeight.bold,
+              ),
+              filled: true,
+              fillColor: isDark
+                  ? Colors.white.withValues(alpha: 0.05)
+                  : Colors.black.withValues(alpha: 0.04),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(
+                  color: isDark
+                      ? AppColors.primaryNeon
+                      : AppColors.lightPrimary,
+                  width: 1.5,
+                ),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
+            ),
+            validator: (value) {
+              if (value == null || value.isEmpty) return 'Informe a distância';
+              final parsed = double.tryParse(value.replaceAll(',', '.'));
+              if (parsed == null) return 'Valor inválido';
+              if (parsed < 0.5) return 'Mínimo: 0.5 km';
+              if (parsed > 100) return 'Máximo: 100 km';
+              return null;
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _goalItem(double value, String label) {
+    final isSelected = widget.initialDistanceGoal == value;
+    return ListTile(
+      title: Text(label, style: const TextStyle(color: Colors.white)),
+      trailing: isSelected
+          ? const Icon(LucideIcons.check, color: AppColors.primaryNeon)
+          : null,
+      onTap: () => widget.onGoalSelected(value, false),
+    );
+  }
 }
