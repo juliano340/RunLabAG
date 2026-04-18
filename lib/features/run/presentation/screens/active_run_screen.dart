@@ -684,11 +684,14 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              Navigator.pop(context); // Close dialog
-              _stopRunInternals();
-              DatabaseService().clearActiveRun();
-              Navigator.pop(context); // Return home (discarded)
+            onPressed: () async {
+              Navigator.pop(context); // Close save/discard dialog
+              final confirmed = await _showDiscardConfirmation();
+              if (confirmed == true && mounted) {
+                _stopRunInternals();
+                DatabaseService().clearActiveRun();
+                Navigator.pop(context); // Return home
+              }
             },
             child: Text(
               'DESCARTAR',
@@ -854,6 +857,50 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     _positionStream?.cancel();
     _themeService?.removeListener(_onThemeChanged);
     super.dispose();
+  }
+
+  Future<bool?> _showDiscardConfirmation() {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).brightness == Brightness.dark
+            ? AppColors.backgroundDarkGreen
+            : Colors.white,
+        title: Text(
+          'Descartar Treino?',
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
+        ),
+        content: Text(
+          'Tem certeza? Todos os dados do treino serão perdidos e não poderão ser recuperados.',
+          style: TextStyle(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Colors.white70
+                : AppColors.textMutedDark,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'CANCELAR',
+              style: GoogleFonts.outfit(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              'SIM, DESCARTAR',
+              style: GoogleFonts.outfit(
+                color: Colors.redAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<bool?> _showExitConfirmation() {
