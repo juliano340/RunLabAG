@@ -1345,7 +1345,16 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                     borderRadius: BorderRadius.circular(30),
                                   ),
                                 ),
-                                onPressed: () => Navigator.pop(context),
+                                onPressed: () async {
+                                  final confirmed =
+                                      await _showDiscardConfirmation();
+                                  if (confirmed == true && context.mounted) {
+                                    await DatabaseService().clearActiveRun();
+                                    if (context.mounted) {
+                                      Navigator.pop(context);
+                                    }
+                                  }
+                                },
                                 child: const Text(
                                   'DESCARTAR',
                                   style: TextStyle(color: Colors.redAccent),
