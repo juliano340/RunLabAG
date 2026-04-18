@@ -30,11 +30,13 @@ class _ProfileTabState extends State<ProfileTab> {
   final _backupService = BackupService();
   UserProfile? _profile;
   bool _isLoading = true;
+  bool _autoBackupEnabled = false;
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
+    _loadAutoBackupPreference();
   }
 
   Future<void> _loadProfile() async {
@@ -44,6 +46,37 @@ class _ProfileTabState extends State<ProfileTab> {
         _profile = profile;
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadAutoBackupPreference() async {
+    final enabled = await _backupService.isAutoBackupEnabled();
+    if (mounted) {
+      setState(() => _autoBackupEnabled = enabled);
+    }
+  }
+
+  Future<void> _toggleAutoBackup(bool enabled) async {
+    if (enabled) {
+      final granted = await _backupService.requestStoragePermission();
+      if (!granted) {
+        if (mounted && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Permissão negada. Libere "Acesso a todos os arquivos" nas configurações.',
+                style: TextStyle(color: Colors.white),
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+    }
+    await _backupService.setAutoBackupEnabled(enabled);
+    if (mounted) {
+      setState(() => _autoBackupEnabled = enabled);
     }
   }
 
@@ -511,12 +544,12 @@ class _ProfileTabState extends State<ProfileTab> {
                         final file = File(result.files.single.path!);
                         final content = await file.readAsString();
                         final success = await _backupService.importBackup(content);
-                        
+
                         if (mounted && context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text(success 
-                                ? 'Dados restaurados com sucesso!' 
+                              content: Text(success
+                                ? 'Dados restaurados com sucesso!'
                                 : 'Erro ao importar arquivo',
                                 style: const TextStyle(color: Colors.white)),
                               backgroundColor: success ? Colors.green : Colors.red,
@@ -527,6 +560,8 @@ class _ProfileTabState extends State<ProfileTab> {
                       }
                     },
                   ),
+                  Divider(color: Theme.of(context).colorScheme.outline, height: 1),
+                  _buildAutoBackupToggle(context),
                 ],
               ),
             ),
@@ -603,6 +638,34 @@ class _ProfileTabState extends State<ProfileTab> {
             const SizedBox(height: 48),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildAutoBackupToggle(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return SwitchListTile(
+      value: _autoBackupEnabled,
+      onChanged: _toggleAutoBackup,
+      activeThumbColor: cs.primary,
+      secondary: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: cs.primary.withValues(alpha: 0.1),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(LucideIcons.hardDrive, color: cs.primary, size: 20),
+      ),
+      title: Text(
+        'Backup Automático',
+        style: GoogleFonts.outfit(
+          color: cs.onSurface,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      subtitle: Text(
+        'Salva em ${_backupService.autoBackupFolderPath} após treinos > 5min',
+        style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
       ),
     );
   }

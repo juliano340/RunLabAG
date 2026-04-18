@@ -10,6 +10,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/database_service.dart';
+import '../../../../core/services/theme_service.dart';
 import '../../../../features/training/services/training_service.dart';
 import '../../../../core/services/pacing_service.dart';
 import '../widgets/metric_card.dart';
@@ -22,6 +23,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../core/services/analytics_service.dart';
 import '../../../../core/services/ad_service.dart';
+import '../../../../core/services/backup_service.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/providers/runs_provider.dart';
 
@@ -45,6 +47,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   bool _hasPermissions = false;
   bool _showMinimalMap = false;
   String? _minimalMapStyle;
+  String? _darkMapStyle;
+  String? _darkMinimalMapStyle;
+  bool _isMapStylesLoaded = false;
+  bool _isMapReady = false;
 
   // Metrics
   double _distanceKm = 0.0;
@@ -76,6 +82,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     zoom: 15,
   );
 
+  ThemeService? _themeService;
+
   @override
   void initState() {
     super.initState();
@@ -86,6 +94,22 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     if (widget.restoredState != null) {
       _restoreState(widget.restoredState!);
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final newThemeService = context.read<ThemeService>();
+    if (_themeService != newThemeService) {
+      _themeService?.removeListener(_onThemeChanged);
+      _themeService = newThemeService;
+      _themeService!.addListener(_onThemeChanged);
+    }
+  }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   Future<void> _loadMapPreference() async {
@@ -201,9 +225,30 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _minimalMapStyle = await rootBundle.loadString(
         'assets/map_style_minimal.json',
       );
+      _darkMapStyle = await rootBundle.loadString(
+        'assets/map_style_dark.json',
+      );
+      _darkMinimalMapStyle = await rootBundle.loadString(
+        'assets/map_style_dark_minimal.json',
+      );
+      if (mounted) {
+        setState(() {
+          _isMapStylesLoaded = true;
+        });
+      }
     } catch (e) {
       debugPrint("Error loading map style: $e");
     }
+  }
+
+  String? _getMapStyle() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (isDark) {
+      return _showMinimalMap ? _darkMinimalMapStyle : _darkMapStyle;
+    }
+
+    return _showMinimalMap ? _minimalMapStyle : null;
   }
 
   Future<void> _initLocation() async {
@@ -807,6 +852,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     _timer?.cancel();
     _lockHintTimer?.cancel();
     _positionStream?.cancel();
+    _themeService?.removeListener(_onThemeChanged);
     super.dispose();
   }
 
@@ -889,22 +935,29 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         body: Stack(
           children: [
             RepaintBoundary(
-              child: GoogleMap(
-                initialCameraPosition: _initialPosition,
-                myLocationEnabled: _hasPermissions,
-                myLocationButtonEnabled: false,
-                zoomControlsEnabled: false,
-                mapType: MapType.normal,
-                style: _showMinimalMap ? _minimalMapStyle : null,
-                padding: EdgeInsets.only(
-                  bottom: (_distanceGoal != null && _distanceGoal! > 0)
-                      ? 380
-                      : 280,
-                  top: safeTopInset + 60,
-                ),
-                onMapCreated: (GoogleMapController controller) {
-                  _controller.complete(controller);
-                },
+              child: Stack(
+                children: [
+                  GoogleMap(
+                    initialCameraPosition: _initialPosition,
+                    myLocationEnabled: _hasPermissions,
+                    myLocationButtonEnabled: false,
+                    zoomControlsEnabled: false,
+                    mapType: MapType.normal,
+                    style: _getMapStyle(),
+                    padding: EdgeInsets.only(
+                      bottom: (_distanceGoal != null && _distanceGoal! > 0)
+                          ? 380
+                          : 280,
+                      top: safeTopInset + 60,
+                    ),
+                    onMapCreated: (GoogleMapController controller) {
+                      _controller.complete(controller);
+                      Future.delayed(const Duration(milliseconds: 150), () {
+                        if (mounted) {
+                          setState(() => _isMapReady = true);
+                        }
+                      });
+                    },
                 markers: {
                   if (_routePoints.isNotEmpty && _routePoints.first.isNotEmpty)
                     Marker(
@@ -927,18 +980,27 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                       infoWindow: const InfoWindow(title: 'Chegada'),
                     ),
                 },
-                polylines: _routePoints.asMap().entries.map((entry) {
-                  final int idx = entry.key;
-                  final List<LatLng> segment = entry.value;
-                  return Polyline(
-                    polylineId: PolylineId('route_$idx'),
-                    points: segment,
-                    color: AppColors.primaryNeon,
-                    width: 5, // Slightly thinner as requested earlier
-                    startCap: Cap.roundCap,
-                    endCap: Cap.roundCap,
-                  );
-                }).toSet(),
+                    polylines: _routePoints.asMap().entries.map((entry) {
+                      final int idx = entry.key;
+                      final List<LatLng> segment = entry.value;
+                      return Polyline(
+                        polylineId: PolylineId('route_$idx'),
+                        points: segment,
+                        color: AppColors.primaryNeon,
+                        width: 5,
+                        startCap: Cap.roundCap,
+                        endCap: Cap.roundCap,
+                      );
+                    }).toSet(),
+                  ),
+                  // Cobertura anti-flash: esconde o mapa branco até o estilo ser aplicado
+                  if (!_isMapReady && isDark)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: Container(color: const Color(0xFF1d2c2c)),
+                      ),
+                    ),
+                ],
               ),
             ),
 
@@ -1290,6 +1352,12 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                           );
                                           await dbService.saveRun(run);
                                           await dbService.clearActiveRun();
+
+                                          // Backup automático se habilitado. Falha silencioso.
+                                          unawaited(
+                                            BackupService()
+                                                .runAutoBackupIfEnabled(),
+                                          );
 
                                           // Notifica o HistoryTab (e outros ouvintes) que há um novo treino.
                                           if (context.mounted) {

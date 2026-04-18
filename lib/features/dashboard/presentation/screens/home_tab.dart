@@ -16,7 +16,9 @@ import '../../domain/models/weekly_evolution_stats.dart';
 import 'package:intl/intl.dart';
 
 class HomeTab extends StatefulWidget {
-  const HomeTab({super.key});
+  final VoidCallback? onNavigateToProfile;
+
+  const HomeTab({super.key, this.onNavigateToProfile});
 
   @override
   State<HomeTab> createState() => _HomeTabState();
@@ -245,7 +247,7 @@ class _HomeTabState extends State<HomeTab> {
                             ),
                           ),
                           GestureDetector(
-                            onTap: () {},
+                            onTap: widget.onNavigateToProfile,
                             child: CircleAvatar(
                               radius: 24,
                               backgroundColor: AppColors.cardBackground,

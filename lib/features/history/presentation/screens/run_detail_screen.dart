@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/database_service.dart';
+import '../../../../core/services/theme_service.dart';
+import '../../../../core/services/backup_service.dart';
 import '../../../run/presentation/widgets/metric_card.dart';
 import '../../../run/presentation/screens/run_share_screen.dart';
 import '../../../../core/utils/time_utils.dart';
@@ -20,6 +24,10 @@ class RunDetailScreen extends StatefulWidget {
 
 class _RunDetailScreenState extends State<RunDetailScreen> {
   String? _mapStyle;
+  String? _minimalMapStyle;
+  String? _darkMinimalMapStyle;
+  ThemeService? _themeService;
+  bool _isMapReady = false;
 
   @override
   void initState() {
@@ -27,11 +35,48 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     _loadMapStyle();
   }
 
-  void _loadMapStyle() async {
-    final style = await rootBundle.loadString('assets/map_style_minimal.json');
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final newThemeService = context.read<ThemeService>();
+    if (_themeService != newThemeService) {
+      _themeService?.removeListener(_onThemeChanged);
+      _themeService = newThemeService;
+      _themeService!.addListener(_onThemeChanged);
+    }
+  }
+
+  void _onThemeChanged() {
+    if (!mounted) return;
     setState(() {
-      _mapStyle = style;
+      _mapStyle = _getMapStyleString();
     });
+  }
+
+  @override
+  void dispose() {
+    _themeService?.removeListener(_onThemeChanged);
+    super.dispose();
+  }
+
+  void _loadMapStyle() async {
+    try {
+      _minimalMapStyle = await rootBundle.loadString('assets/map_style_minimal.json');
+      _darkMinimalMapStyle = await rootBundle.loadString('assets/map_style_dark_minimal.json');
+
+      if (mounted) {
+        setState(() {
+          _mapStyle = _getMapStyleString();
+        });
+      }
+    } catch (e) {
+      debugPrint("Error loading map style: $e");
+    }
+  }
+
+  String? _getMapStyleString() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return isDark ? _darkMinimalMapStyle : _minimalMapStyle;
   }
 
   String _formatDate(DateTime date) {
@@ -262,6 +307,11 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                         controller.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
                       }
                     }
+                    Future.delayed(const Duration(milliseconds: 150), () {
+                      if (mounted) {
+                        setState(() => _isMapReady = true);
+                      }
+                    });
                   },
                 ),
                 // Overlay to make map look integrated
@@ -282,6 +332,13 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                     ),
                   ),
                 ),
+                // Cobertura anti-flash: esconde o mapa branco até o estilo ser aplicado
+                if (!_isMapReady && Theme.of(context).brightness == Brightness.dark)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(color: const Color(0xFF1d2c2c)),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -501,6 +558,10 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
             onPressed: () async {
               final dbService = DatabaseService();
               await dbService.deleteRun(widget.run.id);
+
+              // Atualiza backup automático após exclusão. Falha silencioso.
+              unawaited(BackupService().runAutoBackupIfEnabled());
+
               if (context.mounted) {
                 Navigator.of(context).pop(); // Close dialog
                 Navigator.of(context).pop(); // Return to history

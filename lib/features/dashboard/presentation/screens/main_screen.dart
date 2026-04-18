@@ -119,7 +119,10 @@ class _MainScreenState extends State<MainScreen> {
               child: IndexedStack(
                 index: _currentIndex,
                 children: [
-                  HomeTab(key: PageStorageKey('tab_home')),
+                  HomeTab(
+                    key: PageStorageKey('tab_home'),
+                    onNavigateToProfile: () => _onTabChanged(3),
+                  ),
                   HistoryTab(key: PageStorageKey('tab_history')),
                   RecordsTab(key: PageStorageKey('tab_records')),
                   ProfileTab(key: PageStorageKey('tab_profile')),
