@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -72,6 +73,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   String _currentSmoothedPace = '0:00';
   bool _isFirstPointAfterResume = false;
 
+  bool _isExiting = false;
   bool _isScreenLocked = false;
   bool _isSaving = false; // Guard contra double-save
   bool _showLockHint = false;
@@ -684,17 +686,19 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () async {
-              Navigator.pop(context); // Close save/discard dialog
-              final confirmed = await _showDiscardConfirmation();
-              if (confirmed == true && mounted) {
-                _stopRunInternals();
-                DatabaseService().clearActiveRun();
-                Navigator.pop(context); // Return home
-              }
-            },
+              onPressed: () async {
+                try {
+                  Navigator.of(context).pop(); // Fecha o diálogo de aviso
+                  _stopRunInternals();
+                  await DatabaseService().clearActiveRun();
+                } finally {
+                  if (mounted) {
+                    Navigator.of(context).pushNamedAndRemoveUntil('/dashboard', (route) => false);
+                  }
+                }
+              },
             child: Text(
-              'DESCARTAR',
+              'DESCARTAR AGORA!',
               style: GoogleFonts.outfit(
                 color: Colors.redAccent,
                 fontWeight: FontWeight.bold,
@@ -891,7 +895,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text(
-              'SIM, DESCARTAR',
+              'CONFIRMAR DESCARTE AGORA',
               style: GoogleFonts.outfit(
                 color: Colors.redAccent,
                 fontWeight: FontWeight.bold,
@@ -943,18 +947,19 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   }
 
   void _handleBackPress() async {
-    final bool canExit = !_isRunning && !_isFinished;
+    if (_isExiting) return;
 
+    final bool canExit = !_isRunning && !_isFinished;
     if (canExit) {
-      if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.of(context).pop();
       return;
     }
 
     final shouldExit = await _showExitConfirmation();
     if (shouldExit == true) {
-      _stopRunInternals(); // cancel streams
+      _stopRunInternals();
       if (mounted) {
-        Navigator.pop(context); // Force pop
+        Navigator.of(context).pushNamedAndRemoveUntil('/dashboard', (route) => false);
       }
     }
   }
@@ -972,9 +977,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     final double safeTopInset = MediaQuery.viewPaddingOf(context).top;
 
     return PopScope(
-      canPop: canExit,
+      canPop: _isExiting || canExit,
       onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
+        if (didPop || _isExiting) return;
         _handleBackPress();
       },
       child: Scaffold(
@@ -1348,12 +1353,12 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                 onPressed: () async {
                                   final confirmed =
                                       await _showDiscardConfirmation();
-                                  if (confirmed == true && context.mounted) {
-                                    await DatabaseService().clearActiveRun();
-                                    if (context.mounted) {
-                                      Navigator.pop(context);
+                                    if (confirmed == true && context.mounted) {
+                                      await DatabaseService().clearActiveRun();
+                                      if (context.mounted) {
+                                        Navigator.of(context).pushNamedAndRemoveUntil('/dashboard', (route) => false);
+                                      }
                                     }
-                                  }
                                 },
                                 child: const Text(
                                   'DESCARTAR',
@@ -1485,7 +1490,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                               );
                                             }
 
-                                            Navigator.of(context).pop();
+                                            if (context.mounted) {
+                                              Navigator.of(context).pushNamedAndRemoveUntil('/dashboard', (route) => false);
+                                            }
                                           }
                                         } catch (e) {
                                           // Em caso de erro, libera o botão para tentar novamente
