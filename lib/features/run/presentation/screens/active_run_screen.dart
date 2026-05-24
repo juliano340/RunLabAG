@@ -47,6 +47,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   bool _isFinished = false;
   bool _hasPermissions = false;
   bool _showMinimalMap = false;
+  bool _autoPauseEnabled = false;
+  bool _isAutoPaused = false;
+  LatLng? _autoPauseAnchor;
+  int _lowSpeedTicks = 0;
   String? _minimalMapStyle;
   String? _darkMapStyle;
   String? _darkMinimalMapStyle;
@@ -60,6 +64,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   PacingService? _pacingService;
   PacingFeedback? _pacingFeedback;
   int _secondsElapsed = 0;
+  int _pausedSecondsElapsed = 0;
+  int _lastResumeSeconds = 0;
   int _lastKmNotified = 0;
   List<RunSplit> _splits = [];
   int _lastSplitTimeSeconds = 0;
@@ -90,6 +96,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   void initState() {
     super.initState();
     _loadMapPreference();
+    _loadAutoPausePreference();
     _loadMapStyle();
     _initLocation();
     _loadUserProfile();
@@ -126,10 +133,24 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     await prefs.setBool('show_minimal_map', value);
   }
 
+  Future<void> _loadAutoPausePreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _autoPauseEnabled = prefs.getBool('auto_pause_enabled') ?? false;
+    });
+  }
+
+  Future<void> _saveAutoPausePreference(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('auto_pause_enabled', value);
+  }
+
   void _restoreState(Map<String, dynamic> state) {
     setState(() {
       _distanceKm = state['distanceKm'] ?? 0.0;
       _secondsElapsed = state['secondsElapsed'] ?? 0;
+      _pausedSecondsElapsed = state['pausedDurationSeconds'] ?? 0;
+      _lastResumeSeconds = _secondsElapsed;
       _lastKmNotified = state['lastKmNotified'] ?? 0;
       _distanceGoal = state['distanceGoal'];
       _targetTimeSeconds = state['targetTimeSeconds'];
@@ -198,6 +219,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       'startTime': DateTime.now().toIso8601String(),
       'distanceKm': _distanceKm,
       'secondsElapsed': _secondsElapsed,
+      'pausedDurationSeconds': _pausedSecondsElapsed,
       'lastKmNotified': _lastKmNotified,
       'distanceGoal': _distanceGoal,
       'targetTimeSeconds': _targetTimeSeconds,
@@ -294,6 +316,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     setState(() {
       _distanceKm = 0.0;
       _secondsElapsed = 0;
+      _pausedSecondsElapsed = 0;
+      _lastResumeSeconds = 0;
       _lastKmNotified = 0;
       _splits = [];
       _lastSplitTimeSeconds = 0;
@@ -304,6 +328,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _isFinished = false;
       _isFirstPointAfterResume =
           true; // Crucial: Treat start as a resume to ignore initial teleportation
+      _isAutoPaused = false;
+      _autoPauseAnchor = null;
+      _lowSpeedTicks = 0;
     });
 
     _startTimersAndStreams(isNew: true);
@@ -316,6 +343,15 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   void _startTimersAndStreams({required bool isNew}) {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_isPaused || _isAutoPaused) {
+        setState(() {
+          _pausedSecondsElapsed++;
+        });
+        if (_pausedSecondsElapsed % 5 == 0) {
+          _persistState();
+        }
+        return;
+      }
       setState(() {
         _secondsElapsed++;
         if (_pacingService != null) {
@@ -351,6 +387,50 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       ) {
         if (_isPaused) return;
 
+        final newPoint = LatLng(position.latitude, position.longitude);
+
+        if (_isAutoPaused) {
+          final distanceMeters = _autoPauseAnchor != null
+              ? Geolocator.distanceBetween(
+                  _autoPauseAnchor!.latitude,
+                  _autoPauseAnchor!.longitude,
+                  position.latitude,
+                  position.longitude,
+                )
+              : 0.0;
+
+          bool shouldResume = false;
+          if (position.speed > 1.2) {
+            shouldResume = true;
+          } else if (distanceMeters > 12.0) {
+            shouldResume = true;
+          }
+
+          if (shouldResume) {
+            setState(() {
+              _isAutoPaused = false;
+              _autoPauseAnchor = null;
+              _lowSpeedTicks = 0;
+              _isFirstPointAfterResume = true;
+              _lastResumeSeconds = _secondsElapsed;
+              if (_routePoints.isEmpty || _routePoints.last.isNotEmpty) {
+                _routePoints.add([]);
+              }
+            });
+            HapticFeedback.mediumImpact();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Treino retomado automaticamente'),
+                  duration: Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+          }
+          return;
+        }
+
         // 1. Filtro de Precisão (Mais rigoroso nos primeiros 30s)
         double maxAllowedAccuracy = _secondsElapsed < 30 ? 15.0 : 25.0;
         if (position.accuracy > maxAllowedAccuracy) {
@@ -360,7 +440,35 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
           return;
         }
 
-        final newPoint = LatLng(position.latitude, position.longitude);
+        if (_autoPauseEnabled) {
+          if (_secondsElapsed - _lastResumeSeconds >= 10) {
+            if (position.speed < 0.4) {
+              _lowSpeedTicks++;
+              if (_lowSpeedTicks >= 3) {
+                setState(() {
+                  _isAutoPaused = true;
+                  _autoPauseAnchor = newPoint;
+                  _lowSpeedTicks = 0;
+                });
+                HapticFeedback.mediumImpact();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Treino pausado automaticamente'),
+                      duration: Duration(seconds: 2),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+                return;
+              }
+            } else {
+              _lowSpeedTicks = 0;
+            }
+          } else {
+            _lowSpeedTicks = 0;
+          }
+        }
 
         // Verifica se temos um ponto anterior no segmento ATUAL para calcular distância
         if (_routePoints.isNotEmpty && _routePoints.last.isNotEmpty) {
@@ -537,6 +645,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   void _pauseRun() {
     setState(() {
       _isPaused = true;
+      _isAutoPaused = false;
+      _lowSpeedTicks = 0;
+      _autoPauseAnchor = null;
     });
     _timer?.cancel();
     WakelockPlus.disable(); // Allow screen to dim
@@ -546,7 +657,11 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   void _resumeRun() {
     setState(() {
       _isPaused = false;
+      _isAutoPaused = false;
+      _lowSpeedTicks = 0;
+      _autoPauseAnchor = null;
       _isFirstPointAfterResume = true;
+      _lastResumeSeconds = _secondsElapsed;
       // Inicia um novo segmento se o último não estiver vazio
       if (_routePoints.isEmpty || _routePoints.last.isNotEmpty) {
         _routePoints.add([]);
@@ -1113,7 +1228,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                       width: 7,
                                       height: 7,
                                       decoration: BoxDecoration(
-                                        color: _isPaused
+                                        color: (_isPaused || _isAutoPaused)
                                             ? Colors.orange
                                             : AppColors.primaryNeon,
                                         shape: BoxShape.circle,
@@ -1121,9 +1236,11 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                     ),
                                     const SizedBox(width: 5),
                                     Text(
-                                      _isPaused ? 'PAUSADO' : 'GPS ATIVO',
+                                      _isPaused
+                                          ? 'PAUSADO'
+                                          : (_isAutoPaused ? 'AUTO PAUSADO' : 'GPS ATIVO'),
                                       style: GoogleFonts.outfit(
-                                        color: _isPaused
+                                        color: (_isPaused || _isAutoPaused)
                                             ? Colors.orange
                                             : AppColors.primaryNeon,
                                         fontSize: 11,
@@ -1147,7 +1264,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                           ],
                         ),
                       ),
-                      // Coluna direita: Olho (cima) + Cadeado (baixo)
+                      // Coluna direita: Olho (cima) + Auto Pause (meio) + Cadeado (baixo)
                       Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -1169,6 +1286,49 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                 _saveMapPreference(_showMinimalMap);
                               },
                               tooltip: 'Alternar Mapa Minimalista',
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          CircleAvatar(
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.surface.withValues(alpha: 0.8),
+                            child: IconButton(
+                              icon: Icon(
+                                LucideIcons.pauseCircle,
+                                color: _autoPauseEnabled
+                                    ? AppColors.primaryNeon
+                                    : Colors.white70,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _autoPauseEnabled = !_autoPauseEnabled;
+                                  if (!_autoPauseEnabled) {
+                                    if (_isAutoPaused) {
+                                      _isAutoPaused = false;
+                                      _autoPauseAnchor = null;
+                                      _lowSpeedTicks = 0;
+                                      if (_isRunning && !_isPaused) {
+                                        _resumeRun();
+                                      }
+                                    }
+                                  }
+                                });
+                                _saveAutoPausePreference(_autoPauseEnabled);
+                                HapticFeedback.selectionClick();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      _autoPauseEnabled
+                                          ? 'Auto Pause Ativado'
+                                          : 'Auto Pause Desativado',
+                                    ),
+                                    duration: const Duration(seconds: 2),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              },
+                              tooltip: 'Auto Pause',
                             ),
                           ),
                           if (_isRunning) ...[
@@ -1404,6 +1564,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                                             date: DateTime.now(),
                                             distanceKm: _distanceKm,
                                             durationSeconds: _secondsElapsed,
+                                            pausedDurationSeconds: _pausedSecondsElapsed,
                                             pace: _calculatePace(),
                                             calories: _calculateCalories(),
                                             route: List.from(_routePoints),
@@ -1623,7 +1784,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                               ),
                             Row(
                               children: [
-                                if (_isPaused)
+                                if (_isPaused || _isAutoPaused)
                                   Expanded(
                                     child: ElevatedButton.icon(
                                       style: ElevatedButton.styleFrom(

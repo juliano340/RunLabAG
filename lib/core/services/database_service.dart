@@ -25,6 +25,7 @@ class RunModel {
   final DateTime date;
   final double distanceKm;
   final int durationSeconds;
+  final int pausedDurationSeconds;
   final String pace;
   final int calories;
   final List<List<LatLng>> route; // Cada lista interna é um segmento contínuo
@@ -37,6 +38,7 @@ class RunModel {
     required this.date,
     required this.distanceKm,
     required this.durationSeconds,
+    this.pausedDurationSeconds = 0,
     required this.pace,
     required this.calories,
     this.route = const [],
@@ -51,6 +53,7 @@ class RunModel {
       'date': date.toIso8601String(),
       'distanceKm': distanceKm,
       'durationSeconds': durationSeconds,
+      'pausedDurationSeconds': pausedDurationSeconds,
       'pace': pace,
       'calories': calories,
       'route': jsonEncode(route.map((segment) => 
@@ -70,6 +73,7 @@ class RunModel {
       date: DateTime.parse(map['date']),
       distanceKm: map['distanceKm'],
       durationSeconds: map['durationSeconds'],
+      pausedDurationSeconds: map['pausedDurationSeconds'] ?? 0,
       pace: map['pace'],
       calories: map['calories'],
       route: _decodeRoute(routeList),
@@ -173,7 +177,7 @@ class UserProfile {
 class DatabaseService {
   static Database? _database;
 
-  static const _databaseVersion = 19;
+  static const _databaseVersion = 20;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -188,7 +192,7 @@ class DatabaseService {
       version: _databaseVersion,
       onCreate: (db, version) async {
         await db.execute(
-          'CREATE TABLE runs(id TEXT PRIMARY KEY, date TEXT, distanceKm REAL, durationSeconds INTEGER, pace TEXT, calories INTEGER, route TEXT, type TEXT, mood TEXT, splits TEXT)',
+          'CREATE TABLE runs(id TEXT PRIMARY KEY, date TEXT, distanceKm REAL, durationSeconds INTEGER, pausedDurationSeconds INTEGER DEFAULT 0, pace TEXT, calories INTEGER, route TEXT, type TEXT, mood TEXT, splits TEXT)',
         );
         await db.execute(
           'CREATE TABLE user_profile(id TEXT PRIMARY KEY, name TEXT, age INTEGER, weight REAL, height REAL, profilePicturePath TEXT, weeklyGoal REAL, monthlyGoal REAL, waterGoal REAL DEFAULT 2000.0, lastGoalUpdate TEXT, kmNotificationsEnabled INTEGER DEFAULT 1)',
@@ -197,7 +201,7 @@ class DatabaseService {
           'CREATE TABLE achievements(id TEXT PRIMARY KEY, title TEXT, description TEXT, iconCode INTEGER, earnedDate TEXT)',
         );
         await db.execute(
-          'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER, splits TEXT, targetTimeSeconds INTEGER)',
+          'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, pausedDurationSeconds INTEGER DEFAULT 0, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER, splits TEXT, targetTimeSeconds INTEGER)',
         );
         await db.execute(
           'CREATE TABLE monitored_distances(distanceKm REAL PRIMARY KEY)',
@@ -337,6 +341,10 @@ class DatabaseService {
         }
         if (oldVersion < 19) {
           await db.execute('ALTER TABLE active_run ADD COLUMN targetTimeSeconds INTEGER');
+        }
+        if (oldVersion < 20) {
+          await db.execute('ALTER TABLE runs ADD COLUMN pausedDurationSeconds INTEGER DEFAULT 0');
+          await db.execute('ALTER TABLE active_run ADD COLUMN pausedDurationSeconds INTEGER DEFAULT 0');
         }
       },
     );

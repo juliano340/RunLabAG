@@ -472,6 +472,31 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                     ),
                   ],
                 ),
+                if (widget.run.pausedDurationSeconds > 0) ...[
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      Expanded(
+                        child: MetricCard(
+                          label: 'Tempo Total',
+                          value: _formatDuration(
+                            widget.run.durationSeconds +
+                                widget.run.pausedDurationSeconds,
+                          ),
+                          unit: 'min',
+                        ),
+                      ),
+                      Expanded(
+                        child: MetricCard(
+                          label: 'Tempo Pausado',
+                          value: _formatDuration(widget.run.pausedDurationSeconds),
+                          unit: 'min',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 32),
                 
                 if (widget.run.splits.isNotEmpty)
