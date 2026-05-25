@@ -16,19 +16,30 @@ class GpsFilterService {
   }
 
   /// Check if a GPS point should be rejected due to excessive speed jump.
-  /// Returns true if the implied speed exceeds 10 m/s (~36 km/h).
+  /// Returns true if the implied speed exceeds 25 m/s (~90 km/h).
+  /// This keeps normal bus/car movement while still filtering GPS teleports.
   static bool shouldRejectBySpeedJump({
     required double distanceMeters,
     required int timeDiffSeconds,
   }) {
     if (timeDiffSeconds <= 0) return false;
     final speed = distanceMeters / timeDiffSeconds;
-    return speed > 10.0;
+    return speed > 25.0;
   }
 
   /// Check if a GPS displacement is significant enough to count.
   /// Filters out jitter (GPS drift when stationary).
-  static bool isSignificantDisplacement(double distanceMeters) {
+  /// Uses lower threshold when movement is detected to avoid dropping
+  /// valid points at low speeds (bus, walking).
+  static bool isSignificantDisplacement({
+    required double distanceMeters,
+    double? estimatedSpeed,
+  }) {
+    // If we have speed data and user is clearly moving, use lower threshold
+    if (estimatedSpeed != null && estimatedSpeed > 0.5) {
+      return distanceMeters > 2.0;
+    }
+    // Stationary or unknown speed: use higher threshold to filter drift
     return distanceMeters > 6.0;
   }
 

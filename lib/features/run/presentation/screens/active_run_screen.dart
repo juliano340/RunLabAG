@@ -10,21 +10,22 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/services/theme_service.dart';
-import '../../../../features/training/services/training_service.dart';
 import '../../../../core/services/pacing_service.dart';
 import '../widgets/active_run/active_run_lock_overlay.dart';
 import '../widgets/active_run/active_run_bottom_panel.dart';
 import '../widgets/active_run/active_run_top_bar.dart';
 import '../widgets/active_run/active_run_dialogs.dart';
+import '../widgets/active_run/active_run_map_view.dart';
 import '../../../../core/utils/time_utils.dart';
 import '../../../../core/services/achievement_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../core/services/analytics_service.dart';
-import '../../../../core/services/backup_service.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/providers/runs_provider.dart';
+import '../../application/run_persistence_coordinator.dart';
+import '../../domain/services/run_finalization_service.dart';
 import '../../domain/services/run_metrics_service.dart';
 import '../../domain/services/gps_filter_service.dart';
 
@@ -73,8 +74,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   int _lastSplitCalories = 0;
   Timer? _timer;
   UserProfile? _userProfile;
-  final AchievementService _achievementService = AchievementService();
-
   // Smoothing fields
   List<Position> _paceBuffer = [];
   String _currentSmoothedPace = '0:00';
@@ -83,11 +82,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   bool _isExiting = false;
   bool _isScreenLocked = false;
   bool _isSaving = false; // Guard contra double-save
-
-  static const CameraPosition _initialPosition = CameraPosition(
-    target: LatLng(0, 0),
-    zoom: 15,
-  );
 
   ThemeService? _themeService;
 
@@ -542,8 +536,11 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             }
           }
 
-          // 3. Filtro de Jitter (Aumentado de 3.5m para 6.0m para evitar drift parado)
-          if (GpsFilterService.isSignificantDisplacement(distanceInMeters)) {
+          // 3. Filtro de Jitter (adaptativo: 2m em movimento, 6m parado)
+          if (GpsFilterService.isSignificantDisplacement(
+            distanceMeters: distanceInMeters,
+            estimatedSpeed: position.speed,
+          )) {
             setState(() {
               _distanceKm += distanceInMeters / 1000;
               _paceBuffer.add(position);
@@ -768,24 +765,30 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   void _finalizeRun() {
     _positionStream?.cancel();
 
-    // Check for short run: less than 100m or 30s
-    if (_distanceKm < 0.1 && _secondsElapsed < 30) {
+    if (RunFinalizationService.isShortRun(
+      distanceKm: _distanceKm,
+      elapsedSeconds: _secondsElapsed,
+    )) {
       _showShortRunWarning();
     } else {
-      // Adicionar último split se estivermos muito próximos de fechar um km (ex: 4.99km)
-      // ou se simplesmente sobrou uma parte significativa (> 100m)
-      int currentKm = _distanceKm.floor();
-      double decimalPart = _distanceKm - currentKm;
-
-      // Se parou quase no cravo (ex: 4.99 ou 5.01) e o split final não foi salvo
-      if ((_distanceKm > _lastKmNotified) &&
-          (decimalPart > 0.99 || _distanceKm > _lastKmNotified + 0.99)) {
-        final splitTime = _secondsElapsed - _lastSplitTimeSeconds;
+      if (RunFinalizationService.shouldAddFinalSplit(
+        distanceKm: _distanceKm,
+        lastKmNotified: _lastKmNotified,
+      )) {
+        final splitTime = RunFinalizationService.calculateFinalSplitTime(
+          elapsedSeconds: _secondsElapsed,
+          lastSplitTimeSeconds: _lastSplitTimeSeconds,
+        );
         final totalCalories = _calculateCalories();
-        final splitCalories = totalCalories - _lastSplitCalories;
+        final splitCalories = RunFinalizationService.calculateFinalSplitCalories(
+          totalCalories: totalCalories,
+          lastSplitCalories: _lastSplitCalories,
+        );
 
         _splits.add(RunSplit(timeSeconds: splitTime, calories: splitCalories));
-        _lastKmNotified = _distanceKm.round(); // Arredonda para o mais próximo
+        _lastKmNotified = RunFinalizationService.calculateFinalNotifiedKm(
+          _distanceKm,
+        );
       }
 
       setState(() {
@@ -886,6 +889,101 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     WakelockPlus.disable();
   }
 
+  void _toggleMinimalMap() {
+    setState(() {
+      _showMinimalMap = !_showMinimalMap;
+    });
+    _saveMapPreference(_showMinimalMap);
+  }
+
+  void _lockScreen() {
+    setState(() {
+      _isScreenLocked = true;
+    });
+    HapticFeedback.heavyImpact();
+  }
+
+  void _unlockScreen() {
+    setState(() {
+      _isScreenLocked = false;
+    });
+  }
+
+  Future<void> _discardFinishedRun() async {
+    final confirmed = await _showDiscardConfirmation();
+    if (confirmed != true || !mounted) return;
+    await DatabaseService().clearActiveRun();
+    if (!mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil('/dashboard', (route) => false);
+  }
+
+  Future<void> _saveRun() async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+
+    try {
+      final String? selectedType = await _showTrainingTypePicker();
+      if (!mounted) return;
+      if (selectedType == null) {
+        setState(() => _isSaving = false);
+        return;
+      }
+
+      final String selectedMood = await _showMoodPicker() ?? '';
+      if (!mounted) return;
+
+      final result = await RunPersistenceCoordinator().saveCompletedRun(
+        distanceKm: _distanceKm,
+        durationSeconds: _secondsElapsed,
+        pausedDurationSeconds: _pausedSecondsElapsed,
+        pace: _calculatePace(),
+        calories: _calculateCalories(),
+        route: List<List<LatLng>>.from(_routePoints),
+        type: selectedType,
+        mood: selectedMood,
+        splits: List.from(_splits),
+      );
+      if (!mounted) return;
+
+      context.read<RunsProvider>().notifyRunSaved();
+
+      String snackMessage = '';
+      if (result.isPlanSuccessful) {
+        snackMessage = 'SESSÃO DO PLANO CONCLUÍDA! 🎯';
+      } else if (result.newAwards.isNotEmpty) {
+        snackMessage = 'PARABÉNS! Você ganhou ${result.newAwards.length} novas conquistas! 🏆';
+      }
+
+      if (snackMessage.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              snackMessage,
+              style: const TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            backgroundColor: AppColors.primaryNeon,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/dashboard',
+        (route) => false,
+      );
+    } catch (e) {
+      if (mounted) setState(() => _isSaving = false);
+      AnalyticsService().recordError(
+        e,
+        StackTrace.current,
+        reason: 'save_run_failed',
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool canExit = !_isRunning && !_isFinished;
@@ -902,74 +1000,23 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         resizeToAvoidBottomInset: false,
         body: Stack(
           children: [
-            RepaintBoundary(
-              child: Stack(
-                children: [
-                  GoogleMap(
-                    initialCameraPosition: _initialPosition,
-                    myLocationEnabled: _hasPermissions,
-                    myLocationButtonEnabled: false,
-                    zoomControlsEnabled: false,
-                    mapType: MapType.normal,
-                    style: _getMapStyle(),
-                    padding: EdgeInsets.only(
-                      bottom: (_distanceGoal != null && _distanceGoal! > 0)
-                          ? 380
-                          : 280,
-                      top: safeTopInset + 60,
-                    ),
-                    onMapCreated: (GoogleMapController controller) {
-                      _controller.complete(controller);
-                      Future.delayed(const Duration(milliseconds: 150), () {
-                        if (mounted) {
-                          setState(() => _isMapReady = true);
-                        }
-                      });
-                    },
-                markers: {
-                  if (_routePoints.isNotEmpty && _routePoints.first.isNotEmpty)
-                    Marker(
-                      markerId: const MarkerId('start'),
-                      position: _routePoints.first.first,
-                      icon: BitmapDescriptor.defaultMarkerWithHue(
-                        BitmapDescriptor.hueGreen,
-                      ),
-                      infoWindow: const InfoWindow(title: 'Início'),
-                    ),
-                  if (_isFinished &&
-                      _routePoints.isNotEmpty &&
-                      _routePoints.last.isNotEmpty)
-                    Marker(
-                      markerId: const MarkerId('finish'),
-                      position: _routePoints.last.last,
-                      icon: BitmapDescriptor.defaultMarkerWithHue(
-                        BitmapDescriptor.hueRed,
-                      ),
-                      infoWindow: const InfoWindow(title: 'Chegada'),
-                    ),
-                },
-                    polylines: _routePoints.asMap().entries.map((entry) {
-                      final int idx = entry.key;
-                      final List<LatLng> segment = entry.value;
-                      return Polyline(
-                        polylineId: PolylineId('route_$idx'),
-                        points: segment,
-                        color: AppColors.primaryNeon,
-                        width: 5,
-                        startCap: Cap.roundCap,
-                        endCap: Cap.roundCap,
-                      );
-                    }).toSet(),
-                  ),
-                  // Cobertura anti-flash: esconde o mapa branco até o estilo ser aplicado
-                  if (!_isMapReady && isDark)
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: Container(color: const Color(0xFF1d2c2c)),
-                      ),
-                    ),
-                ],
-              ),
+            ActiveRunMapView(
+              isDark: isDark,
+              hasPermissions: _hasPermissions,
+              isFinished: _isFinished,
+              isMapReady: _isMapReady,
+              mapStyle: _getMapStyle(),
+              safeTopInset: safeTopInset,
+              distanceGoal: _distanceGoal,
+              routePoints: _routePoints,
+              onMapCreated: (GoogleMapController controller) {
+                _controller.complete(controller);
+                Future.delayed(const Duration(milliseconds: 150), () {
+                  if (mounted) {
+                    setState(() => _isMapReady = true);
+                  }
+                });
+              },
             ),
 
             // Top bar: back button | ad | eye+lock column
@@ -981,19 +1028,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               showMinimalMap: _showMinimalMap,
               autoPauseEnabled: _autoPauseEnabled,
               onBack: _handleBackPress,
-              onToggleMinimalMap: () {
-                setState(() {
-                  _showMinimalMap = !_showMinimalMap;
-                });
-                _saveMapPreference(_showMinimalMap);
-              },
+              onToggleMinimalMap: _toggleMinimalMap,
               onToggleAutoPause: _toggleAutoPause,
-              onLock: () {
-                setState(() {
-                  _isScreenLocked = true;
-                });
-                HapticFeedback.heavyImpact();
-              },
+              onLock: _lockScreen,
             ),
 
             // Bottom Dashboard Card
@@ -1016,118 +1053,14 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               onResume: _resumeRun,
               onStop: _stopRun,
               onShowGoalDialog: _showGoalDialog,
-              onDiscard: () async {
-                final confirmed = await _showDiscardConfirmation();
-                if (confirmed == true && context.mounted) {
-                  await DatabaseService().clearActiveRun();
-                  if (context.mounted) {
-                    Navigator.of(context).pushNamedAndRemoveUntil('/dashboard', (route) => false);
-                  }
-                }
-              },
-              onSave: () async {
-                if (_isSaving) return;
-                setState(() => _isSaving = true);
-
-                try {
-                  final String? selectedType = await _showTrainingTypePicker();
-                  if (selectedType == null) {
-                    setState(() => _isSaving = false);
-                    return;
-                  }
-
-                  final String selectedMood = await _showMoodPicker() ?? '';
-
-                  final dbService = DatabaseService();
-                  final run = RunModel(
-                    id: DateTime.now().millisecondsSinceEpoch.toString(),
-                    date: DateTime.now(),
-                    distanceKm: _distanceKm,
-                    durationSeconds: _secondsElapsed,
-                    pausedDurationSeconds: _pausedSecondsElapsed,
-                    pace: _calculatePace(),
-                    calories: _calculateCalories(),
-                    route: List.from(_routePoints),
-                    type: selectedType,
-                    mood: selectedMood,
-                    splits: List.from(_splits),
-                  );
-                  await dbService.saveRun(run);
-                  await dbService.clearActiveRun();
-
-                  unawaited(BackupService().runAutoBackupIfEnabled());
-
-                  if (context.mounted) {
-                    context.read<RunsProvider>().notifyRunSaved();
-                  }
-
-                  await AnalyticsService().logRunCompleted(
-                    distanceKm: run.distanceKm,
-                    durationSeconds: run.durationSeconds,
-                    pace: run.pace,
-                    calories: run.calories,
-                    runType: run.type,
-                    mood: run.mood,
-                  );
-
-                  final trainingService = TrainingService(dbService);
-                  final isPlanSuccessful = await trainingService.matchRunToPlan(run);
-
-                  final newAwards = await _achievementService.checkAwards(run);
-
-                  for (final award in newAwards) {
-                    AnalyticsService().logAchievementUnlocked(
-                      achievementId: award['id'],
-                    );
-                  }
-
-                  if (context.mounted) {
-                    String snackMessage = '';
-                    if (isPlanSuccessful) {
-                      snackMessage = 'SESSÃO DO PLANO CONCLUÍDA! 🎯';
-                    } else if (newAwards.isNotEmpty) {
-                      snackMessage = 'PARABÉNS! Você ganhou ${newAwards.length} novas conquistas! 🏆';
-                    }
-
-                    if (snackMessage.isNotEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            snackMessage,
-                            style: const TextStyle(
-                              color: Colors.black,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          backgroundColor: AppColors.primaryNeon,
-                          duration: const Duration(seconds: 5),
-                        ),
-                      );
-                    }
-
-                    if (context.mounted) {
-                      Navigator.of(context).pushNamedAndRemoveUntil('/dashboard', (route) => false);
-                    }
-                  }
-                } catch (e) {
-                  if (mounted) setState(() => _isSaving = false);
-                  AnalyticsService().recordError(
-                    e,
-                    StackTrace.current,
-                    reason: 'save_run_failed',
-                  );
-                }
-              },
+              onDiscard: _discardFinishedRun,
+              onSave: _saveRun,
             ),
 
             // Screen Lock Overlay
             if (_isScreenLocked)
               ActiveRunLockOverlay(
-                onUnlock: () {
-                  setState(() {
-                    _isScreenLocked = false;
-                  });
-                },
+              onUnlock: _unlockScreen,
               ),
           ],
         ),
