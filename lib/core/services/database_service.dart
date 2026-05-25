@@ -1,354 +1,42 @@
-import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:path/path.dart';
+import 'database_helper.dart';
+import '../../features/run/data/repositories/active_run_repository.dart';
+import '../../features/history/data/repositories/run_repository.dart';
+import '../../features/profile/data/repositories/user_repository.dart';
 import '../../features/training/data/models/training_plan.dart';
 import '../../features/strength_training/domain/models/strength_workout.dart';
 import '../../features/strength_training/domain/models/workout_block.dart';
 import '../../features/dashboard/domain/models/weekly_evolution_stats.dart';
+import '../../features/history/domain/models/run_model.dart';
+import '../../features/history/domain/models/run_split.dart';
+import '../../features/profile/domain/models/user_profile.dart';
 
-class RunSplit {
-  final int timeSeconds;
-  final int calories;
-
-  RunSplit({required this.timeSeconds, required this.calories});
-
-  Map<String, dynamic> toMap() => {'t': timeSeconds, 'c': calories};
-  factory RunSplit.fromMap(Map<String, dynamic> map) => RunSplit(
-    timeSeconds: map['t'] ?? 0,
-    calories: map['c'] ?? 0,
-  );
-}
-
-class RunModel {
-  final String id;
-  final DateTime date;
-  final double distanceKm;
-  final int durationSeconds;
-  final int pausedDurationSeconds;
-  final String pace;
-  final int calories;
-  final List<List<LatLng>> route; // Cada lista interna é um segmento contínuo
-  final String type;
-  final String mood;
-  final List<RunSplit> splits; // Detalhes de cada km
-
-  RunModel({
-    required this.id,
-    required this.date,
-    required this.distanceKm,
-    required this.durationSeconds,
-    this.pausedDurationSeconds = 0,
-    required this.pace,
-    required this.calories,
-    this.route = const [],
-    this.type = 'Corrida',
-    this.mood = '',
-    this.splits = const [],
-  });
-
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'date': date.toIso8601String(),
-      'distanceKm': distanceKm,
-      'durationSeconds': durationSeconds,
-      'pausedDurationSeconds': pausedDurationSeconds,
-      'pace': pace,
-      'calories': calories,
-      'route': jsonEncode(route.map((segment) => 
-        segment.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList()
-      ).toList()),
-      'type': type,
-      'mood': mood,
-      'splits': jsonEncode(splits.map((s) => s.toMap()).toList()),
-    };
-  }
-
-  factory RunModel.fromMap(Map<String, dynamic> map) {
-    List<dynamic> routeList = jsonDecode(map['route'] ?? '[]');
-    List<dynamic> splitList = jsonDecode(map['splits'] ?? '[]');
-    return RunModel(
-      id: map['id'],
-      date: DateTime.parse(map['date']),
-      distanceKm: map['distanceKm'],
-      durationSeconds: map['durationSeconds'],
-      pausedDurationSeconds: map['pausedDurationSeconds'] ?? 0,
-      pace: map['pace'],
-      calories: map['calories'],
-      route: _decodeRoute(routeList),
-      type: map['type'] ?? 'Corrida',
-      mood: map['mood'] ?? '',
-      splits: splitList.map((s) {
-        if (s is Map) return RunSplit.fromMap(s.cast<String, dynamic>());
-        if (s is int) return RunSplit(timeSeconds: s, calories: 0);
-        return RunSplit(timeSeconds: 0, calories: 0);
-      }).toList(),
-    );
-  }
-
-  static List<List<LatLng>> _decodeRoute(List<dynamic> list) {
-    if (list.isEmpty) return [];
-    
-    // Check if it's already a nested list of segments
-    if (list.first is List) {
-      return list.map((segment) {
-        return (segment as List).map((p) => LatLng(p['lat'], p['lng'])).toList();
-      }).toList();
-    }
-    
-    // Backward compatibility: Convert flat list to a single segment
-    return [
-      list.map((p) => LatLng(p['lat'], p['lng'])).toList()
-    ];
-  }
-}
-
-class UserProfile {
-  final String name;
-  final int age;
-  final double weight;
-  final double height;
-  final String? profilePicturePath;
-  final double weeklyGoal;
-  final double monthlyGoal;
-  final double waterGoal; // em ml
-  final DateTime? lastGoalUpdate;
-  final bool kmNotificationsEnabled;
-
-  UserProfile({
-    required this.name,
-    required this.age,
-    required this.weight,
-    required this.height,
-    this.profilePicturePath,
-    this.weeklyGoal = 20.0,
-    this.monthlyGoal = 80.0,
-    this.waterGoal = 2000.0,
-    this.lastGoalUpdate,
-    this.kmNotificationsEnabled = true,
-  });
-
-  Map<String, dynamic> toMap() {
-    return {
-      'id': 'current_user',
-      'name': name,
-      'age': age,
-      'weight': weight,
-      'height': height,
-      'profilePicturePath': profilePicturePath,
-      'weeklyGoal': weeklyGoal,
-      'monthlyGoal': monthlyGoal,
-      'waterGoal': waterGoal,
-      'lastGoalUpdate': lastGoalUpdate?.toIso8601String(),
-      'kmNotificationsEnabled': kmNotificationsEnabled ? 1 : 0,
-    };
-  }
-
-  factory UserProfile.fromMap(Map<String, dynamic> map) {
-    return UserProfile(
-      name: map['name'] ?? 'Runner',
-      age: map['age'] ?? 0,
-      weight: map['weight'] ?? 0.0,
-      height: map['height'] ?? 0.0,
-      profilePicturePath: map['profilePicturePath'],
-      weeklyGoal: map['weeklyGoal'] ?? 20.0,
-      monthlyGoal: map['monthlyGoal'] ?? 80.0,
-      waterGoal: map['waterGoal']?.toDouble() ?? 2000.0,
-      lastGoalUpdate: map['lastGoalUpdate'] != null ? DateTime.parse(map['lastGoalUpdate']) : null,
-      kmNotificationsEnabled: (map['kmNotificationsEnabled'] ?? 1) == 1,
-    );
-  }
-
-  double get bmi {
-    if (height <= 0) return 0;
-    return weight / ((height / 100) * (height / 100));
-  }
-
-  String get bmiStatus {
-    double val = bmi;
-    if (val < 18.5) return "Abaixo do peso";
-    if (val < 25) return "Peso normal";
-    if (val < 30) return "Sobrepeso";
-    return "Obesidade";
-  }
-}
+export '../../features/history/domain/models/run_model.dart';
+export '../../features/history/domain/models/run_split.dart';
+export '../../features/profile/domain/models/user_profile.dart';
 
 class DatabaseService {
-  static Database? _database;
+  Future<Database> get database => DatabaseHelper.database;
 
-  static const _databaseVersion = 20;
+  final _activeRunRepo = ActiveRunRepository();
+  final _runRepo = RunRepository();
+  final _userRepo = UserRepository();
 
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDatabase();
-    return _database!;
-  }
+  // Active Run Persistence (for recovery)
+  Future<void> saveActiveRun(Map<String, dynamic> data) => _activeRunRepo.saveActiveRun(data);
+  Future<Map<String, dynamic>?> getActiveRun() => _activeRunRepo.getActiveRun();
+  Future<void> clearActiveRun() => _activeRunRepo.clearActiveRun();
 
-  Future<Database> _initDatabase() async {
-    String path = join(await getDatabasesPath(), 'runlab_database.db');
-    return await openDatabase(
-      path,
-      version: _databaseVersion,
-      onCreate: (db, version) async {
-        await db.execute(
-          'CREATE TABLE runs(id TEXT PRIMARY KEY, date TEXT, distanceKm REAL, durationSeconds INTEGER, pausedDurationSeconds INTEGER DEFAULT 0, pace TEXT, calories INTEGER, route TEXT, type TEXT, mood TEXT, splits TEXT)',
-        );
-        await db.execute(
-          'CREATE TABLE user_profile(id TEXT PRIMARY KEY, name TEXT, age INTEGER, weight REAL, height REAL, profilePicturePath TEXT, weeklyGoal REAL, monthlyGoal REAL, waterGoal REAL DEFAULT 2000.0, lastGoalUpdate TEXT, kmNotificationsEnabled INTEGER DEFAULT 1)',
-        );
-        await db.execute(
-          'CREATE TABLE achievements(id TEXT PRIMARY KEY, title TEXT, description TEXT, iconCode INTEGER, earnedDate TEXT)',
-        );
-        await db.execute(
-          'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, pausedDurationSeconds INTEGER DEFAULT 0, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER, splits TEXT, targetTimeSeconds INTEGER)',
-        );
-        await db.execute(
-          'CREATE TABLE monitored_distances(distanceKm REAL PRIMARY KEY)',
-        );
-        await db.execute(
-          'CREATE TABLE water_intake(id INTEGER PRIMARY KEY AUTOINCREMENT, amount INTEGER, timestamp TEXT)',
-        );
-        await db.execute(
-          'CREATE TABLE training_plans(id TEXT PRIMARY KEY, title TEXT, description TEXT, totalWeeks INTEGER, level INTEGER, goal TEXT)',
-        );
-        await db.execute(
-          'CREATE TABLE plan_sessions(id TEXT PRIMARY KEY, planId TEXT, week INTEGER, day INTEGER, title TEXT, type INTEGER, targetDistance REAL, description TEXT)',
-        );
-        await db.execute(
-          'CREATE TABLE user_training_enrollments(planId TEXT, startDate TEXT, currentWeek INTEGER, currentDay INTEGER, isActive INTEGER)',
-        );
-        await db.execute(
-          'CREATE TABLE strength_workouts(id TEXT PRIMARY KEY, name TEXT, date INTEGER, payload TEXT)',
-        );
-        await db.execute(
-          'CREATE TABLE exercise_dictionary(id TEXT PRIMARY KEY, name TEXT, muscleGroupId TEXT)',
-        );
-        await db.execute(
-          'CREATE TABLE goal_history(periodId TEXT PRIMARY KEY, goalType TEXT, goalValue REAL)',
-        );
-        // Strength Blocks Evolution
-        await db.execute(
-          'CREATE TABLE workout_blocks(id TEXT PRIMARY KEY, name TEXT, description TEXT)',
-        );
-        await db.execute(
-          'CREATE TABLE block_exercises(id TEXT PRIMARY KEY, blockId TEXT, name TEXT, defaultSets INTEGER, defaultReps TEXT, defaultWeight REAL, isTimeBased INTEGER, orderIndex INTEGER)',
-        );
-        await db.execute(
-          'CREATE TABLE strength_workout_templates(id TEXT PRIMARY KEY, name TEXT)',
-        );
-        await db.execute(
-          'CREATE TABLE template_items(id TEXT PRIMARY KEY, templateId TEXT, type TEXT, itemId TEXT, orderIndex INTEGER, overrides TEXT)',
-        );
-        // Pre-populate defaults
-        for (double dist in [1.0, 5.0, 10.0, 15.0]) {
-          await db.insert('monitored_distances', {'distanceKm': dist});
-        }
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
-          await db.execute('ALTER TABLE runs ADD COLUMN route TEXT');
-        }
-        if (oldVersion < 3) {
-          await db.execute(
-            'CREATE TABLE user_profile(id TEXT PRIMARY KEY, name TEXT, age INTEGER, weight REAL, height REAL, profilePicturePath TEXT)',
-          );
-        }
-        if (oldVersion < 4) {
-          await db.execute(
-            'CREATE TABLE achievements(id TEXT PRIMARY KEY, title TEXT, description TEXT, iconCode INTEGER, earnedDate TEXT)',
-          );
-        }
-        if (oldVersion < 5) {
-          await db.execute(
-            'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER)',
-          );
-        }
-        if (oldVersion < 6) {
-          await db.execute('ALTER TABLE user_profile ADD COLUMN weeklyGoal REAL');
-        }
-        if (oldVersion < 7) {
-          await db.execute('ALTER TABLE runs ADD COLUMN type TEXT');
-        }
-        if (oldVersion < 8) {
-          await db.execute('ALTER TABLE runs ADD COLUMN mood TEXT');
-        }
-        if (oldVersion < 9) {
-          var tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='monitored_distances'");
-          if (tables.isEmpty) {
-            await db.execute('CREATE TABLE monitored_distances(distanceKm REAL PRIMARY KEY)');
-            for (double dist in [1.0, 5.0, 10.0, 15.0]) {
-              await db.insert('monitored_distances', {'distanceKm': dist}, conflictAlgorithm: ConflictAlgorithm.ignore);
-            }
-          }
-        }
-        if (oldVersion < 10) {
-          await db.execute('ALTER TABLE user_profile ADD COLUMN monthlyGoal REAL DEFAULT 80.0');
-        }
-        if (oldVersion < 11) {
-          await db.execute('ALTER TABLE runs ADD COLUMN splits TEXT');
-          await db.execute('ALTER TABLE active_run ADD COLUMN splits TEXT');
-        }
-        if (oldVersion < 12) {
-          await db.execute(
-            'CREATE TABLE water_intake(id INTEGER PRIMARY KEY AUTOINCREMENT, amount INTEGER, timestamp TEXT)',
-          );
-          await db.execute('ALTER TABLE user_profile ADD COLUMN waterGoal REAL DEFAULT 2000.0');
-        }
-        if (oldVersion < 13) {
-          await db.execute(
-            'CREATE TABLE training_plans(id TEXT PRIMARY KEY, title TEXT, description TEXT, totalWeeks INTEGER, level INTEGER, goal TEXT)',
-          );
-          await db.execute(
-            'CREATE TABLE plan_sessions(id TEXT PRIMARY KEY, planId TEXT, week INTEGER, day INTEGER, title TEXT, type INTEGER, targetDistance REAL, description TEXT)',
-          );
-          await db.execute(
-            'CREATE TABLE user_training_enrollments(planId TEXT, startDate TEXT, currentWeek INTEGER, currentDay INTEGER, isActive INTEGER)',
-          );
-        }
-        if (oldVersion < 14) {
-          await db.execute('ALTER TABLE user_profile ADD COLUMN lastGoalUpdate TEXT');
-        }
-        if (oldVersion < 15) {
-          await db.execute(
-            'CREATE TABLE strength_workouts(id TEXT PRIMARY KEY, name TEXT, date INTEGER, payload TEXT)',
-          );
-          await db.execute(
-            'CREATE TABLE exercise_dictionary(id TEXT PRIMARY KEY, name TEXT, muscleGroupId TEXT)',
-          );
-        }
-        if (oldVersion < 16) {
-          await db.execute(
-            'CREATE TABLE goal_history(periodId TEXT PRIMARY KEY, goalType TEXT, goalValue REAL)',
-          );
-        }
-        if (oldVersion < 17) {
-          await db.execute('ALTER TABLE user_profile ADD COLUMN kmNotificationsEnabled INTEGER DEFAULT 1');
-        }
-        if (oldVersion < 18) {
-          await db.execute(
-            'CREATE TABLE workout_blocks(id TEXT PRIMARY KEY, name TEXT, description TEXT)',
-          );
-          await db.execute(
-            'CREATE TABLE block_exercises(id TEXT PRIMARY KEY, blockId TEXT, name TEXT, defaultSets INTEGER, defaultReps TEXT, defaultWeight REAL, isTimeBased INTEGER, orderIndex INTEGER)',
-          );
-          await db.execute(
-            'CREATE TABLE strength_workout_templates(id TEXT PRIMARY KEY, name TEXT)',
-          );
-          await db.execute(
-            'CREATE TABLE template_items(id TEXT PRIMARY KEY, templateId TEXT, type TEXT, itemId TEXT, orderIndex INTEGER, overrides TEXT)',
-          );
-        }
-        if (oldVersion < 19) {
-          await db.execute('ALTER TABLE active_run ADD COLUMN targetTimeSeconds INTEGER');
-        }
-        if (oldVersion < 20) {
-          await db.execute('ALTER TABLE runs ADD COLUMN pausedDurationSeconds INTEGER DEFAULT 0');
-          await db.execute('ALTER TABLE active_run ADD COLUMN pausedDurationSeconds INTEGER DEFAULT 0');
-        }
-      },
-    );
-  }
+  // --- Run CRUD ---
+  Future<void> saveRun(RunModel run) => _runRepo.saveRun(run);
+  Future<List<RunModel>> getRuns() => _runRepo.getRuns();
+  Future<List<RunModel>> getRunsBetween(DateTime start, DateTime end) => _runRepo.getRunsBetween(start, end);
+  Future<RunModel?> getLastRun() => _runRepo.getLastRun();
+  Future<void> deleteRun(String id) => _runRepo.deleteRun(id);
+
+  // --- User Profile ---
+  Future<void> saveUserProfile(UserProfile profile) => _userRepo.saveUserProfile(profile);
+  Future<UserProfile?> getUserProfile() => _userRepo.getUserProfile();
 
   // --- Goal History ---
   Future<void> saveGoalHistory(String periodId, String goalType, double goalValue) async {
@@ -399,70 +87,6 @@ class DatabaseService {
     final List<Map<String, dynamic>> maps = await db.query('achievements', orderBy: 'earnedDate DESC', limit: 1);
     if (maps.isEmpty) return null;
     return maps.first;
-  }
-
-  // Active Run Persistence (for recovery)
-  Future<void> saveActiveRun(Map<String, dynamic> data) async {
-    final db = await database;
-    await db.insert(
-      'active_run',
-      {...data, 'id': 1},
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  Future<Map<String, dynamic>?> getActiveRun() async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query('active_run', where: 'id = 1');
-    if (maps.isEmpty) return null;
-    return maps.first;
-  }
-
-  Future<void> clearActiveRun() async {
-    final db = await database;
-    await db.delete('active_run', where: 'id = 1');
-  }
-
-  Future<void> saveRun(RunModel run) async {
-    final db = await database;
-    await db.insert(
-      'runs',
-      run.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  Future<List<RunModel>> getRuns() async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query('runs', orderBy: 'date DESC');
-    return List.generate(maps.length, (i) => RunModel.fromMap(maps[i]));
-  }
-
-  Future<List<RunModel>> getRunsBetween(DateTime start, DateTime end) async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'runs',
-      where: 'date >= ? AND date <= ?',
-      whereArgs: [start.toIso8601String(), end.toIso8601String()],
-      orderBy: 'date ASC',
-    );
-    return List.generate(maps.length, (i) => RunModel.fromMap(maps[i]));
-  }
-
-  Future<RunModel?> getLastRun() async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query('runs', orderBy: 'date DESC', limit: 1);
-    if (maps.isEmpty) return null;
-    return RunModel.fromMap(maps.first);
-  }
-
-  Future<void> deleteRun(String id) async {
-    final db = await database;
-    await db.delete(
-      'runs',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
   }
 
   // --- Evolution Analysis ---
@@ -777,27 +401,6 @@ class DatabaseService {
     }
 
     return dailyDistances;
-  }
-
-  // User Profile Methods
-  Future<void> saveUserProfile(UserProfile profile) async {
-    final db = await database;
-    await db.insert(
-      'user_profile',
-      profile.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  Future<UserProfile?> getUserProfile() async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'user_profile',
-      where: 'id = ?',
-      whereArgs: ['current_user'],
-    );
-    if (maps.isEmpty) return null;
-    return UserProfile.fromMap(maps.first);
   }
 
   // Water Intake Methods
