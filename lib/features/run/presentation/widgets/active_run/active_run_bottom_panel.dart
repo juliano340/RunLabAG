@@ -3,8 +3,11 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../../../../../core/theme/app_colors.dart';
 import '../../../../../../core/services/pacing_service.dart';
+import 'active_run_finished_actions.dart';
+import 'active_run_goal_progress.dart';
 import 'active_run_metric_tile.dart';
-import 'active_run_pacing_card.dart';
+import 'active_run_pre_start_actions.dart';
+import 'active_run_running_actions.dart';
 
 class ActiveRunBottomPanel extends StatelessWidget {
   final bool isDark;
@@ -172,376 +175,41 @@ class ActiveRunBottomPanel extends StatelessWidget {
               const SizedBox(height: 16),
               // Circular Goal Progress (only when goal is set)
               if (distanceGoal != null && distanceGoal! > 0 && !isFinished)
-                _buildGoalProgress(context),
+                ActiveRunGoalProgress(
+                  isDark: isDark,
+                  distanceKm: distanceKm,
+                  distanceGoal: distanceGoal!,
+                  eta: eta,
+                ),
               const SizedBox(height: 20),
               if (isFinished)
-                _buildFinishedButtons(context)
+                ActiveRunFinishedActions(
+                  isSaving: isSaving,
+                  onDiscard: onDiscard,
+                  onSave: onSave,
+                )
               else if (!isRunning)
-                _buildPreRunButtons()
+                ActiveRunPreStartActions(
+                  distanceGoal: distanceGoal,
+                  onStart: onStart,
+                  onShowGoalDialog: onShowGoalDialog,
+                )
               else
-                _buildRunningButtons(context),
+                ActiveRunRunningActions(
+                  isDark: isDark,
+                  isPaused: isPaused,
+                  isAutoPaused: isAutoPaused,
+                  distanceGoal: distanceGoal,
+                  eta: eta,
+                  pacingFeedback: pacingFeedback,
+                  onPause: onPause,
+                  onResume: onResume,
+                  onStop: onStop,
+                ),
             ],
           ),
         ),
       ),
     );
   }
-
-  Widget _buildGoalProgress(BuildContext context) {
-    final goal = distanceGoal!;
-    final progress = (distanceKm / goal).clamp(0.0, 1.0);
-    final remaining = (goal - distanceKm).clamp(0.0, goal);
-    final goalColor = progress >= 1.0
-        ? Colors.greenAccent
-        : AppColors.primaryNeon;
-
-    String etaText = '--:--';
-    if (distanceKm > 0.05 && eta.isNotEmpty) {
-      etaText = eta;
-    }
-
-    final mutedColor = isDark
-        ? AppColors.textMuted
-        : AppColors.textMutedDark;
-
-    return Container(
-      margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: goalColor.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: goalColor.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 64,
-            height: 64,
-            child: CustomPaint(
-              painter: _GoalRingPainter(progress: progress, color: goalColor),
-              child: Center(
-                child: Text(
-                  '${(progress * 100).toInt()}%',
-                  style: GoogleFonts.outfit(
-                    color: goalColor,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _goalStat('META', '${goal.toStringAsFixed(1)} km', Theme.of(context).colorScheme.onSurface, mutedColor),
-                _goalStat('FALTAM', '${remaining.toStringAsFixed(2)} km', AppColors.primaryNeonLight, mutedColor),
-                _goalStat('CHEGA EM', etaText, Theme.of(context).colorScheme.onSurface, mutedColor),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _goalStat(String label, String value, Color valueColor, Color labelColor) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.outfit(
-            color: labelColor,
-            fontSize: 10,
-            letterSpacing: 0.5,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: GoogleFonts.outfit(
-            color: valueColor,
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFinishedButtons(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              side: const BorderSide(color: Colors.redAccent),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
-              ),
-            ),
-            onPressed: () async => onDiscard(),
-            child: const Text(
-              'DESCARTAR',
-              style: TextStyle(color: Colors.redAccent),
-            ),
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              backgroundColor: AppColors.primaryNeon,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
-              ),
-            ),
-            onPressed: isSaving ? null : () async => onSave(),
-            child: isSaving
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.black,
-                    ),
-                  )
-                : const Text(
-                    'SALVAR TREINO',
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPreRunButtons() {
-    return Column(
-      children: [
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              side: BorderSide(
-                color: distanceGoal != null
-                    ? AppColors.primaryNeon
-                    : Colors.white24,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
-              ),
-            ),
-            onPressed: onShowGoalDialog,
-            icon: Icon(
-              LucideIcons.target,
-              color: distanceGoal != null
-                  ? AppColors.primaryNeon
-                  : Colors.white70,
-            ),
-            label: Text(
-              distanceGoal != null
-                  ? 'META: ${distanceGoal!.toInt()}KM'
-                  : 'DEFINIR META',
-              style: TextStyle(
-                color: distanceGoal != null
-                    ? AppColors.primaryNeon
-                    : Colors.white70,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              backgroundColor: AppColors.primaryNeon,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
-              ),
-            ),
-            onPressed: onStart,
-            child: const Text(
-              'INICIAR',
-              style: TextStyle(
-                color: Colors.black,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRunningButtons(BuildContext context) {
-    return Column(
-      children: [
-        if (pacingFeedback != null && pacingFeedback!.status != PacingStatus.none)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: ActiveRunPacingCard(
-              feedback: pacingFeedback!,
-              isDark: isDark,
-            ),
-          )
-        else if (distanceGoal != null && eta.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  LucideIcons.clock,
-                  size: 16,
-                  color: AppColors.primaryNeon,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'CHEGADA ESTIMADA: $eta',
-                  style: const TextStyle(
-                    color: AppColors.primaryNeon,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.1,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        Row(
-          children: [
-            if (isPaused || isAutoPaused)
-              Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isDark
-                        ? const Color(0xFF1E3D1A)
-                        : AppColors.lightPrimary,
-                    foregroundColor: isDark
-                        ? AppColors.primaryNeon
-                        : Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 0,
-                  ),
-                  onPressed: onResume,
-                  icon: const Icon(LucideIcons.play, size: 20),
-                  label: const Text(
-                    'RETOMAR',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ),
-              )
-            else
-              Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isDark
-                        ? const Color(0xFF3D2B0E)
-                        : Colors.orange.shade700,
-                    foregroundColor: isDark
-                        ? const Color(0xFFFFA726)
-                        : Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 0,
-                  ),
-                  onPressed: onPause,
-                  icon: const Icon(LucideIcons.pause, size: 20),
-                  label: const Text(
-                    'PAUSAR',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ),
-              ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isDark
-                      ? const Color(0xFF2B0E0E)
-                      : Colors.red.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 0,
-                ),
-                onPressed: onStop,
-                icon: const Icon(LucideIcons.square, size: 20),
-                label: const Text(
-                  'PARAR',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.0,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-// ─── CustomPainter para o anel de progresso da meta ───────────────────────────
-class _GoalRingPainter extends CustomPainter {
-  final double progress;
-  final Color color;
-
-  _GoalRingPainter({required this.progress, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2 - 4;
-
-    final bgPaint = Paint()
-      ..color = color.withValues(alpha: 0.2)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 6;
-
-    canvas.drawCircle(center, radius, bgPaint);
-
-    final fgPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 6
-      ..strokeCap = StrokeCap.round;
-
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -3.14159 / 2,
-      3.14159 * 2 * progress,
-      false,
-      fgPaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_GoalRingPainter oldDelegate) =>
-      oldDelegate.progress != progress || oldDelegate.color != color;
 }

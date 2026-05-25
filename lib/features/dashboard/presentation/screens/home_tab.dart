@@ -665,12 +665,15 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Color _getGoalColor(double progress, bool isDark) {
-    if (progress >= 1.5)
+    if (progress >= 1.5) {
       return isDark ? Colors.purpleAccent : Colors.purple.shade700;
-    if (progress >= 1.25)
+    }
+    if (progress >= 1.25) {
       return isDark ? Colors.amberAccent : Colors.amber.shade700;
-    if (progress >= 1.0)
+    }
+    if (progress >= 1.0) {
       return isDark ? Colors.orangeAccent : Colors.orange.shade700;
+    }
     return isDark ? AppColors.primaryNeon : AppColors.lightPrimary;
   }
 
@@ -701,7 +704,8 @@ class _HomeTabState extends State<HomeTab> {
         : 0.0;
 
     // Calculate Duration Trend
-    final durationDiff =
+    // (durationDiff calculated but not currently displayed)
+    final _ =
         current.totalDurationSeconds - previous.totalDurationSeconds;
 
     return Column(

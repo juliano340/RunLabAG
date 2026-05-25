@@ -25,6 +25,8 @@ import '../../../../core/services/analytics_service.dart';
 import '../../../../core/services/backup_service.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/providers/runs_provider.dart';
+import '../../domain/services/run_metrics_service.dart';
+import '../../domain/services/gps_filter_service.dart';
 
 class ActiveRunScreen extends StatefulWidget {
   final Map<String, dynamic>? restoredState;
@@ -52,6 +54,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   String? _minimalMapStyle;
   String? _darkMapStyle;
   String? _darkMinimalMapStyle;
+  // ignore: unused_field
   bool _isMapStylesLoaded = false;
   bool _isMapReady = false;
 
@@ -329,9 +332,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     // Reset metrics for a fresh start
     _stopRunInternals(); // Clear any existing stream/timer
 
-    Position? currentPos;
+    // Get initial position but don't store it (used internally by location service)
     try {
-      currentPos = await _locationService.getCurrentLocation();
+      await _locationService.getCurrentLocation();
     } catch (e) {
       debugPrint("Could not get initial position for run: $e");
     }
@@ -455,41 +458,45 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         }
 
         // 1. Filtro de Precisão (Mais rigoroso nos primeiros 30s)
-        double maxAllowedAccuracy = _secondsElapsed < 30 ? 15.0 : 25.0;
-        if (position.accuracy > maxAllowedAccuracy) {
+        if (GpsFilterService.shouldRejectByAccuracy(
+          pointAccuracy: position.accuracy,
+          elapsedSeconds: _secondsElapsed,
+        )) {
           debugPrint(
-            "GPS impreciso ignorado: ${position.accuracy}m (Max: $maxAllowedAccuracy)",
+            "GPS impreciso ignorado: ${position.accuracy}m (Max: ${GpsFilterService.maxAllowedAccuracy(_secondsElapsed)})",
           );
           return;
         }
 
         if (_autoPauseEnabled) {
-          if (_secondsElapsed - _lastResumeSeconds >= 10) {
-            if (position.speed < 0.4) {
-              _lowSpeedTicks++;
-              if (_lowSpeedTicks >= 3) {
-                setState(() {
-                  _isAutoPaused = true;
-                  _autoPauseAnchor = newPoint;
-                  _lowSpeedTicks = 0;
-                });
-                HapticFeedback.mediumImpact();
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Treino pausado automaticamente'),
-                      duration: Duration(seconds: 2),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                }
-                return;
-              }
-            } else {
+          _lowSpeedTicks = GpsFilterService.updateLowSpeedTicks(
+            speed: position.speed,
+            currentTicks: _lowSpeedTicks,
+            elapsedSeconds: _secondsElapsed,
+            lastResumeSeconds: _lastResumeSeconds,
+          );
+          if (GpsFilterService.shouldAutoPause(
+            speed: position.speed,
+            lowSpeedTicks: _lowSpeedTicks,
+            elapsedSeconds: _secondsElapsed,
+            lastResumeSeconds: _lastResumeSeconds,
+          )) {
+            setState(() {
+              _isAutoPaused = true;
+              _autoPauseAnchor = newPoint;
               _lowSpeedTicks = 0;
+            });
+            HapticFeedback.mediumImpact();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Treino pausado automaticamente'),
+                  duration: Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
             }
-          } else {
-            _lowSpeedTicks = 0;
+            return;
           }
         }
 
@@ -524,19 +531,19 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             final timeDiff = position.timestamp
                 .difference(lastPosition.timestamp)
                 .inSeconds;
-            if (timeDiff > 0) {
-              final speed = distanceInMeters / timeDiff;
-              if (speed > 10.0) {
-                debugPrint(
-                  "Salto de GPS detectado (velocidade excessiva): ${speed.toStringAsFixed(1)} m/s",
-                );
-                return;
-              }
+            if (GpsFilterService.shouldRejectBySpeedJump(
+              distanceMeters: distanceInMeters,
+              timeDiffSeconds: timeDiff,
+            )) {
+              debugPrint(
+                "Salto de GPS detectado (velocidade excessiva): ${(distanceInMeters / timeDiff).toStringAsFixed(1)} m/s",
+              );
+              return;
             }
           }
 
           // 3. Filtro de Jitter (Aumentado de 3.5m para 6.0m para evitar drift parado)
-          if (distanceInMeters > 6.0) {
+          if (GpsFilterService.isSignificantDisplacement(distanceInMeters)) {
             setState(() {
               _distanceKm += distanceInMeters / 1000;
               _paceBuffer.add(position);
@@ -1129,35 +1136,25 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   }
 
   int _calculateCalories() {
-    if (_distanceKm == 0) return 0;
-    // Base: 1.036 kcal/kg/km ou 65 kcal/km fixos
-    double weight = _userProfile?.weight ?? 70.0;
-    return (weight * _distanceKm * 1.036).toInt();
+    return RunMetricsService.calculateCalories(
+      _distanceKm,
+      _userProfile?.weight ?? 70.0,
+    );
   }
 
   String _calculatePace() {
     if (_isRunning && !_isFinished) {
       return _currentSmoothedPace;
     }
-
-    if (_distanceKm == 0) return '0:00';
-    double paceInMinutes = (_secondsElapsed / 60) / _distanceKm;
-    int minutes = paceInMinutes.toInt();
-    int seconds = ((paceInMinutes - minutes) * 60).toInt();
-    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+    return RunMetricsService.calculatePace(_secondsElapsed, _distanceKm);
   }
 
   String _calculateETA() {
-    if (_distanceKm < 0.1 || _distanceGoal == null) return '--:--';
-    double paceInMinutes = (_secondsElapsed / 60) / _distanceKm;
-    double remainingDistance = _distanceGoal! - _distanceKm;
-    if (remainingDistance <= 0) return 'Chegou!';
-
-    double remainingMinutes = remainingDistance * paceInMinutes;
-    DateTime eta = DateTime.now().add(
-      Duration(seconds: (remainingMinutes * 60).toInt()),
+    return RunMetricsService.calculateETA(
+      currentDistanceKm: _distanceKm,
+      goalDistanceKm: _distanceGoal ?? 0,
+      elapsedSeconds: _secondsElapsed,
     );
-    return '${eta.hour.toString().padLeft(2, '0')}:${eta.minute.toString().padLeft(2, '0')}';
   }
 
   String _formatTime() {

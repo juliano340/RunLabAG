@@ -8,7 +8,6 @@ import '../../features/strength_training/domain/models/strength_workout.dart';
 import '../../features/strength_training/domain/models/workout_block.dart';
 import '../../features/dashboard/domain/models/weekly_evolution_stats.dart';
 import '../../features/history/domain/models/run_model.dart';
-import '../../features/history/domain/models/run_split.dart';
 import '../../features/profile/domain/models/user_profile.dart';
 
 export '../../features/history/domain/models/run_model.dart';

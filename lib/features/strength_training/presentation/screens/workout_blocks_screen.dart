@@ -7,7 +7,6 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../domain/models/workout_block.dart';
-import '../../domain/models/strength_workout.dart';
 import '../providers/strength_workout_provider.dart';
 import 'edit_block_screen.dart';
 import 'edit_template_screen.dart';
