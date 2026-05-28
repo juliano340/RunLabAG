@@ -17,6 +17,7 @@ import 'package:flutter/foundation.dart';
 import 'package:runlabag/core/services/ad_service.dart';
 import 'package:runlabag/features/water/presentation/providers/water_provider.dart';
 import '../../../../core/services/notification_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
@@ -31,12 +32,14 @@ class _ProfileTabState extends State<ProfileTab> {
   UserProfile? _profile;
   bool _isLoading = true;
   bool _autoBackupEnabled = false;
+  bool _autoPauseEnabled = false;
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
     _loadAutoBackupPreference();
+    _loadAutoPausePreference();
   }
 
   Future<void> _loadProfile() async {
@@ -53,6 +56,23 @@ class _ProfileTabState extends State<ProfileTab> {
     final enabled = await _backupService.isAutoBackupEnabled();
     if (mounted) {
       setState(() => _autoBackupEnabled = enabled);
+    }
+  }
+
+  Future<void> _loadAutoPausePreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _autoPauseEnabled = prefs.getBool('auto_pause_enabled') ?? false;
+      });
+    }
+  }
+
+  Future<void> _toggleAutoPause(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('auto_pause_enabled', enabled);
+    if (mounted) {
+      setState(() => _autoPauseEnabled = enabled);
     }
   }
 
@@ -490,6 +510,32 @@ class _ProfileTabState extends State<ProfileTab> {
                         ),
                       ),
                     ),
+                  Divider(color: Theme.of(context).colorScheme.outline, height: 1),
+                  ListTile(
+                    leading: Icon(
+                      LucideIcons.pauseCircle,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    title: Text(
+                      'Auto Pause',
+                      style: GoogleFonts.outfit(
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Pausa automaticamente quando você para e retoma ao voltar a se mover',
+                      style: GoogleFonts.outfit(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                    ),
+                    trailing: Switch(
+                      key: const ValueKey('auto_pause_switch'),
+                      value: _autoPauseEnabled,
+                      onChanged: _toggleAutoPause,
+                      activeThumbColor: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
                 ],
               ),
             ),

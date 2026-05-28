@@ -82,6 +82,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   bool _isExiting = false;
   bool _isScreenLocked = false;
   bool _isSaving = false; // Guard contra double-save
+  DateTime? _lastAutoResumeSnackAt;
 
   ThemeService? _themeService;
 
@@ -439,13 +440,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             });
             HapticFeedback.mediumImpact();
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Treino retomado automaticamente'),
-                  duration: Duration(seconds: 2),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
+              _showAutoResumeSnackBar();
             }
           }
           return;
@@ -982,6 +977,23 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         reason: 'save_run_failed',
       );
     }
+  }
+
+  void _showAutoResumeSnackBar() {
+    final now = DateTime.now();
+    final lastShown = _lastAutoResumeSnackAt;
+    if (lastShown != null && now.difference(lastShown).inSeconds < 5) return;
+    _lastAutoResumeSnackAt = now;
+
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Treino retomado automaticamente'),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   @override
