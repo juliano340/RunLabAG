@@ -6,6 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:vibration/vibration.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/database_service.dart';
@@ -438,7 +439,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                 _routePoints.add([]);
               }
             });
-            HapticFeedback.mediumImpact();
+            _vibrateAutoPauseEnded();
             if (mounted) {
               _showAutoResumeSnackBar();
             }
@@ -475,7 +476,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               _autoPauseAnchor = newPoint;
               _lowSpeedTicks = 0;
             });
-            HapticFeedback.mediumImpact();
+            _vibrateAutoPauseStarted();
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -902,6 +903,24 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     setState(() {
       _isScreenLocked = false;
     });
+  }
+
+  Future<void> _vibrateAutoPauseStarted() async {
+    final hasVibrator = await Vibration.hasVibrator();
+    if (hasVibrator == true) {
+      await Vibration.vibrate(duration: 350, amplitude: 180);
+      return;
+    }
+    await HapticFeedback.heavyImpact();
+  }
+
+  Future<void> _vibrateAutoPauseEnded() async {
+    final hasVibrator = await Vibration.hasVibrator();
+    if (hasVibrator == true) {
+      await Vibration.vibrate(pattern: [0, 120, 80, 120]);
+      return;
+    }
+    await HapticFeedback.mediumImpact();
   }
 
   Future<void> _discardFinishedRun() async {
