@@ -39,6 +39,7 @@ class RunPersistenceCoordinator {
        _analyticsService = analyticsService ?? AnalyticsService();
 
   Future<RunPersistenceResult> saveCompletedRun({
+    DateTime? startTime,
     required double distanceKm,
     required int durationSeconds,
     required int pausedDurationSeconds,
@@ -51,7 +52,7 @@ class RunPersistenceCoordinator {
   }) async {
     final run = RunModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      date: DateTime.now(),
+      date: startTime ?? DateTime.now(),
       distanceKm: distanceKm,
       durationSeconds: durationSeconds,
       pausedDurationSeconds: pausedDurationSeconds,

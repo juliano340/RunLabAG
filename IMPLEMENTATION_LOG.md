@@ -151,8 +151,9 @@ O banner (único formato ativo antes) tem o menor CPM de todos os formatos. O us
 **Fluxo quando usuário tenta template premium:**
 1. Dialog explicando que é premium e oferece troca por vídeo
 2. Usuário toca "ASSISTIR" → rewarded ad é exibido
-3. Se assistir completo → template desbloqueado **para a sessão atual**
-4. Se ad indisponível → template liberado mesmo assim (não bloqueia o usuário, evita reviews ruins)
+3. Se assistir completo → template desbloqueado e **salvo permanentemente no dispositivo** (não perde ao fechar a tela ou reiniciar o app)
+4. Se ad indisponível → template liberado diretamente (evita frustração e reviews ruins)
+5. Feedback visual claro via SnackBar (confirmação ao desbloquear ou aviso explicativo caso o vídeo seja fechado antes do fim)
 
 **Indicação visual:** botão "ESTILO" no carousel mostra ícone de cadeado âmbar quando o próximo template é premium e ainda não foi desbloqueado.
 

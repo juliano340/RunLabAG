@@ -7,6 +7,7 @@ import '../../features/training/data/models/training_plan.dart';
 import '../../features/strength_training/domain/models/strength_workout.dart';
 import '../../features/strength_training/domain/models/workout_block.dart';
 import '../../features/dashboard/domain/models/weekly_evolution_stats.dart';
+import '../../features/analytics/domain/models/monthly_evolution_stats.dart';
 import '../../features/history/domain/models/run_model.dart';
 import '../../features/profile/domain/models/user_profile.dart';
 
@@ -618,5 +619,205 @@ class DatabaseService {
       await txn.delete('strength_workout_templates', where: 'id = ?', whereArgs: [id]);
       await txn.delete('template_items', where: 'templateId = ?', whereArgs: [id]);
     });
+  }
+
+  // --- Analytics Methods ---
+
+  Future<List<MonthlyEvolutionStats>> getMonthlyEvolution(int numberOfMonths) async {
+    List<MonthlyEvolutionStats> evolution = [];
+    final now = DateTime.now();
+
+    for (int i = 0; i < numberOfMonths; i++) {
+      final start = DateTime(now.year, now.month - i, 1);
+      final end = (i == 0)
+          ? now
+          : DateTime(now.year, now.month - i + 1, 0, 23, 59, 59);
+
+      final runs = await getRunsBetween(start, end);
+      final periodId = '${start.year}-${start.month.toString().padLeft(2, '0')}';
+
+      double totalDist = 0;
+      int totalSeconds = 0;
+      Map<String, int> runsByType = {};
+
+      for (var r in runs) {
+        totalDist += r.distanceKm;
+        totalSeconds += r.durationSeconds;
+        final type = r.type.isNotEmpty ? r.type : 'Corrida';
+        runsByType[type] = (runsByType[type] ?? 0) + 1;
+      }
+
+      double? goal = await getGoalHistory(periodId, 'monthly');
+      if (goal == null && i == 0) {
+        final profile = await getUserProfile();
+        goal = profile?.monthlyGoal ?? 80.0;
+      }
+
+      evolution.add(MonthlyEvolutionStats(
+        periodId: periodId,
+        startDate: start,
+        endDate: end,
+        totalDistance: totalDist,
+        totalDurationSeconds: totalSeconds,
+        goalDistance: goal ?? 80.0,
+        runCount: runs.length,
+        runsByType: runsByType,
+      ));
+    }
+    return evolution;
+  }
+
+  Future<Map<String, int>> getRunsByTypeBetween(DateTime start, DateTime end) async {
+    final runs = await getRunsBetween(start, end);
+    Map<String, int> result = {};
+    for (var r in runs) {
+      final type = r.type.isNotEmpty ? r.type : 'Corrida';
+      result[type] = (result[type] ?? 0) + 1;
+    }
+    return result;
+  }
+
+  Future<Map<String, dynamic>> getConsistencyStats(DateTime since) async {
+    final runs = await getRunsBetween(since, DateTime.now());
+
+    final Set<String> trainedDays = {};
+    for (var r in runs) {
+      final day = DateTime(r.date.year, r.date.month, r.date.day);
+      trainedDays.add(day.toIso8601String());
+    }
+
+    final totalDays = DateTime.now().difference(since).inDays + 1;
+    final taxaFrequencia = totalDays > 0 ? trainedDays.length / totalDays : 0.0;
+
+    int currentStreak = 0;
+    int bestStreak = 0;
+    int tempStreak = 0;
+    DateTime? lastRunDate;
+
+    final sortedRuns = List<RunModel>.from(runs)..sort((a, b) => a.date.compareTo(b.date));
+
+    for (var r in sortedRuns) {
+      final day = DateTime(r.date.year, r.date.month, r.date.day);
+      if (lastRunDate != null) {
+        final diff = day.difference(lastRunDate).inDays;
+        if (diff == 1) {
+          tempStreak++;
+        } else if (diff > 1) {
+          if (tempStreak > bestStreak) bestStreak = tempStreak;
+          tempStreak = 1;
+        }
+      } else {
+        tempStreak = 1;
+      }
+      lastRunDate = day;
+    }
+    if (tempStreak > bestStreak) bestStreak = tempStreak;
+
+    final today = DateTime.now();
+    final todayStr = DateTime(today.year, today.month, today.day).toIso8601String();
+    final lastRunStr = lastRunDate != null
+        ? DateTime(lastRunDate.year, lastRunDate.month, lastRunDate.day).toIso8601String()
+        : '';
+    final trainedToday = lastRunStr == todayStr;
+
+    currentStreak = trainedToday ? tempStreak : 0;
+    if (!trainedToday && lastRunDate != null) {
+      final diff = DateTime(today.year, today.month, today.day)
+          .difference(DateTime(lastRunDate.year, lastRunDate.month, lastRunDate.day))
+          .inDays;
+      if (diff > 1) currentStreak = 0;
+    }
+
+    return {
+      'trainedDays': trainedDays.length,
+      'totalDays': totalDays,
+      'taxaFrequencia': taxaFrequencia,
+      'currentStreak': currentStreak,
+      'bestStreak': bestStreak > currentStreak ? bestStreak : currentStreak,
+    };
+  }
+
+  Future<Map<String, dynamic>> getPerformanceTrend(int weeks) async {
+    final evolution = await getWeeklyEvolution(weeks);
+    if (evolution.length < 3) {
+      return {
+        'isPlateau': false,
+        'paceTrend': 0.0,
+        'distanceTrend': 0.0,
+        'slope': 0.0,
+      };
+    }
+
+    final paces = evolution.map((e) => e.paceRaw).toList();
+    final distances = evolution.map((e) => e.totalDistance).toList();
+
+    final paceSlope = _calculateSlope(paces);
+    final distanceSlope = _calculateSlope(distances);
+
+    bool isPlateau = false;
+    if (paces.length >= 4) {
+      final recentPaces = paces.sublist(paces.length - 4);
+      final avg = recentPaces.reduce((a, b) => a + b) / recentPaces.length;
+      final variance = recentPaces.map((p) => (p - avg) * (p - avg)).reduce((a, b) => a + b) / recentPaces.length;
+      final cv = variance > 0 ? (variance / (avg * avg)) : 0;
+      isPlateau = cv < 0.002;
+    }
+
+    return {
+      'isPlateau': isPlateau,
+      'paceTrend': paceSlope,
+      'distanceTrend': distanceSlope,
+      'slope': paceSlope,
+    };
+  }
+
+  double _calculateSlope(List<double> values) {
+    if (values.length < 2) return 0.0;
+    int n = values.length;
+    double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    for (int i = 0; i < n; i++) {
+      sumX += i;
+      sumY += values[i];
+      sumXY += i * values[i];
+      sumX2 += i * i;
+    }
+    double denominator = (n * sumX2 - sumX * sumX);
+    if (denominator == 0) return 0.0;
+    return (n * sumXY - sumX * sumY) / denominator;
+  }
+
+  Future<Map<String, dynamic>> comparePeriods(
+    DateTime start1, DateTime end1,
+    DateTime start2, DateTime end2,
+  ) async {
+    final runs1 = await getRunsBetween(start1, end1);
+    final runs2 = await getRunsBetween(start2, end2);
+
+    double dist1 = 0, dist2 = 0;
+    int sec1 = 0, sec2 = 0;
+    int cal1 = 0, cal2 = 0;
+
+    for (var r in runs1) {
+      dist1 += r.distanceKm;
+      sec1 += r.durationSeconds;
+      cal1 += r.calories;
+    }
+    for (var r in runs2) {
+      dist2 += r.distanceKm;
+      sec2 += r.durationSeconds;
+      cal2 += r.calories;
+    }
+
+    double pace1 = dist1 > 0 ? (sec1 / 60) / dist1 : 0;
+    double pace2 = dist2 > 0 ? (sec2 / 60) / dist2 : 0;
+
+    return {
+      'period1': {'distance': dist1, 'runs': runs1.length, 'pace': pace1, 'calories': cal1, 'seconds': sec1},
+      'period2': {'distance': dist2, 'runs': runs2.length, 'pace': pace2, 'calories': cal2, 'seconds': sec2},
+      'deltaDistance': dist1 - dist2,
+      'deltaRuns': runs1.length - runs2.length,
+      'deltaPace': pace1 - pace2,
+      'deltaCalories': cal1 - cal2,
+    };
   }
 }

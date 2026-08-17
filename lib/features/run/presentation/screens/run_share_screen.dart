@@ -12,6 +12,7 @@ import '../../../../core/services/database_service.dart';
 import '../../../../core/services/ad_service.dart';
 import '../../../../core/services/analytics_service.dart';
 import '../../../../core/utils/time_utils.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum ShareTemplate { boxed, center, bottomBar, minimalist, verticalModern }
 
@@ -53,7 +54,8 @@ class _RunShareScreenState extends State<RunShareScreen> {
   bool _showVerticalCenterGuide = false;
   bool _showHorizontalCenterGuide = false;
 
-  // Templates premium desbloqueados via rewarded ad (válido apenas nesta sessão)
+  // Templates premium desbloqueados via rewarded ad (salvos no dispositivo)
+  static const String _unlockedTemplatesPrefKey = 'unlocked_share_templates';
   final Set<ShareTemplate> _unlockedPremiumTemplates = {};
   bool _isLoadingRewardedAd = false;
 
@@ -62,6 +64,41 @@ class _RunShareScreenState extends State<RunShareScreen> {
     ShareTemplate.minimalist,
     ShareTemplate.verticalModern,
   };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUnlockedTemplates();
+  }
+
+  Future<void> _loadUnlockedTemplates() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedList = prefs.getStringList(_unlockedTemplatesPrefKey) ?? [];
+      if (mounted && savedList.isNotEmpty) {
+        setState(() {
+          for (final name in savedList) {
+            final match = ShareTemplate.values.where((t) => t.name == name);
+            if (match.isNotEmpty) {
+              _unlockedPremiumTemplates.add(match.first);
+            }
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Erro ao carregar estilos desbloqueados: $e');
+    }
+  }
+
+  Future<void> _saveUnlockedTemplates() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final listToSave = _unlockedPremiumTemplates.map((t) => t.name).toList();
+      await prefs.setStringList(_unlockedTemplatesPrefKey, listToSave);
+    } catch (e) {
+      debugPrint('Erro ao salvar estilos desbloqueados: $e');
+    }
+  }
 
   Future<void> _pickImage(ImageSource source) async {
     final XFile? image = await _picker.pickImage(source: source);
@@ -414,7 +451,7 @@ class _RunShareScreenState extends State<RunShareScreen> {
           ],
         ),
         content: Text(
-          'Assista a um vídeo rápido para desbloquear o estilo "$templateName" nesta sessão.',
+          'Assista a um vídeo para desbloquear o estilo "$templateName".',
           style: GoogleFonts.outfit(color: Colors.white70),
         ),
         actions: [
@@ -445,35 +482,95 @@ class _RunShareScreenState extends State<RunShareScreen> {
   }
 
   void _watchAdForTemplate(ShareTemplate template) {
+    final templateName = _templateDisplayName(template);
+
     if (!AdService().isRewardedAdReady) {
-      // Ad ainda não carregado: desbloqueia silenciosamente sem mensagem confusa.
-      // Isso acontece quando o ad unit é novo (leva até 24h para preencher)
-      // ou quando não há anúncio disponível para o dispositivo no momento.
-      setState(() {
-        _unlockedPremiumTemplates.add(template);
-        _currentTemplate = template;
-      });
+      // Se o anúncio não estiver pronto/disponível no momento,
+      // desbloqueia diretamente para evitar frustração do usuário.
+      _unlockTemplate(template, showToast: true);
       return;
     }
 
     setState(() => _isLoadingRewardedAd = true);
-
     AnalyticsService().logRewardedAdShown(placement: 'share_template_${template.name}');
+
+    bool rewardEarned = false;
 
     AdService().showRewardedAd(
       onRewarded: () {
+        rewardEarned = true;
         AnalyticsService().logPremiumTemplateUnlocked(template: template.name);
-        setState(() {
-          _unlockedPremiumTemplates.add(template);
-        });
+        _unlockTemplate(template, showToast: true);
       },
       onDismissed: () {
-        setState(() => _isLoadingRewardedAd = false);
-        if (_unlockedPremiumTemplates.contains(template)) {
-          _selectTemplate(template);
+        if (mounted) {
+          setState(() => _isLoadingRewardedAd = false);
+        }
+        if (!rewardEarned && !_unlockedPremiumTemplates.contains(template)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(LucideIcons.alertCircle, color: Colors.amber, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Assista o vídeo até o final para desbloquear o estilo "$templateName".',
+                        style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: const Color(0xFF291E10),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
         }
       },
     );
+  }
+
+  void _unlockTemplate(ShareTemplate template, {bool showToast = false}) {
+    final templateName = _templateDisplayName(template);
+    _unlockedPremiumTemplates.add(template);
+    _saveUnlockedTemplates();
+
+    if (mounted) {
+      setState(() {
+        _currentTemplate = template;
+        _statsScale = 1.0;
+        _statsOffset = const Offset(0, 50);
+        if (_currentTemplate == ShareTemplate.center) _statsOffset = const Offset(0, 0);
+        if (_currentTemplate == ShareTemplate.verticalModern) _statsOffset = const Offset(0, -100);
+      });
+
+      if (showToast) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(LucideIcons.sparkles, color: AppColors.primaryNeon, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Estilo "$templateName" desbloqueado com sucesso!',
+                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFF1E293B),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 
   String _templateDisplayName(ShareTemplate template) {

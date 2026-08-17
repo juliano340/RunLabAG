@@ -6,6 +6,7 @@ import '../../../../core/theme/app_colors.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../../../features/dashboard/presentation/screens/home_tab.dart';
 import '../../../../features/history/presentation/screens/history_tab.dart';
+import '../../../../features/analytics/presentation/screens/analytics_tab.dart';
 import '../../../../features/profile/presentation/screens/records_tab.dart';
 import '../../../../features/profile/presentation/screens/profile_tab.dart';
 // import '../../../../features/training/presentation/screens/training_tab.dart';
@@ -121,9 +122,10 @@ class _MainScreenState extends State<MainScreen> {
                 children: [
                   HomeTab(
                     key: PageStorageKey('tab_home'),
-                    onNavigateToProfile: () => _onTabChanged(3),
+                    onNavigateToProfile: () => _onTabChanged(4),
                   ),
                   HistoryTab(key: PageStorageKey('tab_history')),
+                  AnalyticsTab(key: PageStorageKey('tab_analytics')),
                   RecordsTab(key: PageStorageKey('tab_records')),
                   ProfileTab(key: PageStorageKey('tab_profile')),
                 ],
@@ -158,8 +160,7 @@ class _MainScreenState extends State<MainScreen> {
               items: const [
                 BottomNavigationBarItem(icon: Icon(LucideIcons.home), label: 'Início'),
                 BottomNavigationBarItem(icon: Icon(LucideIcons.history), label: 'Histórico'),
-                // BottomNavigationBarItem(icon: Icon(LucideIcons.award), label: 'Planos'),
-                // BottomNavigationBarItem(icon: Icon(LucideIcons.dumbbell), label: 'Força'),
+                BottomNavigationBarItem(icon: Icon(LucideIcons.barChart3), label: 'Análises'),
                 BottomNavigationBarItem(icon: Icon(LucideIcons.trophy), label: 'Recordes'),
                 BottomNavigationBarItem(icon: Icon(LucideIcons.user), label: 'Perfil'),
               ],

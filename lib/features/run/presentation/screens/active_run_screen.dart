@@ -84,6 +84,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   bool _isScreenLocked = false;
   bool _isSaving = false; // Guard contra double-save
   DateTime? _lastAutoResumeSnackAt;
+  DateTime? _runStartTime;
 
   ThemeService? _themeService;
 
@@ -177,6 +178,11 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _distanceGoal = state['distanceGoal'];
       _targetTimeSeconds = state['targetTimeSeconds'];
 
+      // Restore the original run start time
+      if (state['startTime'] != null) {
+        _runStartTime = DateTime.tryParse(state['startTime']);
+      }
+
       if (_distanceGoal != null && _targetTimeSeconds != null) {
         _pacingService = PacingService(
           targetDistanceKm: _distanceGoal,
@@ -238,7 +244,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     if (!_isRunning || _isFinished) return;
 
     DatabaseService().saveActiveRun({
-      'startTime': DateTime.now().toIso8601String(),
+      'startTime': (_runStartTime ?? DateTime.now()).toIso8601String(),
       'distanceKm': _distanceKm,
       'secondsElapsed': _secondsElapsed,
       'pausedDurationSeconds': _pausedSecondsElapsed,
@@ -327,6 +333,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   void _startRun() async {
     // Reset metrics for a fresh start
     _stopRunInternals(); // Clear any existing stream/timer
+
+    // Capture the actual start time ONCE
+    _runStartTime = DateTime.now();
 
     // Get initial position but don't store it (used internally by location service)
     try {
@@ -947,6 +956,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       if (!mounted) return;
 
       final result = await RunPersistenceCoordinator().saveCompletedRun(
+        startTime: _runStartTime,
         distanceKm: _distanceKm,
         durationSeconds: _secondsElapsed,
         pausedDurationSeconds: _pausedSecondsElapsed,
