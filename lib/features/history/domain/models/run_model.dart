@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'run_split.dart';
+import 'auto_pause_event.dart';
 
 class RunModel {
   final String id;
@@ -14,6 +15,7 @@ class RunModel {
   final String type;
   final String mood;
   final List<RunSplit> splits;
+  final List<AutoPauseEvent> autoPauses;
 
   RunModel({
     required this.id,
@@ -27,6 +29,7 @@ class RunModel {
     this.type = 'Corrida',
     this.mood = '',
     this.splits = const [],
+    this.autoPauses = const [],
   });
 
   Map<String, dynamic> toMap() {
@@ -44,12 +47,14 @@ class RunModel {
       'type': type,
       'mood': mood,
       'splits': jsonEncode(splits.map((s) => s.toMap()).toList()),
+      'autoPauses': jsonEncode(autoPauses.map((ap) => ap.toMap()).toList()),
     };
   }
 
   factory RunModel.fromMap(Map<String, dynamic> map) {
     List<dynamic> routeList = jsonDecode(map['route'] ?? '[]');
     List<dynamic> splitList = jsonDecode(map['splits'] ?? '[]');
+    List<dynamic> autoPauseList = jsonDecode(map['autoPauses'] ?? '[]');
     return RunModel(
       id: map['id'],
       date: DateTime.parse(map['date']),
@@ -66,6 +71,7 @@ class RunModel {
         if (s is int) return RunSplit(timeSeconds: s, calories: 0);
         return RunSplit(timeSeconds: 0, calories: 0);
       }).toList(),
+      autoPauses: autoPauseList.map((ap) => AutoPauseEvent.fromMap(ap.cast<String, dynamic>())).toList(),
     );
   }
 

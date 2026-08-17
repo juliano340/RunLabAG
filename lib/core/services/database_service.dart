@@ -13,6 +13,7 @@ import '../../features/profile/domain/models/user_profile.dart';
 
 export '../../features/history/domain/models/run_model.dart';
 export '../../features/history/domain/models/run_split.dart';
+export '../../features/history/domain/models/auto_pause_event.dart';
 export '../../features/profile/domain/models/user_profile.dart';
 
 class DatabaseService {

@@ -52,6 +52,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   bool _autoPauseEnabled = false;
   bool _isAutoPaused = false;
   LatLng? _autoPauseAnchor;
+  int _currentAutoPauseDurationSeconds = 0;
+  DateTime? _autoPauseStartTime;
+  List<AutoPauseEvent> _autoPauses = [];
   int _lowSpeedTicks = 0;
   String? _minimalMapStyle;
   String? _darkMapStyle;
@@ -80,7 +83,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   String _currentSmoothedPace = '0:00';
   bool _isFirstPointAfterResume = false;
 
-  bool _isExiting = false;
+  final bool _isExiting = false;
   bool _isScreenLocked = false;
   bool _isSaving = false; // Guard contra double-save
   DateTime? _lastAutoResumeSnackAt;
@@ -178,7 +181,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _distanceGoal = state['distanceGoal'];
       _targetTimeSeconds = state['targetTimeSeconds'];
 
-      // Restore the original run start time
       if (state['startTime'] != null) {
         _runStartTime = DateTime.tryParse(state['startTime']);
       }
@@ -198,7 +200,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
           if (s is int) return RunSplit(timeSeconds: s, calories: 0);
           return RunSplit(timeSeconds: 0, calories: 0);
         }).toList();
-        // Estimar o tempo do último split a partir da soma dos splits restaurados
         _lastSplitTimeSeconds = _splits.fold(
           0,
           (sum, s) => sum + s.timeSeconds,
@@ -224,17 +225,25 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               )
               .toList();
         } else {
-          // Backward compatibility
           _routePoints = [
             decoded.map((p) => LatLng(p['lat'], p['lng'])).toList(),
           ];
         }
       }
 
+      final autoPausesJson = state['autoPauses'];
+      if (autoPausesJson != null) {
+        final List<dynamic> decoded = jsonDecode(autoPausesJson);
+        _autoPauses = decoded
+            .map((ap) => AutoPauseEvent.fromMap((ap as Map).cast<String, dynamic>()))
+            .toList();
+      } else {
+        _autoPauses = [];
+      }
+
       _isRunning = true;
     });
 
-    // Resume core logic
     if (!_isPaused) {
       _startTimersAndStreams(isNew: false);
     }
@@ -262,6 +271,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             .toList(),
       ),
       'splits': jsonEncode(_splits.map((s) => s.toMap()).toList()),
+      'autoPauses': jsonEncode(_autoPauses.map((ap) => ap.toMap()).toList()),
     });
   }
 
@@ -313,7 +323,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         final pos = await _locationService.getCurrentLocation();
         final latLng = LatLng(pos.latitude, pos.longitude);
 
-        // Define o ponto inicial do traçado
         setState(() {
           _routePoints = [
             [latLng],
@@ -321,7 +330,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         });
 
         final controller = await _controller.future;
-        // Subtrai um pequeno valor da latitude para centralizar o marcador mais para cima na tela
         final cameraTarget = LatLng(pos.latitude - 0.002, pos.longitude);
         controller.animateCamera(CameraUpdate.newLatLngZoom(cameraTarget, 16));
       }
@@ -331,13 +339,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   }
 
   void _startRun() async {
-    // Reset metrics for a fresh start
-    _stopRunInternals(); // Clear any existing stream/timer
+    _stopRunInternals();
 
-    // Capture the actual start time ONCE
     _runStartTime = DateTime.now();
 
-    // Get initial position but don't store it (used internally by location service)
     try {
       await _locationService.getCurrentLocation();
     } catch (e) {
@@ -353,12 +358,14 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _splits = [];
       _lastSplitTimeSeconds = 0;
       _lastSplitCalories = 0;
-      _routePoints = [[]]; // Start empty to wait for first LIVE point
+      _autoPauses = [];
+      _currentAutoPauseDurationSeconds = 0;
+      _autoPauseStartTime = null;
+      _routePoints = [[]];
       _isRunning = true;
       _isPaused = false;
       _isFinished = false;
-      _isFirstPointAfterResume =
-          true; // Crucial: Treat start as a resume to ignore initial teleportation
+      _isFirstPointAfterResume = true;
       _isAutoPaused = false;
       _autoPauseAnchor = null;
       _lowSpeedTicks = 0;
@@ -377,6 +384,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       if (_isPaused || _isAutoPaused) {
         setState(() {
           _pausedSecondsElapsed++;
+          if (_isAutoPaused) {
+            _currentAutoPauseDurationSeconds++;
+          }
         });
         if (_pausedSecondsElapsed % 5 == 0) {
           _persistState();
@@ -392,7 +402,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             _secondsElapsed,
           );
 
-          // Vibrar se o status mudar para alertar o usuário sem precisar olhar o celular
           if (_pacingFeedback != null &&
               _pacingFeedback!.status != oldStatus &&
               _pacingFeedback!.status != PacingStatus.none) {
@@ -400,16 +409,15 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
           }
         }
       });
-      // Save state every 5 seconds
       if (_secondsElapsed % 5 == 0) {
         _persistState();
       }
     });
 
-    WakelockPlus.enable(); // Keep screen on
+    WakelockPlus.enable();
 
     if (isNew) {
-      _persistState(); // Initial save
+      _persistState();
     }
 
     try {
@@ -438,9 +446,23 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
           }
 
           if (shouldResume) {
+            final pauseAnchor = _autoPauseAnchor;
+            final durationSecs = _currentAutoPauseDurationSeconds;
+            final startTime = _autoPauseStartTime ?? DateTime.now();
+
             setState(() {
+              if (pauseAnchor != null && durationSecs > 0) {
+                _autoPauses.add(AutoPauseEvent(
+                  latitude: pauseAnchor.latitude,
+                  longitude: pauseAnchor.longitude,
+                  durationSeconds: durationSecs,
+                  timestamp: startTime.toIso8601String(),
+                ));
+              }
               _isAutoPaused = false;
               _autoPauseAnchor = null;
+              _autoPauseStartTime = null;
+              _currentAutoPauseDurationSeconds = 0;
               _lowSpeedTicks = 0;
               _isFirstPointAfterResume = true;
               _lastResumeSeconds = _secondsElapsed;
@@ -456,7 +478,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
           return;
         }
 
-        // 1. Filtro de Precisão (Mais rigoroso nos primeiros 30s)
         if (GpsFilterService.shouldRejectByAccuracy(
           pointAccuracy: position.accuracy,
           elapsedSeconds: _secondsElapsed,
@@ -483,6 +504,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             setState(() {
               _isAutoPaused = true;
               _autoPauseAnchor = newPoint;
+              _autoPauseStartTime = DateTime.now();
+              _currentAutoPauseDurationSeconds = 0;
               _lowSpeedTicks = 0;
             });
             _vibrateAutoPauseStarted();
@@ -499,7 +522,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
           }
         }
 
-        // Verifica se temos um ponto anterior no segmento ATUAL para calcular distância
         if (_routePoints.isNotEmpty && _routePoints.last.isNotEmpty) {
           final lastPoint = _routePoints.last.last;
           final distanceInMeters = Geolocator.distanceBetween(
@@ -511,7 +533,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
 
           if (_isFirstPointAfterResume) {
             setState(() {
-              // Já garantimos no _resumeRun que existe um novo segmento vazio ou estamos no primeiro
               if (_routePoints.last.isEmpty) {
                 _routePoints.last.add(newPoint);
               } else {
@@ -521,10 +542,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               _isFirstPointAfterResume = false;
             });
             _updateCamera(newPoint);
-            return; // Ignora o cálculo de distância para este salto (teletransporte)
+            return;
           }
 
-          // 2. Filtro de Velocidade
           final lastPosition = _paceBuffer.isNotEmpty ? _paceBuffer.last : null;
           if (lastPosition != null) {
             final timeDiff = position.timestamp
@@ -541,7 +561,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             }
           }
 
-          // 3. Filtro de Jitter (adaptativo: 2m em movimento, 6m parado)
           if (GpsFilterService.isSignificantDisplacement(
             distanceMeters: distanceInMeters,
             estimatedSpeed: position.speed,
@@ -557,7 +576,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
 
             _updateCamera(newPoint);
 
-            // 4. Notificação de Milestone
             int currentKm = _distanceKm.floor();
             if (currentKm > _lastKmNotified) {
               final splitTime = _secondsElapsed - _lastSplitTimeSeconds;
@@ -573,7 +591,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               _lastKmNotified = currentKm;
               _persistState();
 
-              // Vibration + push notification (replaces ineffective HapticFeedback)
               if (_userProfile?.kmNotificationsEnabled == true) {
                 final currentPace = _currentSmoothedPace.isNotEmpty
                     ? _currentSmoothedPace
@@ -614,7 +631,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             }
           }
         } else {
-          // Primeiro ponto do primeiro segmento ou se resetado
           setState(() {
             if (_routePoints.isEmpty) {
               _routePoints = [
@@ -637,7 +653,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   }
 
   void _updateSmoothedPace() {
-    // Exigimos pelo menos 5 amostras para começar a suavizar (cerca de 5-10 segundos)
     if (_paceBuffer.length < 5) {
       _currentSmoothedPace = '0:00';
       return;
@@ -646,7 +661,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     final first = _paceBuffer.first;
     final last = _paceBuffer.last;
 
-    // Calcula a distância total percorrida DENTRO de todo o buffer para maior precisão
     double totalBufferDist = 0;
     for (int i = 0; i < _paceBuffer.length - 1; i++) {
       totalBufferDist += Geolocator.distanceBetween(
@@ -659,17 +673,14 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
 
     final timeSeconds = last.timestamp.difference(first.timestamp).inSeconds;
 
-    // Se o deslocamento total no buffer for muito pequeno (< 10m), assume que está parado/muito lento
     if (timeSeconds > 0 && totalBufferDist > 10) {
       double paceInMinutes = (timeSeconds / 60) / (totalBufferDist / 1000);
       if (paceInMinutes > 0 && paceInMinutes < 35) {
-        // Limite razoável
         int minutes = paceInMinutes.toInt();
         int seconds = ((paceInMinutes - minutes) * 60).toInt();
         _currentSmoothedPace = '$minutes:${seconds.toString().padLeft(2, '0')}';
       }
     } else if (timeSeconds > 10) {
-      // Se passou muito tempo e não se mexeu 10m, o ritmo é muito baixo
       _currentSmoothedPace = '0:00';
     }
   }
@@ -682,8 +693,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _autoPauseAnchor = null;
     });
     _timer?.cancel();
-    WakelockPlus.disable(); // Allow screen to dim
-    _persistState(); // Persist pause state
+    WakelockPlus.disable();
+    _persistState();
   }
 
   void _resumeRun() {
@@ -694,13 +705,12 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _autoPauseAnchor = null;
       _isFirstPointAfterResume = true;
       _lastResumeSeconds = _secondsElapsed;
-      // Inicia um novo segmento se o último não estiver vazio
       if (_routePoints.isEmpty || _routePoints.last.isNotEmpty) {
         _routePoints.add([]);
       }
     });
     _startTimersAndStreams(isNew: false);
-    _persistState(); // Persist resume state
+    _persistState();
   }
 
   void _stopRun() async {
@@ -966,6 +976,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         type: selectedType,
         mood: selectedMood,
         splits: List.from(_splits),
+        autoPauses: List.from(_autoPauses),
       );
       if (!mounted) return;
 
@@ -1050,6 +1061,29 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               safeTopInset: safeTopInset,
               distanceGoal: _distanceGoal,
               routePoints: _routePoints,
+              circles: {
+                ..._autoPauses.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final autoPause = entry.value;
+                  return Circle(
+                    circleId: CircleId('active_autopause_$index'),
+                    center: autoPause.location,
+                    radius: 20.0,
+                    fillColor: Colors.amberAccent.withValues(alpha: 0.35),
+                    strokeColor: Colors.amberAccent,
+                    strokeWidth: 2,
+                  );
+                }),
+                if (_isAutoPaused && _autoPauseAnchor != null)
+                  Circle(
+                    circleId: const CircleId('current_autopause'),
+                    center: _autoPauseAnchor!,
+                    radius: 20.0,
+                    fillColor: Colors.orangeAccent.withValues(alpha: 0.45),
+                    strokeColor: Colors.orangeAccent,
+                    strokeWidth: 3,
+                  ),
+              },
               onMapCreated: (GoogleMapController controller) {
                 _controller.complete(controller);
                 Future.delayed(const Duration(milliseconds: 150), () {
@@ -1060,7 +1094,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               },
             ),
 
-            // Top bar: back button | ad | eye+lock column
             ActiveRunTopBar(
               isDark: isDark,
               isRunning: _isRunning,
@@ -1074,7 +1107,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               onLock: _lockScreen,
             ),
 
-            // Bottom Dashboard Card
             ActiveRunBottomPanel(
               isDark: isDark,
               isRunning: _isRunning,
@@ -1098,10 +1130,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               onSave: _saveRun,
             ),
 
-            // Screen Lock Overlay
             if (_isScreenLocked)
               ActiveRunLockOverlay(
-              onUnlock: _unlockScreen,
+                onUnlock: _unlockScreen,
               ),
           ],
         ),

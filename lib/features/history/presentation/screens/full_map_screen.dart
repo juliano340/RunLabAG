@@ -169,7 +169,32 @@ class _FullMapScreenState extends State<FullMapScreen> {
                   icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
                   infoWindow: const InfoWindow(title: 'Chegada'),
                 ),
+              ...widget.run.autoPauses.asMap().entries.map((entry) {
+                final idx = entry.key;
+                final ap = entry.value;
+                return Marker(
+                  markerId: MarkerId('full_marker_autopause_$idx'),
+                  position: ap.location,
+                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+                  infoWindow: InfoWindow(
+                    title: 'Autopausa #${idx + 1}',
+                    snippet: 'Duração: ${ap.formattedDuration}',
+                  ),
+                );
+              }),
             },
+            circles: widget.run.autoPauses.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final ap = entry.value;
+              return Circle(
+                circleId: CircleId('full_circle_autopause_$idx'),
+                center: ap.location,
+                radius: 20.0,
+                fillColor: Colors.amberAccent.withValues(alpha: 0.35),
+                strokeColor: Colors.amberAccent,
+                strokeWidth: 2,
+              );
+            }).toSet(),
             polylines: widget.run.route.asMap().entries.map((entry) {
               return Polyline(
                 polylineId: PolylineId('full_route_${entry.key}'),

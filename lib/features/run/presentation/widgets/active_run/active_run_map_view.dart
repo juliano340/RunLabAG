@@ -14,6 +14,7 @@ class ActiveRunMapView extends StatelessWidget {
   final double safeTopInset;
   final double? distanceGoal;
   final List<List<LatLng>> routePoints;
+  final Set<Circle> circles;
   final FutureOr<void> Function(GoogleMapController) onMapCreated;
 
   const ActiveRunMapView({
@@ -26,6 +27,7 @@ class ActiveRunMapView extends StatelessWidget {
     required this.safeTopInset,
     required this.distanceGoal,
     required this.routePoints,
+    this.circles = const {},
     required this.onMapCreated,
   });
 
@@ -41,6 +43,7 @@ class ActiveRunMapView extends StatelessWidget {
             zoomControlsEnabled: false,
             mapType: MapType.normal,
             style: mapStyle,
+            circles: circles,
             padding: EdgeInsets.only(
               bottom: (distanceGoal != null && distanceGoal! > 0) ? 380 : 280,
               top: safeTopInset + 60,

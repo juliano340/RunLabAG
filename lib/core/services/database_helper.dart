@@ -3,8 +3,8 @@ import 'package:path/path.dart';
 
 class DatabaseHelper {
   static Database? _database;
-  static const databaseVersion = 20;
-
+  static const databaseVersion = 21;
+  
   static Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
@@ -23,7 +23,7 @@ class DatabaseHelper {
 
   static Future<void> _onCreate(Database db, int version) async {
     await db.execute(
-      'CREATE TABLE runs(id TEXT PRIMARY KEY, date TEXT, distanceKm REAL, durationSeconds INTEGER, pausedDurationSeconds INTEGER DEFAULT 0, pace TEXT, calories INTEGER, route TEXT, type TEXT, mood TEXT, splits TEXT)',
+      'CREATE TABLE runs(id TEXT PRIMARY KEY, date TEXT, distanceKm REAL, durationSeconds INTEGER, pausedDurationSeconds INTEGER DEFAULT 0, pace TEXT, calories INTEGER, route TEXT, type TEXT, mood TEXT, splits TEXT, autoPauses TEXT)',
     );
     await db.execute(
       'CREATE TABLE user_profile(id TEXT PRIMARY KEY, name TEXT, age INTEGER, weight REAL, height REAL, profilePicturePath TEXT, weeklyGoal REAL, monthlyGoal REAL, waterGoal REAL DEFAULT 2000.0, lastGoalUpdate TEXT, kmNotificationsEnabled INTEGER DEFAULT 1)',
@@ -32,7 +32,7 @@ class DatabaseHelper {
       'CREATE TABLE achievements(id TEXT PRIMARY KEY, title TEXT, description TEXT, iconCode INTEGER, earnedDate TEXT)',
     );
     await db.execute(
-      'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, pausedDurationSeconds INTEGER DEFAULT 0, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER, splits TEXT, targetTimeSeconds INTEGER)',
+      'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, pausedDurationSeconds INTEGER DEFAULT 0, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER, splits TEXT, targetTimeSeconds INTEGER, autoPauses TEXT)',
     );
     await db.execute(
       'CREATE TABLE monitored_distances(distanceKm REAL PRIMARY KEY)',
@@ -175,6 +175,10 @@ class DatabaseHelper {
     if (oldVersion < 20) {
       await db.execute('ALTER TABLE runs ADD COLUMN pausedDurationSeconds INTEGER DEFAULT 0');
       await db.execute('ALTER TABLE active_run ADD COLUMN pausedDurationSeconds INTEGER DEFAULT 0');
+    }
+    if (oldVersion < 21) {
+      await db.execute('ALTER TABLE runs ADD COLUMN autoPauses TEXT');
+      await db.execute('ALTER TABLE active_run ADD COLUMN autoPauses TEXT');
     }
   }
 }

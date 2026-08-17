@@ -236,6 +236,157 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     );
   }
 
+  void _showAutoPausesModal() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        final totalAutoPauseSeconds = widget.run.autoPauses.fold(0, (sum, ap) => sum + ap.durationSeconds);
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.65,
+          decoration: BoxDecoration(
+            color: cs.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+            border: Border.all(color: cs.outline.withValues(alpha: 0.2)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(LucideIcons.pauseCircle, color: Colors.amberAccent, size: 22),
+                  const SizedBox(width: 8),
+                  Text(
+                    'AUTOPAUSAS (${widget.run.autoPauses.length})',
+                    style: GoogleFonts.outfit(
+                      color: cs.onSurface,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Tempo total em autopausa: ${_formatDuration(totalAutoPauseSeconds)}',
+                style: GoogleFonts.outfit(
+                  color: cs.onSurfaceVariant,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+                  child: Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: cs.onSurface.withValues(alpha: 0.03),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: cs.outline.withValues(alpha: 0.15)),
+                    ),
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          child: Row(
+                            children: [
+                              Expanded(flex: 1, child: Text('#', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.bold))),
+                              Expanded(flex: 3, child: Text('DURAÇÃO DA PAUSA', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.bold))),
+                              Expanded(flex: 2, child: Text('AÇÃO', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
+                            ],
+                          ),
+                        ),
+                        Divider(color: cs.outline.withValues(alpha: 0.2), height: 1),
+                        ...List.generate(widget.run.autoPauses.length, (index) {
+                          final autoPause = widget.run.autoPauses[index];
+
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            decoration: BoxDecoration(
+                              border: Border(bottom: BorderSide(color: cs.outline.withValues(alpha: 0.15), width: 0.5)),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 1,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.amber.withValues(alpha: 0.15),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Text(
+                                      '${index + 1}',
+                                      textAlign: TextAlign.center,
+                                      style: GoogleFonts.outfit(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  flex: 3,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        autoPause.formattedDuration,
+                                        style: GoogleFonts.outfit(color: cs.onSurface, fontWeight: FontWeight.bold, fontSize: 15),
+                                      ),
+                                      if (autoPause.timestamp.isNotEmpty)
+                                        Text(
+                                          'Início: ${_formatDate(DateTime.tryParse(autoPause.timestamp) ?? DateTime.now())}',
+                                          style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 11),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: TextButton.icon(
+                                    style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                      _mapController?.animateCamera(
+                                        CameraUpdate.newLatLngZoom(autoPause.location, 17),
+                                      );
+                                    },
+                                    icon: const Icon(LucideIcons.mapPin, size: 14, color: Colors.amberAccent),
+                                    label: Text(
+                                      'IR AO MAPA',
+                                      style: GoogleFonts.outfit(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -302,7 +453,32 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
                         infoWindow: const InfoWindow(title: 'Chegada'),
                       ),
+                    ...widget.run.autoPauses.asMap().entries.map((entry) {
+                      final idx = entry.key;
+                      final ap = entry.value;
+                      return Marker(
+                        markerId: MarkerId('marker_autopause_$idx'),
+                        position: ap.location,
+                        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+                        infoWindow: InfoWindow(
+                          title: 'Autopausa #${idx + 1}',
+                          snippet: 'Duração: ${ap.formattedDuration}',
+                        ),
+                      );
+                    }),
                   },
+                  circles: widget.run.autoPauses.asMap().entries.map((entry) {
+                    final idx = entry.key;
+                    final ap = entry.value;
+                    return Circle(
+                      circleId: CircleId('detail_circle_autopause_$idx'),
+                      center: ap.location,
+                      radius: 20.0,
+                      fillColor: Colors.amberAccent.withValues(alpha: 0.35),
+                      strokeColor: Colors.amberAccent,
+                      strokeWidth: 2,
+                    );
+                  }).toSet(),
                   polylines: widget.run.route.asMap().entries.map((entry) {
                     return Polyline(
                       polylineId: PolylineId('route_${entry.key}'),
@@ -598,27 +774,55 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                         ],
                         const SizedBox(height: 24),
                         
-                        if (widget.run.splits.isNotEmpty)
+                        if (widget.run.splits.isNotEmpty || widget.run.autoPauses.isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 16),
-                            child: OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-                                side: BorderSide(color: cs.primary.withValues(alpha: 0.5)),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(30),
-                                ),
-                              ),
-                              onPressed: _showSplitsModal,
-                              icon: Icon(LucideIcons.list, color: cs.primary, size: 18),
-                              label: Text(
-                                'VER VOLTAS',
-                                style: GoogleFonts.outfit(
-                                  color: cs.primary,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1.1,
-                                ),
-                              ),
+                            child: Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              alignment: WrapAlignment.center,
+                              children: [
+                                if (widget.run.splits.isNotEmpty)
+                                  OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+                                      side: BorderSide(color: cs.primary.withValues(alpha: 0.5)),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(30),
+                                      ),
+                                    ),
+                                    onPressed: _showSplitsModal,
+                                    icon: Icon(LucideIcons.list, color: cs.primary, size: 18),
+                                    label: Text(
+                                      'VER VOLTAS',
+                                      style: GoogleFonts.outfit(
+                                        color: cs.primary,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1.1,
+                                      ),
+                                    ),
+                                  ),
+                                if (widget.run.autoPauses.isNotEmpty)
+                                  OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+                                      side: BorderSide(color: Colors.amber.withValues(alpha: 0.6)),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(30),
+                                      ),
+                                    ),
+                                    onPressed: _showAutoPausesModal,
+                                    icon: const Icon(LucideIcons.pauseCircle, color: Colors.amberAccent, size: 18),
+                                    label: Text(
+                                      'AUTOPAUSAS (${widget.run.autoPauses.length})',
+                                      style: GoogleFonts.outfit(
+                                        color: Colors.amberAccent,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1.1,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
 

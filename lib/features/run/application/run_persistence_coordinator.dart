@@ -8,6 +8,7 @@ import '../../../core/services/backup_service.dart';
 import '../../../core/services/database_service.dart' show DatabaseService;
 import '../../history/domain/models/run_model.dart';
 import '../../history/domain/models/run_split.dart';
+import '../../history/domain/models/auto_pause_event.dart';
 import '../../training/services/training_service.dart';
 
 class RunPersistenceResult {
@@ -49,6 +50,7 @@ class RunPersistenceCoordinator {
     required String type,
     required String mood,
     required List<RunSplit> splits,
+    List<AutoPauseEvent> autoPauses = const [],
   }) async {
     final run = RunModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -62,6 +64,7 @@ class RunPersistenceCoordinator {
       type: type,
       mood: mood,
       splits: splits,
+      autoPauses: autoPauses,
     );
 
     await _dbService.saveRun(run);
