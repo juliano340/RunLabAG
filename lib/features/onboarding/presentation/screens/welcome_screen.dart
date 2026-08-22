@@ -129,7 +129,7 @@ class WelcomeScreen extends StatelessWidget {
                         if (result != null) {
                           final file = File(result.files.single.path!);
                           final content = await file.readAsString();
-                          final success = await backupService.importBackup(content);
+                          final (success, _) = await backupService.importBackup(content);
                           
                           if (context.mounted) {
                             if (success) {

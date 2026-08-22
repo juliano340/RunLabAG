@@ -1,9 +1,16 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
 class DatabaseHelper {
   static Database? _database;
   static const databaseVersion = 21;
+
+  /// Apenas para testes: descarta a instância em memória do banco.
+  @visibleForTesting
+  static void resetForTest() {
+    _database = null;
+  }
   
   static Future<Database> get database async {
     if (_database != null) return _database!;

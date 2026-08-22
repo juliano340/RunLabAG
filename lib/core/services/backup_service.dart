@@ -16,23 +16,40 @@ class BackupService {
 
   final DatabaseService _dbService = DatabaseService();
 
-  Future<String> _buildBackupJson() async {
+  /// Retorna (json, incluiuFoto).
+  Future<(String, bool)> _buildBackupJson() async {
     final db = await _dbService.database;
     final profileData = await db.query('user_profile');
     final runsData = await db.query('runs');
 
+    Map<String, dynamic>? profile =
+        profileData.isNotEmpty ? Map<String, dynamic>.from(profileData.first) : null;
+
+    bool includedPhoto = false;
+    final photoPath = profile?['profilePicturePath'] as String?;
+    if (photoPath != null && photoPath.isNotEmpty) {
+      final photoFile = File(photoPath);
+      if (await photoFile.exists()) {
+        profile!['photoData'] = base64Encode(await photoFile.readAsBytes());
+        includedPhoto = true;
+      } else {
+        debugPrint('Backup: arquivo de foto não encontrado em $photoPath');
+      }
+    }
+
     final Map<String, dynamic> backup = {
-      'version': 1,
+      'version': 2,
       'exportedAt': DateTime.now().toIso8601String(),
-      'profile': profileData.isNotEmpty ? profileData.first : null,
+      'profile': profile,
       'runs': runsData,
     };
 
-    return jsonEncode(backup);
+    return (jsonEncode(backup), includedPhoto);
   }
 
-  Future<void> exportBackup() async {
-    final jsonString = await _buildBackupJson();
+  /// Exporta o backup. Retorna (sucesso, incluiuFoto).
+  Future<(bool, bool)> exportBackup() async {
+    final (jsonString, includedPhoto) = await _buildBackupJson();
 
     final tempDir = await getTemporaryDirectory();
     final file = File(
@@ -45,18 +62,36 @@ class BackupService {
       subject:
           'Backup RunLab - ${DateTime.now().day}/${DateTime.now().month}',
     );
+
+    return (true, includedPhoto);
   }
 
-  Future<bool> importBackup(String jsonContent) async {
+  /// Importa um backup. Retorna (sucesso, restaurouFoto).
+  Future<(bool, bool)> importBackup(String jsonContent) async {
     try {
       final Map<String, dynamic> backup = jsonDecode(jsonContent);
       final db = await _dbService.database;
 
+      bool restoredPhoto = false;
+
       await db.transaction((txn) async {
         if (backup['profile'] != null) {
+          final profile = Map<String, dynamic>.from(backup['profile']);
+
+          final photoData = profile.remove('photoData');
+          if (photoData is String && photoData.isNotEmpty) {
+            final restoredPath = await _restorePhotoFile(photoData);
+            if (restoredPath != null) {
+              profile['profilePicturePath'] = restoredPath;
+              restoredPhoto = true;
+            } else {
+              debugPrint('Import: falha ao recriar foto do backup');
+            }
+          }
+
           await txn.insert(
             'user_profile',
-            Map<String, dynamic>.from(backup['profile']),
+            profile,
             conflictAlgorithm: ConflictAlgorithm.replace,
           );
         }
@@ -73,9 +108,27 @@ class BackupService {
         }
       });
 
-      return true;
+      return (true, restoredPhoto);
     } catch (e) {
-      return false;
+      debugPrint('Import backup falhou: $e');
+      return (false, false);
+    }
+  }
+
+  /// Recria o arquivo de foto localmente a partir do base64 do backup.
+  /// Retorna null se falhar — perfil é restaurado sem foto, sem quebrar.
+  Future<String?> _restorePhotoFile(String base64Data) async {
+    try {
+      final bytes = base64Decode(base64Data);
+      final appDir = await getApplicationDocumentsDirectory();
+      final file = File(
+        '${appDir.path}/profile_pic_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
+      await file.writeAsBytes(bytes);
+      return file.path;
+    } catch (e) {
+      debugPrint('Falha ao restaurar foto do backup: $e');
+      return null;
     }
   }
 
@@ -127,7 +180,7 @@ class BackupService {
         await dir.create(recursive: true);
       }
 
-      final jsonString = await _buildBackupJson();
+      final (jsonString, _) = await _buildBackupJson();
 
       // 1) Arquivo "latest" sempre sobrescrito — ponto de restauração rápida.
       final latestFile = File('${dir.path}/$_autoBackupLatestFile');
