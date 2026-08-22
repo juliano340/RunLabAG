@@ -32,9 +32,10 @@ class _StartRunButtonState extends State<StartRunButton>
       TweenSequenceItem(tween: Tween(begin: 1.1, end: 1.0).chain(CurveTween(curve: Curves.easeInOut)), weight: 50),
     ]).animate(_controller);
     
-    _glowAnimation = Tween<double>(begin: 8.0, end: 32.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _glowAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 8.0, end: 32.0).chain(CurveTween(curve: Curves.easeInOut)), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 32.0, end: 8.0).chain(CurveTween(curve: Curves.easeInOut)), weight: 50),
+    ]).animate(_controller);
 
     _rotationAnimation = Tween<double>(begin: 0.0, end: 2 * 3.14159).animate(_controller);
   }
