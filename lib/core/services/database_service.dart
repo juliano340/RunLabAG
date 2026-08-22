@@ -39,6 +39,39 @@ class DatabaseService {
   Future<void> saveUserProfile(UserProfile profile) => _userRepo.saveUserProfile(profile);
   Future<UserProfile?> getUserProfile() => _userRepo.getUserProfile();
 
+  // --- Reset ---
+  /// Apaga todos os dados do usuário (perfil, treinos, conquistas, água,
+  /// planos e treinos de força). Preserva catálogos e restaura as
+  /// distâncias monitoradas padrão.
+  Future<void> resetAllData() async {
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final table in [
+        'runs',
+        'user_profile',
+        'achievements',
+        'active_run',
+        'water_intake',
+        'goal_history',
+        'training_plans',
+        'plan_sessions',
+        'user_training_enrollments',
+        'strength_workouts',
+        'workout_blocks',
+        'block_exercises',
+        'strength_workout_templates',
+        'template_items',
+      ]) {
+        await txn.delete(table);
+      }
+      // Restaura as distâncias monitoradas padrão
+      await txn.delete('monitored_distances');
+      for (double dist in [1.0, 5.0, 10.0, 15.0]) {
+        await txn.insert('monitored_distances', {'distanceKm': dist});
+      }
+    });
+  }
+
   // --- Goal History ---
   Future<void> saveGoalHistory(String periodId, String goalType, double goalValue) async {
     final db = await database;

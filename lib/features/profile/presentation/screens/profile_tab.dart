@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart';
 import 'package:runlabag/core/services/ad_service.dart';
 import 'package:runlabag/features/water/presentation/providers/water_provider.dart';
+import '../../../../core/providers/runs_provider.dart';
 import '../../../../core/services/notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -114,6 +115,8 @@ class _ProfileTabState extends State<ProfileTab> {
       final fileName = 'profile_pic_${DateTime.now().millisecondsSinceEpoch}${p.extension(image.path)}';
       final savedImage = await File(image.path).copy(p.join(appDir.path, fileName));
 
+      final oldPhotoPath = _profile!.profilePicturePath;
+
       final updatedProfile = UserProfile(
         name: _profile!.name,
         age: _profile!.age,
@@ -127,6 +130,19 @@ class _ProfileTabState extends State<ProfileTab> {
       );
 
       await _dbService.saveUserProfile(updatedProfile);
+
+      // Remove a foto antiga para não acumular arquivos órfãos
+      if (oldPhotoPath != null && oldPhotoPath != savedImage.path) {
+        final oldFile = File(oldPhotoPath);
+        if (await oldFile.exists()) {
+          try {
+            await oldFile.delete();
+          } catch (e) {
+            debugPrint('Error deleting old profile pic: $e');
+          }
+        }
+      }
+
       if (mounted) {
         context.read<WaterProvider>().refresh();
       }
@@ -564,7 +580,21 @@ class _ProfileTabState extends State<ProfileTab> {
                     'Cria um arquivo de backup do seu histórico',
                     onTap: () async {
                       try {
-                        await _backupService.exportBackup();
+                        final (ok, withPhoto) = await _backupService.exportBackup();
+                        if (!mounted || !context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              ok
+                                  ? (withPhoto
+                                      ? 'Backup exportado com a foto do perfil!'
+                                      : 'Backup exportado (sem foto: arquivo não encontrado)')
+                                  : 'Erro ao exportar backup',
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            backgroundColor: ok ? Colors.green : Colors.red,
+                          ),
+                        );
                       } catch (e) {
                         if (mounted && context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -589,13 +619,15 @@ class _ProfileTabState extends State<ProfileTab> {
                       if (result != null) {
                         final file = File(result.files.single.path!);
                         final content = await file.readAsString();
-                        final success = await _backupService.importBackup(content);
+                        final (success, restoredPhoto) = await _backupService.importBackup(content);
 
                         if (mounted && context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(success
-                                ? 'Dados restaurados com sucesso!'
+                                ? (restoredPhoto
+                                    ? 'Dados e foto do perfil restaurados!'
+                                    : 'Dados restaurados. Este backup não contém foto — foi gerado por uma versão antiga.')
                                 : 'Erro ao importar arquivo',
                                 style: const TextStyle(color: Colors.white)),
                               backgroundColor: success ? Colors.green : Colors.red,
@@ -608,6 +640,15 @@ class _ProfileTabState extends State<ProfileTab> {
                   ),
                   Divider(color: Theme.of(context).colorScheme.outline, height: 1),
                   _buildAutoBackupToggle(context),
+                  Divider(color: Theme.of(context).colorScheme.outline, height: 1),
+                  _buildBackupTile(
+                    context,
+                    LucideIcons.trash2,
+                    'Apagar Todos os Dados',
+                    'Limpa perfil e treinos. Use antes de restaurar um backup',
+                    color: Theme.of(context).colorScheme.error,
+                    onTap: () => _confirmWipeData(context),
+                  ),
                 ],
               ),
             ),
@@ -716,21 +757,22 @@ class _ProfileTabState extends State<ProfileTab> {
     );
   }
 
-  Widget _buildBackupTile(BuildContext context, IconData icon, String title, String subtitle, {required VoidCallback onTap}) {
+  Widget _buildBackupTile(BuildContext context, IconData icon, String title, String subtitle, {required VoidCallback onTap, Color? color}) {
     final cs = Theme.of(context).colorScheme;
+    final tileColor = color ?? cs.primary;
     return ListTile(
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: cs.primary.withValues(alpha: 0.1),
+          color: tileColor.withValues(alpha: 0.1),
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: cs.primary, size: 20),
+        child: Icon(icon, color: tileColor, size: 20),
       ),
       title: Text(
         title,
         style: GoogleFonts.outfit(
-          color: cs.onSurface,
+          color: color != null ? tileColor : cs.onSurface,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -739,6 +781,69 @@ class _ProfileTabState extends State<ProfileTab> {
         style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
       ),
       onTap: onTap,
+    );
+  }
+
+  Future<void> _confirmWipeData(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final cs = Theme.of(dialogContext).colorScheme;
+        return AlertDialog(
+          title: Text(
+            'Apagar todos os dados?',
+            style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+          ),
+          content: Text(
+            'Isso remove permanentemente seu perfil, foto, treinos, conquistas, '
+            'histórico de água e treinos de força.\n\n'
+            'Exporte um backup antes se quiser guardar seus dados.',
+            style: GoogleFonts.outfit(fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: cs.error),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Apagar tudo'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    // Remove o arquivo da foto local
+    if (_profile?.profilePicturePath != null) {
+      try {
+        final photoFile = File(_profile!.profilePicturePath!);
+        if (await photoFile.exists()) {
+          await photoFile.delete();
+        }
+      } catch (e) {
+        debugPrint('Erro ao remover foto no reset: $e');
+      }
+    }
+
+    await _dbService.resetAllData();
+    if (!mounted || !context.mounted) return;
+
+    context.read<WaterProvider>().refresh();
+    context.read<RunsProvider>().notifyRunSaved();
+    _loadProfile();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text(
+          'Dados apagados. Use "Restaurar Backup" para recuperar um backup.',
+          style: TextStyle(color: Colors.white),
+        ),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ),
     );
   }
 
