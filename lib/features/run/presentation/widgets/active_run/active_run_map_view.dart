@@ -15,6 +15,7 @@ class ActiveRunMapView extends StatelessWidget {
   final double? distanceGoal;
   final List<List<LatLng>> routePoints;
   final Set<Circle> circles;
+  final Set<Marker> markers;
   final FutureOr<void> Function(GoogleMapController) onMapCreated;
 
   const ActiveRunMapView({
@@ -28,6 +29,7 @@ class ActiveRunMapView extends StatelessWidget {
     required this.distanceGoal,
     required this.routePoints,
     this.circles = const {},
+    this.markers = const {},
     required this.onMapCreated,
   });
 
@@ -49,22 +51,7 @@ class ActiveRunMapView extends StatelessWidget {
               top: safeTopInset + 60,
             ),
             onMapCreated: onMapCreated,
-            markers: {
-              if (routePoints.isNotEmpty && routePoints.first.isNotEmpty)
-                Marker(
-                  markerId: const MarkerId('start'),
-                  position: routePoints.first.first,
-                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-                  infoWindow: const InfoWindow(title: 'Início'),
-                ),
-              if (isFinished && routePoints.isNotEmpty && routePoints.last.isNotEmpty)
-                Marker(
-                  markerId: const MarkerId('finish'),
-                  position: routePoints.last.last,
-                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-                  infoWindow: const InfoWindow(title: 'Chegada'),
-                ),
-            },
+            markers: markers,
             polylines: routePoints.asMap().entries.map((entry) {
               final int idx = entry.key;
               final List<LatLng> segment = entry.value;

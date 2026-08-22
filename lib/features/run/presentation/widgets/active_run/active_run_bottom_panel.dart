@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../../../../../core/theme/app_colors.dart';
 import '../../../../../../core/services/pacing_service.dart';
+import '../../../../../../core/utils/time_utils.dart';
 import 'active_run_finished_actions.dart';
 import 'active_run_goal_progress.dart';
 import 'active_run_metric_tile.dart';
@@ -23,6 +24,7 @@ class ActiveRunBottomPanel extends StatelessWidget {
   final String calories;
   final String eta;
   final PacingFeedback? pacingFeedback;
+  final int pausedSeconds;
 
   final VoidCallback onStart;
   final VoidCallback onPause;
@@ -47,6 +49,7 @@ class ActiveRunBottomPanel extends StatelessWidget {
     required this.calories,
     required this.eta,
     this.pacingFeedback,
+    required this.pausedSeconds,
     required this.onStart,
     required this.onPause,
     required this.onResume,
@@ -127,7 +130,44 @@ class ActiveRunBottomPanel extends StatelessWidget {
                   height: 1.1,
                 ),
               ),
-              const SizedBox(height: 20),
+              if (pausedSeconds > 0) ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1F120A) : const Color(0xFFFDF2E9),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.orange.withValues(alpha: 0.3)
+                          : Colors.orange.withValues(alpha: 0.5),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        LucideIcons.pause,
+                        size: 11,
+                        color: isDark ? Colors.orange : Colors.orange.shade800,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'EM PAUSA: ${TimeUtils.formatDuration(pausedSeconds)}',
+                        style: GoogleFonts.outfit(
+                          color: isDark ? Colors.orange : Colors.orange.shade900,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ] else
+                const SizedBox(height: 20),
               // ── 3 métricas em linha ──
               IntrinsicHeight(
                 child: Row(

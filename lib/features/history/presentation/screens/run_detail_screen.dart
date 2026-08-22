@@ -12,6 +12,7 @@ import '../../../../core/services/backup_service.dart';
 import '../../../run/presentation/widgets/metric_card.dart';
 import '../../../run/presentation/screens/run_share_screen.dart';
 import '../../../../core/utils/time_utils.dart';
+import '../../../../core/utils/map_marker_helper.dart';
 import 'full_map_screen.dart';
 
 class RunDetailScreen extends StatefulWidget {
@@ -30,11 +31,14 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   String? _darkMinimalMapStyle;
   ThemeService? _themeService;
   bool _isMapReady = false;
+  BitmapDescriptor? _pauseMarkerIcon;
+  BitmapDescriptor? _resumeMarkerIcon;
 
   @override
   void initState() {
     super.initState();
     _loadMapStyle();
+    _loadMarkerIcons();
   }
 
   @override
@@ -45,6 +49,22 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       _themeService?.removeListener(_onThemeChanged);
       _themeService = newThemeService;
       _themeService!.addListener(_onThemeChanged);
+    }
+  }
+
+  Future<void> _loadMarkerIcons() async {
+    try {
+      final results = await Future.wait([
+        MapMarkerHelper.getPauseMarkerIcon(),
+        MapMarkerHelper.getResumeMarkerIcon(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _pauseMarkerIcon = results[0];
+        _resumeMarkerIcon = results[1];
+      });
+    } catch (e) {
+      debugPrint("Erro ao gerar marcadores premium: $e");
     }
   }
 
@@ -453,33 +473,32 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
                         infoWindow: const InfoWindow(title: 'Chegada'),
                       ),
-                    ...widget.run.autoPauses.asMap().entries.map((entry) {
-                      final idx = entry.key;
-                      final ap = entry.value;
-                      return Marker(
-                        markerId: MarkerId('marker_autopause_$idx'),
-                        position: ap.location,
-                        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-                        infoWindow: InfoWindow(
-                          title: 'Autopausa #${idx + 1}',
-                          snippet: 'Duração: ${ap.formattedDuration}',
-                        ),
-                      );
-                    }),
-                  },
-                  circles: widget.run.autoPauses.asMap().entries.map((entry) {
-                    final idx = entry.key;
-                    final ap = entry.value;
-                    return Circle(
-                      circleId: CircleId('detail_circle_autopause_$idx'),
-                      center: ap.location,
-                      radius: 20.0,
-                      fillColor: Colors.amberAccent.withValues(alpha: 0.35),
-                      strokeColor: Colors.amberAccent,
-                      strokeWidth: 2,
-                    );
-                  }).toSet(),
-                  polylines: widget.run.route.asMap().entries.map((entry) {
+                      ...widget.run.autoPauses.asMap().entries.expand((entry) {
+                        final idx = entry.key;
+                        final ap = entry.value;
+                        return [
+                          Marker(
+                            markerId: MarkerId('marker_autopause_$idx'),
+                            position: ap.location,
+                            icon: _pauseMarkerIcon ??
+                                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+                            infoWindow: InfoWindow(
+                              title: 'Autopausa #${idx + 1}',
+                              snippet: 'Duração: ${ap.formattedDuration}',
+                            ),
+                          ),
+                          if (ap.resumeLocation != null)
+                            Marker(
+                              markerId: MarkerId('marker_autoresume_$idx'),
+                              position: ap.resumeLocation!,
+                              icon: _resumeMarkerIcon ??
+                                  BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+                              infoWindow: const InfoWindow(title: 'Retomada'),
+                            ),
+                        ];
+                      }),
+                    },
+                    polylines: widget.run.route.asMap().entries.map((entry) {
                     return Polyline(
                       polylineId: PolylineId('route_${entry.key}'),
                       points: entry.value,

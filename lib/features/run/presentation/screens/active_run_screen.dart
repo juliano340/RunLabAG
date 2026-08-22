@@ -18,6 +18,7 @@ import '../widgets/active_run/active_run_top_bar.dart';
 import '../widgets/active_run/active_run_dialogs.dart';
 import '../widgets/active_run/active_run_map_view.dart';
 import '../../../../core/utils/time_utils.dart';
+import '../../../../core/utils/map_marker_helper.dart';
 import '../../../../core/services/achievement_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -55,6 +56,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   int _currentAutoPauseDurationSeconds = 0;
   DateTime? _autoPauseStartTime;
   List<AutoPauseEvent> _autoPauses = [];
+  BitmapDescriptor? _pauseMarkerIcon;
+  BitmapDescriptor? _resumeMarkerIcon;
   int _lowSpeedTicks = 0;
   String? _minimalMapStyle;
   String? _darkMapStyle;
@@ -97,6 +100,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     _loadMapPreference();
     _loadAutoPausePreference();
     _loadMapStyle();
+    _loadMarkerIcons();
     _initLocation();
     _loadUserProfile();
     if (widget.restoredState != null) {
@@ -118,6 +122,22 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   void _onThemeChanged() {
     if (!mounted) return;
     setState(() {});
+  }
+
+  Future<void> _loadMarkerIcons() async {
+    try {
+      final results = await Future.wait([
+        MapMarkerHelper.getPauseMarkerIcon(),
+        MapMarkerHelper.getResumeMarkerIcon(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _pauseMarkerIcon = results[0];
+        _resumeMarkerIcon = results[1];
+      });
+    } catch (e) {
+      debugPrint("Erro ao gerar marcadores premium: $e");
+    }
   }
 
   Future<void> _loadMapPreference() async {
@@ -313,6 +333,46 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     return _showMinimalMap ? _minimalMapStyle : null;
   }
 
+  Set<Marker> _buildMapMarkers() {
+    final pauseIcon = _pauseMarkerIcon ??
+        BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
+    final resumeIcon = _resumeMarkerIcon ??
+        BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
+
+    return {
+      ..._autoPauses.asMap().entries.expand((entry) {
+        final index = entry.key;
+        final autoPause = entry.value;
+        return [
+          Marker(
+            markerId: MarkerId('active_autopause_$index'),
+            position: autoPause.location,
+            icon: pauseIcon,
+            infoWindow: InfoWindow(
+              title: 'Autopausa #${index + 1}',
+              snippet: 'Duração: ${autoPause.formattedDuration}',
+            ),
+          ),
+          if (autoPause.resumeLocation != null)
+            Marker(
+              markerId: MarkerId('active_autoresume_$index'),
+              position: autoPause.resumeLocation!,
+              icon: resumeIcon,
+              infoWindow: const InfoWindow(title: 'Retomada'),
+            ),
+        ];
+      }),
+      if (_isAutoPaused && _autoPauseAnchor != null)
+        Marker(
+          markerId: const MarkerId('current_autopause'),
+          position: _autoPauseAnchor!,
+          icon: pauseIcon,
+          infoWindow: const InfoWindow(title: 'Pausando...'),
+        ),
+    };
+  }
+
+
   Future<void> _initLocation() async {
     try {
       final hasPermission = await _locationService.requestPermission();
@@ -455,6 +515,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                 _autoPauses.add(AutoPauseEvent(
                   latitude: pauseAnchor.latitude,
                   longitude: pauseAnchor.longitude,
+                  resumeLatitude: newPoint.latitude,
+                  resumeLongitude: newPoint.longitude,
                   durationSeconds: durationSecs,
                   timestamp: startTime.toIso8601String(),
                 ));
@@ -1061,29 +1123,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               safeTopInset: safeTopInset,
               distanceGoal: _distanceGoal,
               routePoints: _routePoints,
-              circles: {
-                ..._autoPauses.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final autoPause = entry.value;
-                  return Circle(
-                    circleId: CircleId('active_autopause_$index'),
-                    center: autoPause.location,
-                    radius: 20.0,
-                    fillColor: Colors.amberAccent.withValues(alpha: 0.35),
-                    strokeColor: Colors.amberAccent,
-                    strokeWidth: 2,
-                  );
-                }),
-                if (_isAutoPaused && _autoPauseAnchor != null)
-                  Circle(
-                    circleId: const CircleId('current_autopause'),
-                    center: _autoPauseAnchor!,
-                    radius: 20.0,
-                    fillColor: Colors.orangeAccent.withValues(alpha: 0.45),
-                    strokeColor: Colors.orangeAccent,
-                    strokeWidth: 3,
-                  ),
-              },
+              markers: _buildMapMarkers(),
               onMapCreated: (GoogleMapController controller) {
                 _controller.complete(controller);
                 Future.delayed(const Duration(milliseconds: 150), () {
@@ -1120,6 +1160,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               pace: _calculatePace(),
               calories: _calculateCalories().toString(),
               eta: _calculateETA(),
+              pausedSeconds: _pausedSecondsElapsed,
               pacingFeedback: _pacingFeedback,
               onStart: _startRun,
               onPause: _pauseRun,
