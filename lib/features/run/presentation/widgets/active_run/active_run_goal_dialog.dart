@@ -20,6 +20,7 @@ class ActiveRunGoalDialog {
           if (isCustom) {
             navigator.pop();
             Future.delayed(const Duration(milliseconds: 150), () {
+              if (!context.mounted) return;
               _showTimeGoalDialog(context, distance, onGoalSet);
             });
           } else {

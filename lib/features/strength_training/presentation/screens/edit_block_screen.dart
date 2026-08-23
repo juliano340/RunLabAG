@@ -372,7 +372,7 @@ class _AddExerciseToBlockDialogState extends State<_AddExerciseToBlockDialog> {
               title: const Text('Por tempo?', style: TextStyle(color: AppColors.textLight)),
               value: _isTimeBased,
               onChanged: (val) => setState(() => _isTimeBased = val),
-              activeColor: AppColors.primaryNeon,
+              activeThumbColor: AppColors.primaryNeon,
             ),
             if (!_isTimeBased) ...[
               Row(

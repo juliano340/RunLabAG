@@ -27,7 +27,7 @@ class NotificationService {
     if (!_initialized) await initialize();
 
     // 1. Vibrate — respects device silent / vibrate mode
-    final bool? hasVibrator = await Vibration.hasVibrator();
+    final bool hasVibrator = await Vibration.hasVibrator();
     if (hasVibrator == true) {
       // Pattern: short-long-short for a distinct "milestone" feel
       Vibration.vibrate(pattern: [0, 200, 100, 400]);
