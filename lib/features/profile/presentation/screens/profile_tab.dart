@@ -18,6 +18,7 @@ import 'package:runlabag/core/services/ad_service.dart';
 import 'package:runlabag/features/water/presentation/providers/water_provider.dart';
 import '../../../../core/providers/runs_provider.dart';
 import '../../../../core/services/notification_service.dart';
+import 'bmi_detail_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ProfileTab extends StatefulWidget {
@@ -407,42 +408,55 @@ class _ProfileTabState extends State<ProfileTab> {
             
             // BMI Card
             if (_profile != null)
-              GlassContainer(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryNeon.withValues(alpha: 0.1),
-                        shape: BoxShape.circle,
+              GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => BmiDetailScreen(profile: _profile!),
+                  ),
+                ),
+                child: GlassContainer(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryNeon.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(LucideIcons.heartPulse, color: AppColors.primaryNeon),
                       ),
-                      child: const Icon(LucideIcons.heartPulse, color: AppColors.primaryNeon),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Seu IMC: ${_profile!.bmi.toStringAsFixed(1)}',
-                            style: GoogleFonts.outfit(
-                              color: Theme.of(context).colorScheme.onSurface,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Seu IMC: ${_profile!.bmi.toStringAsFixed(1)}',
+                              style: GoogleFonts.outfit(
+                                color: Theme.of(context).colorScheme.onSurface,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                          Text(
-                            _profile!.bmiStatus,
-                            style: GoogleFonts.outfit(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontSize: 14,
+                            Text(
+                              _profile!.bmiStatus,
+                              style: GoogleFonts.outfit(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontSize: 14,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                      Icon(
+                        LucideIcons.chevronRight,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        size: 20,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             
@@ -633,7 +647,11 @@ class _ProfileTabState extends State<ProfileTab> {
                               backgroundColor: success ? Colors.green : Colors.red,
                             ),
                           );
-                          if (success) _loadProfile();
+                          if (success) {
+                            context.read<WaterProvider>().refresh();
+                            context.read<RunsProvider>().notifyRunSaved();
+                            _loadProfile();
+                          }
                         }
                       }
                     },
