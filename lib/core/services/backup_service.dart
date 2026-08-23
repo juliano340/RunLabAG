@@ -38,10 +38,20 @@ class BackupService {
     }
 
     final Map<String, dynamic> backup = {
-      'version': 2,
+      'version': 3,
       'exportedAt': DateTime.now().toIso8601String(),
       'profile': profile,
       'runs': runsData,
+      'achievements': await db.query('achievements'),
+      'waterIntake': await db.query('water_intake'),
+      'goalHistory': await db.query('goal_history'),
+      'monitoredDistances': await db.query('monitored_distances'),
+      'strengthWorkouts': await db.query('strength_workouts'),
+      'workoutBlocks': await db.query('workout_blocks'),
+      'blockExercises': await db.query('block_exercises'),
+      'strengthTemplates': await db.query('strength_workout_templates'),
+      'templateItems': await db.query('template_items'),
+      'trainingEnrollments': await db.query('user_training_enrollments'),
     };
 
     return (jsonEncode(backup), includedPhoto);
@@ -73,6 +83,13 @@ class BackupService {
       final db = await _dbService.database;
 
       bool restoredPhoto = false;
+      String? newPhotoPath;
+
+      // Guarda o caminho atual para limpeza de foto órfã após o import
+      final currentProfile = await db.query('user_profile');
+      final oldPhotoPath = currentProfile.isNotEmpty
+          ? currentProfile.first['profilePicturePath'] as String?
+          : null;
 
       await db.transaction((txn) async {
         if (backup['profile'] != null) {
@@ -84,6 +101,7 @@ class BackupService {
             if (restoredPath != null) {
               profile['profilePicturePath'] = restoredPath;
               restoredPhoto = true;
+              newPhotoPath = restoredPath;
             } else {
               debugPrint('Import: falha ao recriar foto do backup');
             }
@@ -97,21 +115,71 @@ class BackupService {
         }
 
         if (backup['runs'] != null) {
-          final List<dynamic> runs = backup['runs'];
-          for (final run in runs) {
-            await txn.insert(
-              'runs',
-              Map<String, dynamic>.from(run),
-              conflictAlgorithm: ConflictAlgorithm.replace,
-            );
-          }
+          await _upsertRows(txn, 'runs', backup['runs']);
+        }
+        if (backup['achievements'] != null) {
+          await _upsertRows(txn, 'achievements', backup['achievements']);
+        }
+        if (backup['waterIntake'] != null) {
+          await _upsertRows(txn, 'water_intake', backup['waterIntake']);
+        }
+        if (backup['goalHistory'] != null) {
+          await _upsertRows(txn, 'goal_history', backup['goalHistory']);
+        }
+        if (backup['monitoredDistances'] != null) {
+          await txn.delete('monitored_distances');
+          await _upsertRows(txn, 'monitored_distances', backup['monitoredDistances']);
+        }
+        if (backup['strengthWorkouts'] != null) {
+          await _upsertRows(txn, 'strength_workouts', backup['strengthWorkouts']);
+        }
+        if (backup['workoutBlocks'] != null) {
+          await _upsertRows(txn, 'workout_blocks', backup['workoutBlocks']);
+        }
+        if (backup['blockExercises'] != null) {
+          await _upsertRows(txn, 'block_exercises', backup['blockExercises']);
+        }
+        if (backup['strengthTemplates'] != null) {
+          await _upsertRows(txn, 'strength_workout_templates', backup['strengthTemplates']);
+        }
+        if (backup['templateItems'] != null) {
+          await _upsertRows(txn, 'template_items', backup['templateItems']);
+        }
+        if (backup['trainingEnrollments'] != null) {
+          // Sem PK — replace não deduplica; limpa antes de inserir
+          await txn.delete('user_training_enrollments');
+          await _upsertRows(txn, 'user_training_enrollments', backup['trainingEnrollments']);
         }
       });
+
+      // Remove a foto antiga se foi substituída por uma nova
+      if (oldPhotoPath != null &&
+          newPhotoPath != null &&
+          oldPhotoPath != newPhotoPath) {
+        try {
+          final oldFile = File(oldPhotoPath);
+          if (await oldFile.exists()) {
+            await oldFile.delete();
+          }
+        } catch (e) {
+          debugPrint('Import: falha ao remover foto antiga: $e');
+        }
+      }
 
       return (true, restoredPhoto);
     } catch (e) {
       debugPrint('Import backup falhou: $e');
       return (false, false);
+    }
+  }
+
+  Future<void> _upsertRows(Transaction txn, String table, List<dynamic> rows) async {
+    for (final row in rows) {
+      await txn.insert(
+        table,
+        Map<String, dynamic>.from(row),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
     }
   }
 

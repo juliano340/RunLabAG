@@ -118,5 +118,192 @@ void main() {
       final rows = await db.query('user_profile');
       expect(rows.first['name'], 'Sem Foto');
     });
+
+    test('v3 backup restores all user data tables', () async {
+      final db = await DatabaseHelper.database;
+
+      final backupJson = jsonEncode({
+        'version': 3,
+        'exportedAt': DateTime.now().toIso8601String(),
+        'profile': {
+          'id': 'current_user',
+          'name': 'Completo',
+          'waterGoal': 2500.0,
+        },
+        'runs': [
+          {
+            'id': 'run_1',
+            'date': DateTime.now().toIso8601String(),
+            'distanceKm': 5.0,
+            'durationSeconds': 1500,
+            'pausedDurationSeconds': 60,
+            'pace': '5:00',
+            'calories': 350,
+            'route': '[]',
+            'type': '',
+            'mood': '',
+            'splits': '[]',
+            'autoPauses': '[]',
+          }
+        ],
+        'achievements': [
+          {
+            'id': 'ach_1',
+            'title': 'Primeira Corrida',
+            'description': 'Completou 1 treino',
+            'iconCode': 58135,
+            'earnedDate': DateTime.now().toIso8601String(),
+          }
+        ],
+        'waterIntake': [
+          {'amount': 250, 'timestamp': DateTime.now().toIso8601String()},
+        ],
+        'goalHistory': [
+          {'periodId': '2026-08', 'goalType': 'weekly', 'goalValue': 25.0},
+        ],
+        'monitoredDistances': [
+          {'distanceKm': 21.0},
+        ],
+        'strengthWorkouts': [
+          {
+            'id': 'sw_1',
+            'name': 'Treino A',
+            'date': DateTime.now().millisecondsSinceEpoch,
+            'payload': '{}',
+          }
+        ],
+        'workoutBlocks': [
+          {'id': 'block_1', 'name': 'Peito', 'description': ''},
+        ],
+        'blockExercises': [
+          {
+            'id': 'ex_1',
+            'blockId': 'block_1',
+            'name': 'Supino',
+            'defaultSets': 3,
+            'defaultReps': '10',
+            'defaultWeight': 40.0,
+            'isTimeBased': 0,
+            'orderIndex': 0,
+          }
+        ],
+        'strengthTemplates': [
+          {'id': 'tpl_1', 'name': 'Template A'},
+        ],
+        'templateItems': [
+          {
+            'id': 'ti_1',
+            'templateId': 'tpl_1',
+            'type': 'block',
+            'itemId': 'block_1',
+            'orderIndex': 0,
+            'overrides': null,
+          }
+        ],
+        'trainingEnrollments': [
+          {
+            'planId': 'beginner_5k',
+            'startDate': DateTime.now().toIso8601String(),
+            'currentWeek': 1,
+            'currentDay': 1,
+            'isActive': 1,
+          }
+        ],
+      });
+
+      final (success, _) = await BackupService().importBackup(backupJson);
+      expect(success, isTrue);
+
+      expect((await db.query('user_profile')).first['name'], 'Completo');
+      expect(await db.query('runs').then((r) => r.length), 1);
+      expect(
+        await db.query('achievements').then((r) => r.first['title']),
+        'Primeira Corrida',
+      );
+      expect(await db.query('water_intake').then((r) => r.length), 1);
+      expect(
+        await db.query('goal_history').then((r) => r.first['goalValue']),
+        25.0,
+      );
+      expect(
+        await db
+            .query('monitored_distances')
+            .then((r) => r.single['distanceKm']),
+        21.0,
+        reason: 'distâncias monitoradas devem ser substituídas pelas do backup',
+      );
+      expect(await db.query('strength_workouts').then((r) => r.length), 1);
+      expect(await db.query('workout_blocks').then((r) => r.length), 1);
+      expect(await db.query('block_exercises').then((r) => r.length), 1);
+      expect(
+        await db.query('strength_workout_templates').then((r) => r.length),
+        1,
+      );
+      expect(await db.query('template_items').then((r) => r.length), 1);
+      expect(
+        await db.query('user_training_enrollments').then((r) => r.length),
+        1,
+      );
+    });
+
+    test('import replaces enrollment without duplicating rows', () async {
+      final db = await DatabaseHelper.database;
+      final enrollment = {
+        'planId': 'beginner_5k',
+        'startDate': DateTime.now().toIso8601String(),
+        'currentWeek': 2,
+        'currentDay': 3,
+        'isActive': 1,
+      };
+      final backupJson = jsonEncode({
+        'version': 3,
+        'trainingEnrollments': [enrollment],
+      });
+
+      await BackupService().importBackup(backupJson);
+      await BackupService().importBackup(backupJson);
+
+      expect(
+        await db.query('user_training_enrollments').then((r) => r.length),
+        1,
+        reason: 'import repetido não deve duplicar inscrições',
+      );
+    });
+
+    test('import deletes orphaned previous photo file', () async {
+      final db = await DatabaseHelper.database;
+
+      // Perfil atual apontando para uma foto antiga existente no disco
+      final oldPhoto = File('${docsDir.path}/profile_pic_old.jpg');
+      await oldPhoto.writeAsBytes(utf8.encode('OLD_PHOTO'));
+      await db.insert('user_profile', {
+        'id': 'current_user',
+        'name': 'Antigo',
+        'profilePicturePath': oldPhoto.path,
+      });
+
+      final newBytes = utf8.encode('NEW_PHOTO_BYTES');
+      final backupJson = jsonEncode({
+        'version': 2,
+        'profile': {
+          'id': 'current_user',
+          'name': 'Novo',
+          'photoData': base64Encode(newBytes),
+        },
+        'runs': <Map<String, dynamic>>[],
+      });
+
+      final (success, restoredPhoto) =
+          await BackupService().importBackup(backupJson);
+
+      expect(success, isTrue);
+      expect(restoredPhoto, isTrue);
+      expect(await oldPhoto.exists(), isFalse,
+          reason: 'foto antiga deve ser deletada após substituição');
+
+      final newPath =
+          (await db.query('user_profile')).first['profilePicturePath'] as String;
+      expect(await File(newPath).readAsBytes(), newBytes);
+    });
   });
 }
