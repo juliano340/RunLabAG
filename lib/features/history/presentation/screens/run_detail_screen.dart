@@ -14,6 +14,7 @@ import '../../../run/presentation/screens/run_share_screen.dart';
 import '../../../../core/utils/time_utils.dart';
 import '../../../../core/utils/map_marker_helper.dart';
 import 'full_map_screen.dart';
+import 'edit_run_route_screen.dart';
 
 class RunDetailScreen extends StatefulWidget {
   final RunModel run;
@@ -25,6 +26,7 @@ class RunDetailScreen extends StatefulWidget {
 }
 
 class _RunDetailScreenState extends State<RunDetailScreen> {
+  late RunModel _run;
   GoogleMapController? _mapController;
   String? _mapStyle;
   String? _minimalMapStyle;
@@ -37,6 +39,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _run = widget.run;
     _loadMapStyle();
     _loadMarkerIcons();
   }
@@ -110,11 +113,21 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     return TimeUtils.formatDuration(seconds);
   }
 
+  Future<void> _editRoute() async {
+    final updated = await Navigator.push<RunModel>(
+      context,
+      MaterialPageRoute(builder: (context) => EditRunRouteScreen(run: _run)),
+    );
+    if (updated != null && mounted) {
+      setState(() => _run = updated);
+    }
+  }
+
   void _recenterMap() {
     if (_mapController == null) return;
-    if (widget.run.route.isNotEmpty && widget.run.route.any((s) => s.isNotEmpty)) {
+    if (_run.route.isNotEmpty && _run.route.any((s) => s.isNotEmpty)) {
       double? minLat, minLng, maxLat, maxLng;
-      for (var segment in widget.run.route) {
+      for (var segment in _run.route) {
         for (var point in segment) {
           if (minLat == null || point.latitude < minLat) minLat = point.latitude;
           if (minLng == null || point.longitude < minLng) minLng = point.longitude;
@@ -193,8 +206,8 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                           ),
                         ),
                         Divider(color: cs.outline.withValues(alpha: 0.2), height: 1),
-                        ...List.generate(widget.run.splits.length, (index) {
-                          final split = widget.run.splits[index];
+                        ...List.generate(_run.splits.length, (index) {
+                          final split = _run.splits[index];
                           final splitTime = split.timeSeconds;
                           final minutes = splitTime ~/ 60;
                           final seconds = splitTime % 60;
@@ -216,12 +229,12 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                           );
                         }),
 
-                        if (widget.run.distanceKm > widget.run.splits.length + 0.01) (() {
-                          final remainingDist = widget.run.distanceKm - widget.run.splits.length;
-                          final consumedTime = widget.run.splits.fold(0, (sum, s) => sum + s.timeSeconds);
-                          final remainingTime = (widget.run.durationSeconds - consumedTime).clamp(0, widget.run.durationSeconds);
-                          final consumedCals = widget.run.splits.fold(0, (sum, s) => sum + s.calories);
-                          final remainingCals = (widget.run.calories - consumedCals).clamp(0, widget.run.calories);
+                        if (_run.distanceKm > _run.splits.length + 0.01) (() {
+                          final remainingDist = _run.distanceKm - _run.splits.length;
+                          final consumedTime = _run.splits.fold(0, (sum, s) => sum + s.timeSeconds);
+                          final remainingTime = (_run.durationSeconds - consumedTime).clamp(0, _run.durationSeconds);
+                          final consumedCals = _run.splits.fold(0, (sum, s) => sum + s.calories);
+                          final remainingCals = (_run.calories - consumedCals).clamp(0, _run.calories);
 
                           String partialPace = '--:--';
                           if (remainingDist > 0 && remainingTime > 0) {
@@ -263,7 +276,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       isScrollControlled: true,
       builder: (context) {
         final cs = Theme.of(context).colorScheme;
-        final totalAutoPauseSeconds = widget.run.autoPauses.fold(0, (sum, ap) => sum + ap.durationSeconds);
+        final totalAutoPauseSeconds = _run.autoPauses.fold(0, (sum, ap) => sum + ap.durationSeconds);
         return Container(
           height: MediaQuery.of(context).size.height * 0.65,
           decoration: BoxDecoration(
@@ -289,7 +302,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                   const Icon(LucideIcons.pauseCircle, color: Colors.amberAccent, size: 22),
                   const SizedBox(width: 8),
                   Text(
-                    'AUTOPAUSAS (${widget.run.autoPauses.length})',
+                    'AUTOPAUSAS (${_run.autoPauses.length})',
                     style: GoogleFonts.outfit(
                       color: cs.onSurface,
                       fontSize: 20,
@@ -331,8 +344,8 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                           ),
                         ),
                         Divider(color: cs.outline.withValues(alpha: 0.2), height: 1),
-                        ...List.generate(widget.run.autoPauses.length, (index) {
-                          final autoPause = widget.run.autoPauses[index];
+                        ...List.generate(_run.autoPauses.length, (index) {
+                          final autoPause = _run.autoPauses[index];
 
                           return Container(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -418,7 +431,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: Text(
-          'Treino de ${_formatDate(widget.run.date)}',
+          'Treino de ${_formatDate(_run.date)}',
           style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
         ),
         leading: IconButton(
@@ -427,12 +440,17 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
         ),
         actions: [
           IconButton(
+            icon: Icon(LucideIcons.spline, color: cs.primary),
+            tooltip: 'Editar rota',
+            onPressed: _editRoute,
+          ),
+          IconButton(
             icon: Icon(LucideIcons.share2, color: cs.primary),
             onPressed: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => RunShareScreen(run: widget.run),
+                  builder: (context) => RunShareScreen(run: _run),
                 ),
               );
             },
@@ -453,27 +471,27 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                 GoogleMap(
                   style: _mapStyle,
                   initialCameraPosition: CameraPosition(
-                    target: (widget.run.route.isNotEmpty && widget.run.route.first.isNotEmpty) 
-                        ? widget.run.route.first.first 
+                    target: (_run.route.isNotEmpty && _run.route.first.isNotEmpty) 
+                        ? _run.route.first.first 
                         : const LatLng(-23.5505, -46.6333),
                     zoom: 15,
                   ),
                   markers: {
-                    if (widget.run.route.isNotEmpty && widget.run.route.first.isNotEmpty)
+                    if (_run.route.isNotEmpty && _run.route.first.isNotEmpty)
                       Marker(
                         markerId: const MarkerId('start'),
-                        position: widget.run.route.first.first,
+                        position: _run.route.first.first,
                         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
                         infoWindow: const InfoWindow(title: 'Início'),
                       ),
-                    if (widget.run.route.isNotEmpty && widget.run.route.last.isNotEmpty)
+                    if (_run.route.isNotEmpty && _run.route.last.isNotEmpty)
                       Marker(
                         markerId: const MarkerId('finish'),
-                        position: widget.run.route.last.last,
+                        position: _run.route.last.last,
                         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
                         infoWindow: const InfoWindow(title: 'Chegada'),
                       ),
-                      ...widget.run.autoPauses.asMap().entries.expand((entry) {
+                      ..._run.autoPauses.asMap().entries.expand((entry) {
                         final idx = entry.key;
                         final ap = entry.value;
                         return [
@@ -498,7 +516,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                         ];
                       }),
                     },
-                    polylines: widget.run.route.asMap().entries.map((entry) {
+                    polylines: _run.route.asMap().entries.map((entry) {
                     return Polyline(
                       polylineId: PolylineId('route_${entry.key}'),
                       points: entry.value,
@@ -576,7 +594,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => FullMapScreen(run: widget.run),
+                              builder: (context) => FullMapScreen(run: _run),
                             ),
                           );
                         },
@@ -655,17 +673,17 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                           decoration: BoxDecoration(
-                            color: (widget.run.type == 'Caminhada'
+                            color: (_run.type == 'Caminhada'
                                     ? Colors.blueAccent
-                                    : widget.run.type == 'Corrida/Caminhada'
+                                    : _run.type == 'Corrida/Caminhada'
                                         ? Colors.orangeAccent
                                         : cs.primary)
                                 .withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                              color: (widget.run.type == 'Caminhada'
+                              color: (_run.type == 'Caminhada'
                                       ? Colors.blueAccent
-                                      : widget.run.type == 'Corrida/Caminhada'
+                                      : _run.type == 'Corrida/Caminhada'
                                           ? Colors.orangeAccent
                                           : cs.primary)
                                   .withValues(alpha: 0.4),
@@ -675,25 +693,25 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
-                                widget.run.type == 'Caminhada'
+                                _run.type == 'Caminhada'
                                     ? LucideIcons.footprints
-                                    : widget.run.type == 'Corrida/Caminhada'
+                                    : _run.type == 'Corrida/Caminhada'
                                         ? LucideIcons.timer
                                         : LucideIcons.zap,
-                                color: widget.run.type == 'Caminhada'
+                                color: _run.type == 'Caminhada'
                                     ? Colors.blueAccent
-                                    : widget.run.type == 'Corrida/Caminhada'
+                                    : _run.type == 'Corrida/Caminhada'
                                         ? Colors.orangeAccent
                                         : cs.primary,
                                 size: 16,
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                widget.run.type.toUpperCase(),
+                                _run.type.toUpperCase(),
                                 style: GoogleFonts.outfit(
-                                  color: widget.run.type == 'Caminhada'
+                                  color: _run.type == 'Caminhada'
                                       ? Colors.blueAccent
-                                      : widget.run.type == 'Corrida/Caminhada'
+                                      : _run.type == 'Corrida/Caminhada'
                                           ? Colors.orangeAccent
                                           : cs.primary,
                                   fontWeight: FontWeight.bold,
@@ -705,18 +723,18 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                           ),
                         ),
                         const SizedBox(height: 20),
-                        if (widget.run.mood.isNotEmpty)
+                        if (_run.mood.isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 20),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Text(widget.run.mood, style: const TextStyle(fontSize: 32)),
+                                Text(_run.mood, style: const TextStyle(fontSize: 32)),
                                 const SizedBox(width: 12),
                                 Text(
-                                  widget.run.mood == '😣' ? 'Ruim'
-                                      : widget.run.mood == '😐' ? 'Médio'
-                                      : widget.run.mood == '🙂' ? 'Bom'
+                                  _run.mood == '😣' ? 'Ruim'
+                                      : _run.mood == '😐' ? 'Médio'
+                                      : _run.mood == '🙂' ? 'Bom'
                                       : 'Excelente',
                                   style: GoogleFonts.outfit(
                                     color: cs.onSurface,
@@ -733,14 +751,14 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                             Expanded(
                               child: MetricCard(
                                 label: 'Distância',
-                                value: widget.run.distanceKm.toStringAsFixed(2),
+                                value: _run.distanceKm.toStringAsFixed(2),
                                 unit: 'km',
                               ),
                             ),
                             Expanded(
                               child: MetricCard(
                                 label: 'Tempo',
-                                value: _formatDuration(widget.run.durationSeconds),
+                                value: _formatDuration(_run.durationSeconds),
                                 unit: 'min',
                               ),
                             ),
@@ -753,20 +771,20 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                             Expanded(
                               child: MetricCard(
                                 label: 'Pace Médio',
-                                value: widget.run.pace,
+                                value: _run.pace,
                                 unit: '/km',
                               ),
                             ),
                             Expanded(
                               child: MetricCard(
                                 label: 'Calorias',
-                                value: widget.run.calories.toString(),
+                                value: _run.calories.toString(),
                                 unit: 'kcal',
                               ),
                             ),
                           ],
                         ),
-                        if (widget.run.pausedDurationSeconds > 0) ...[
+                        if (_run.pausedDurationSeconds > 0) ...[
                           const SizedBox(height: 16),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -775,8 +793,8 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                                 child: MetricCard(
                                   label: 'Tempo Total',
                                   value: _formatDuration(
-                                    widget.run.durationSeconds +
-                                        widget.run.pausedDurationSeconds,
+                                    _run.durationSeconds +
+                                        _run.pausedDurationSeconds,
                                   ),
                                   unit: 'min',
                                 ),
@@ -784,7 +802,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                               Expanded(
                                 child: MetricCard(
                                   label: 'Tempo Pausado',
-                                  value: _formatDuration(widget.run.pausedDurationSeconds),
+                                  value: _formatDuration(_run.pausedDurationSeconds),
                                   unit: 'min',
                                 ),
                               ),
@@ -793,7 +811,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                         ],
                         const SizedBox(height: 24),
                         
-                        if (widget.run.splits.isNotEmpty || widget.run.autoPauses.isNotEmpty)
+                        if (_run.splits.isNotEmpty || _run.autoPauses.isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 16),
                             child: Wrap(
@@ -801,7 +819,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                               runSpacing: 12,
                               alignment: WrapAlignment.center,
                               children: [
-                                if (widget.run.splits.isNotEmpty)
+                                if (_run.splits.isNotEmpty)
                                   OutlinedButton.icon(
                                     style: OutlinedButton.styleFrom(
                                       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
@@ -821,7 +839,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                                       ),
                                     ),
                                   ),
-                                if (widget.run.autoPauses.isNotEmpty)
+                                if (_run.autoPauses.isNotEmpty)
                                   OutlinedButton.icon(
                                     style: OutlinedButton.styleFrom(
                                       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
@@ -833,7 +851,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                                     onPressed: _showAutoPausesModal,
                                     icon: const Icon(LucideIcons.pauseCircle, color: Colors.amberAccent, size: 18),
                                     label: Text(
-                                      'AUTOPAUSAS (${widget.run.autoPauses.length})',
+                                      'AUTOPAUSAS (${_run.autoPauses.length})',
                                       style: GoogleFonts.outfit(
                                         color: Colors.amberAccent,
                                         fontWeight: FontWeight.bold,
@@ -906,7 +924,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
               ),
               onPressed: () async {
                 final dbService = DatabaseService();
-                await dbService.deleteRun(widget.run.id);
+                await dbService.deleteRun(_run.id);
 
                 // Atualiza backup automático após exclusão. Falha silencioso.
                 unawaited(BackupService().runAutoBackupIfEnabled());

@@ -32,6 +32,28 @@ class RunModel {
     this.autoPauses = const [],
   });
 
+  RunModel copyWith({
+    double? distanceKm,
+    String? pace,
+    int? calories,
+    List<List<LatLng>>? route,
+  }) {
+    return RunModel(
+      id: id,
+      date: date,
+      distanceKm: distanceKm ?? this.distanceKm,
+      durationSeconds: durationSeconds,
+      pausedDurationSeconds: pausedDurationSeconds,
+      pace: pace ?? this.pace,
+      calories: calories ?? this.calories,
+      route: route ?? this.route,
+      type: type,
+      mood: mood,
+      splits: splits,
+      autoPauses: autoPauses,
+    );
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
