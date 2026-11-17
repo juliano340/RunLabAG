@@ -5,12 +5,16 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../dashboard/domain/models/weekly_evolution_stats.dart';
 import '../../domain/models/monthly_evolution_stats.dart';
+import '../../domain/models/pace_series_point.dart';
 import '../../domain/models/performance_alert.dart';
+import '../../domain/services/pace_series_service.dart';
 import '../../domain/services/performance_alert_service.dart';
-import '../widgets/trend_line_chart.dart';
 import '../widgets/comparison_card.dart';
 import '../widgets/alert_card.dart';
 import '../widgets/consistency_card.dart';
+import '../widgets/pace_summary_strip.dart';
+import '../widgets/pace_trend_chart.dart';
+import '../widgets/volume_bar_chart.dart';
 
 class AnalyticsTab extends StatefulWidget {
   const AnalyticsTab({super.key});
@@ -38,7 +42,8 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
 
   Future<void> _loadData() async {
     final weekly = await _dbService.getWeeklyEvolution(12);
-    final monthly = await _dbService.getMonthlyEvolution(6);
+    // 12 meses: 6 alimentam a visão "Mês" e todos alimentam a visão "Trimestre".
+    final monthly = await _dbService.getMonthlyEvolution(12);
 
     final now = DateTime.now();
     final startOfCurrentWeek = now.subtract(Duration(days: now.weekday % 7));
@@ -80,6 +85,30 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     }
   }
 
+  /// Série exibida nos gráficos, sempre em ordem cronológica (passado → presente).
+  List<PaceSeriesPoint> get _series {
+    switch (_selectedPeriod) {
+      case 1:
+        return PaceSeriesService.fromMonthly(
+          _monthlyData.take(6).toList(),
+        );
+      case 2:
+        return PaceSeriesService.quarters(_monthlyData);
+      case 0:
+      default:
+        return PaceSeriesService.fromWeekly(_weeklyData);
+    }
+  }
+
+  String get _periodCaption {
+    final unit = switch (_selectedPeriod) {
+      1 => 'meses',
+      2 => 'trimestres',
+      _ => 'semanas',
+    };
+    return 'últimas ${_series.length} $unit';
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -99,6 +128,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
       backgroundColor: isDark ? AppColors.background : AppColors.backgroundLight,
       body: SafeArea(
         child: SingleChildScrollView(
+          key: const PageStorageKey('analytics-scroll'),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -108,6 +138,8 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
               _buildPeriodSelector(context),
               const SizedBox(height: 20),
               _buildTrendSection(context),
+              const SizedBox(height: 20),
+              _buildVolumeSection(context),
               const SizedBox(height: 20),
               if (_alerts.isNotEmpty) ...[
                 _buildAlertsSection(context),
@@ -194,34 +226,44 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
 
   Widget _buildTrendSection(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final data = _selectedPeriod == 0
-        ? _weeklyData
-        : _selectedPeriod == 1
-            ? _monthlyData.map((m) => WeeklyEvolutionStats(
-                  periodId: m.periodId,
-                  startDate: m.startDate,
-                  endDate: m.endDate,
-                  totalDistance: m.totalDistance,
-                  totalDurationSeconds: m.totalDurationSeconds,
-                  goalDistance: m.goalDistance,
-                  runCount: m.runCount,
-                )).toList()
-            : _weeklyData;
+    final muted = isDark ? AppColors.textMuted : AppColors.textMutedDark;
+    final series = _series;
+    final summary = PaceSeriesService.summarize(series);
+    final currentIsLatest = series.isNotEmpty && series.last.hasRuns;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Row(
+          children: [
+            Text(
+              'Tendência de Pace',
+              style: GoogleFonts.outfit(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: isDark ? AppColors.textLight : AppColors.textDark,
+              ),
+            ),
+            const Spacer(),
+            Flexible(
+              child: Text(
+                _periodCaption,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: GoogleFonts.outfit(fontSize: 10, color: muted),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
         Text(
-          'Tendência de Pace',
-          style: GoogleFonts.outfit(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: isDark ? AppColors.textLight : AppColors.textDark,
-          ),
+          'Pace médio por período · menor é melhor',
+          style: GoogleFonts.outfit(fontSize: 10, color: muted),
         ),
         const SizedBox(height: 12),
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
           decoration: BoxDecoration(
             color: isDark ? AppColors.cardBackground : AppColors.cardLight,
             borderRadius: BorderRadius.circular(16),
@@ -231,7 +273,85 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                   : AppColors.borderLight,
             ),
           ),
-          child: TrendLineChart(data: data),
+          child: summary.hasData
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    PaceSummaryStrip(
+                      summary: summary,
+                      currentIsLatest: currentIsLatest,
+                    ),
+                    const SizedBox(height: 12),
+                    Divider(
+                      height: 1,
+                      color: (isDark ? AppColors.textMuted : AppColors.textMutedDark)
+                          .withValues(alpha: 0.15),
+                    ),
+                    const SizedBox(height: 12),
+                    PaceTrendChart(points: series),
+                  ],
+                )
+              : PaceTrendChart(points: series),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVolumeSection(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final muted = isDark ? AppColors.textMuted : AppColors.textMutedDark;
+    final accent = isDark ? AppColors.primaryNeon : AppColors.lightPrimary;
+    final series = _series;
+
+    var totalKm = 0.0;
+    var totalRuns = 0;
+    for (final point in series) {
+      totalKm += point.distanceKm;
+      totalRuns += point.runCount;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Volume de treino',
+              style: GoogleFonts.outfit(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: isDark ? AppColors.textLight : AppColors.textDark,
+              ),
+            ),
+            const Spacer(),
+            Flexible(
+              child: VolumeHeader(
+                totalKm: totalKm,
+                totalRuns: totalRuns,
+                mutedColor: muted,
+                accentColor: accent,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          'Distância por período (km)',
+          style: GoogleFonts.outfit(fontSize: 10, color: muted),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.fromLTRB(10, 14, 14, 10),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.cardBackground : AppColors.cardLight,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isDark
+                  ? AppColors.cardBorder.withValues(alpha: 0.3)
+                  : AppColors.borderLight,
+            ),
+          ),
+          child: VolumeBarChart(points: series),
         ),
       ],
     );
@@ -275,6 +395,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     final p2 = _comparison['period2'] as Map<String, dynamic>;
 
     return ComparisonCard(
+      subtitle: 'Esta semana vs. semana anterior',
       period1Label: 'Esta Sem.',
       period2Label: 'Sem Ant.',
       distance1: (p1['distance'] as num).toDouble(),

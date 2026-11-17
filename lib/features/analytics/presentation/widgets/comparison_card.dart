@@ -4,6 +4,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 
 class ComparisonCard extends StatelessWidget {
+  final String? subtitle;
   final String period1Label;
   final String period2Label;
   final double distance1;
@@ -17,6 +18,7 @@ class ComparisonCard extends StatelessWidget {
 
   const ComparisonCard({
     super.key,
+    this.subtitle,
     required this.period1Label,
     required this.period2Label,
     required this.distance1,
@@ -65,6 +67,19 @@ class ComparisonCard extends StatelessWidget {
               ),
             ],
           ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 2),
+            Padding(
+              padding: const EdgeInsets.only(left: 26),
+              child: Text(
+                subtitle!,
+                style: GoogleFonts.outfit(
+                  fontSize: 10,
+                  color: mutedColor,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           // Header com labels dos períodos
           Row(
