@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:geolocator/geolocator.dart';
@@ -15,10 +18,9 @@ enum _DrawMode { retas, desenhar }
 ///
 /// Dois modos:
 /// * **Retas** — toque por toque (segmentos retos), o modo clássico;
-/// * **Desenhar** — arrasta o dedo acompanhando o caminho real; pontos são
-///   capturados continuamente, com mínimo de ~8 m entre eles para não
-///   inflar a rota. Enquanto desenha, a câmera fica travada — troque de
-///   modo para navegar pelo mapa.
+/// * **Desenhar** — um dedo traça o caminho real (pontos a cada ~8 m);
+///   dois dedos fazem pan e pinça da câmera sem sair do modo. Segure o
+///   botão de desfazer para rebobinar o traço ponto a ponto.
 ///
 /// Ao confirmar, chama [onConfirm] com os pontos na ordem do traçado.
 class RouteDrawingMap extends StatefulWidget {
@@ -67,9 +69,14 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
 
   _DrawMode _mode = _DrawMode.retas;
   final List<LatLng> _points = [];
-  // Índice onde cada traço (toque ou arrasto) começa — alimenta o "desfazer".
-  final List<int> _strokeStarts = [];
   bool _capturingPoint = false; // getLatLng em voo no modo desenhar
+
+  // Pan/pinça com dois dedos durante o desenho.
+  double _lastScale = 1.0;
+  Offset? _lastFocalPoint;
+
+  // Segurar o botão de desfazer rebobina o traço.
+  Timer? _undoTimer;
 
   static const LatLng _defaultTarget = LatLng(-23.5505, -46.6333);
 
@@ -77,10 +84,6 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
   void initState() {
     super.initState();
     _points.addAll(widget.initialPoints);
-    // Cada ponto herdado é um traço próprio: desfazer remove um por vez.
-    for (var i = 0; i < _points.length; i++) {
-      _strokeStarts.add(i);
-    }
     _loadMapStyle();
   }
 
@@ -104,6 +107,7 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
 
   @override
   void dispose() {
+    _undoTimer?.cancel();
     _themeService?.removeListener(_onThemeChanged);
     _mapController?.dispose();
     super.dispose();
@@ -186,22 +190,29 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
 
   void _addTapPoint(LatLng point) {
     if (!_interactive) return;
-    setState(() {
-      _strokeStarts.add(_points.length);
-      _points.add(point);
+    setState(() => _points.add(point));
+  }
+
+  /// Desfazer aos pouquinhos: um ponto por toque; segurando, rebobina.
+  void _undoLastPoint() {
+    if (_points.isEmpty || !_interactive) return;
+    setState(() => _points.removeLast());
+  }
+
+  void _startUndoHold() {
+    if (!_interactive) return;
+    _undoLastPoint();
+    _undoTimer?.cancel();
+    _undoTimer = Timer.periodic(const Duration(milliseconds: 70), (_) {
+      if (mounted && _points.isNotEmpty && _interactive) {
+        setState(() => _points.removeLast());
+      }
     });
   }
 
-  void _undoLastStroke() {
-    if (_points.isEmpty || !_interactive) return;
-    setState(() {
-      if (_strokeStarts.isNotEmpty) {
-        final start = _strokeStarts.removeLast();
-        if (start < _points.length) _points.removeRange(start, _points.length);
-      } else {
-        _points.removeLast();
-      }
-    });
+  void _stopUndoHold() {
+    _undoTimer?.cancel();
+    _undoTimer = null;
   }
 
   void _clearAll() {
@@ -241,10 +252,7 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
               ),
               onPressed: () {
                 Navigator.pop(dialogContext);
-                setState(() {
-                  _points.clear();
-                  _strokeStarts.clear();
-                });
+                setState(_points.clear);
               },
               child: Text(
                 'LIMPAR',
@@ -258,17 +266,48 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
     );
   }
 
-  // Modo "desenhar": captura o arrasto contínuo do dedo.
+  // Modo "desenhar": um dedo traça; dois dedos controlam a câmera.
 
-  void _onDrawStart(DragStartDetails details) {
+  void _onScaleStart(ScaleStartDetails details) {
     if (!_interactive) return;
-    _strokeStarts.add(_points.length);
-    _captureDrawnPoint(details.localPosition);
+    if (details.pointerCount >= 2) {
+      // Dois dedos: pan/pinça da câmera, sem desenhar.
+      _lastScale = 1.0;
+      _lastFocalPoint = details.focalPoint;
+      return;
+    }
+    _captureDrawnPoint(details.localFocalPoint);
   }
 
-  void _onDrawUpdate(DragUpdateDetails details) {
+  void _onScaleUpdate(ScaleUpdateDetails details) {
     if (!_interactive) return;
-    _captureDrawnPoint(details.localPosition);
+    final controller = _mapController;
+    if (controller == null) return;
+
+    if (details.pointerCount >= 2) {
+      // Pinça: zoom incremental pela variação da escala.
+      final incremental = details.scale / _lastScale;
+      _lastScale = details.scale;
+      final zoomDelta = math.log(incremental) / math.ln2;
+      if (zoomDelta.abs() > 0.001) {
+        controller.moveCamera(CameraUpdate.zoomBy(zoomDelta));
+      }
+
+      // Pan: o mapa segue na direção oposta ao movimento do ponto focal.
+      final delta =
+          details.focalPoint - (_lastFocalPoint ?? details.focalPoint);
+      _lastFocalPoint = details.focalPoint;
+      if (delta.distance > 0.5) {
+        final dpr = MediaQuery.of(context).devicePixelRatio;
+        controller.moveCamera(CameraUpdate.scrollBy(
+          -delta.dx * dpr,
+          -delta.dy * dpr,
+        ));
+      }
+      return;
+    }
+
+    _captureDrawnPoint(details.localFocalPoint);
   }
 
   /// Converte a posição lógica do dedo em LatLng. O getLatLng do
@@ -489,12 +528,23 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
     required IconData icon,
     required bool enabled,
     required VoidCallback onTap,
+    VoidCallback? onLongPressStart,
+    VoidCallback? onLongPressEnd,
   }) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return GestureDetector(
       onTap: enabled ? onTap : null,
+      // Os callbacks de long-press do GestureDetector chegam com detalhes
+      // (aridade 1); os nossos são VoidCallback — envolvemos aqui.
+      onLongPressStart: (enabled && onLongPressStart != null)
+          ? (_) => onLongPressStart()
+          : null,
+      onLongPressEnd: (enabled && onLongPressEnd != null)
+          ? (_) => onLongPressEnd()
+          : null,
+      onLongPressCancel: enabled ? onLongPressEnd : null,
       child: Container(
         padding: const EdgeInsets.all(13),
         decoration: BoxDecoration(
@@ -570,14 +620,14 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
               ),
             ),
 
-          // Modo desenhar: captura o arrasto por cima do mapa. A câmera fica
-          // travada durante o traço — troque para "Retas" para navegar.
+          // Modo desenhar: um dedo traça por cima do mapa; dois dedos
+          // viram pan/pinça (traduzidos para moveCamera aqui mesmo).
           if (_mode == _DrawMode.desenhar)
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onPanStart: _onDrawStart,
-                onPanUpdate: _onDrawUpdate,
+                onScaleStart: _onScaleStart,
+                onScaleUpdate: _onScaleUpdate,
               ),
             ),
 
@@ -624,7 +674,9 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
                 _buildCircleAction(
                   icon: LucideIcons.undo2,
                   enabled: _points.isNotEmpty && _interactive,
-                  onTap: _undoLastStroke,
+                  onTap: _undoLastPoint,
+                  onLongPressStart: _startUndoHold,
+                  onLongPressEnd: _stopUndoHold,
                 ),
                 const SizedBox(width: 12),
                 _buildCircleAction(
