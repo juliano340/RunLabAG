@@ -75,6 +75,10 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
   double _lastScale = 1.0;
   Offset? _lastFocalPoint;
 
+  // Um gesto que NASCEU de dois dedos é de câmera até o fim — sem isso, o
+  // dedo que sobra ao soltar a pinça desenharia pontos fantasma.
+  bool _isCameraGesture = false;
+
   // Segurar o botão de desfazer rebobina o traço.
   Timer? _undoTimer;
 
@@ -270,8 +274,9 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
 
   void _onScaleStart(ScaleStartDetails details) {
     if (!_interactive) return;
-    if (details.pointerCount >= 2) {
-      // Dois dedos: pan/pinça da câmera, sem desenhar.
+    // O tipo do gesto é decidido no nascedor e mantido até o fim.
+    _isCameraGesture = details.pointerCount >= 2;
+    if (_isCameraGesture) {
       _lastScale = 1.0;
       _lastFocalPoint = details.focalPoint;
       return;
@@ -284,7 +289,7 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
     final controller = _mapController;
     if (controller == null) return;
 
-    if (details.pointerCount >= 2) {
+    if (_isCameraGesture) {
       // Pinça: zoom incremental pela variação da escala.
       final incremental = details.scale / _lastScale;
       _lastScale = details.scale;
@@ -307,7 +312,13 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
       return;
     }
 
+    // Gesto de desenho: segundo dedo pousou? Pausa o traço até ele sair.
+    if (details.pointerCount >= 2) return;
     _captureDrawnPoint(details.localFocalPoint);
+  }
+
+  void _onScaleEnd(ScaleEndDetails details) {
+    _isCameraGesture = false;
   }
 
   /// Converte a posição lógica do dedo em LatLng. O getLatLng do
@@ -628,6 +639,7 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
                 behavior: HitTestBehavior.opaque,
                 onScaleStart: _onScaleStart,
                 onScaleUpdate: _onScaleUpdate,
+                onScaleEnd: _onScaleEnd,
               ),
             ),
 
