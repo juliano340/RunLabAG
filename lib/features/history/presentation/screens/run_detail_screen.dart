@@ -283,69 +283,87 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                     ),
                     child: Column(
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          child: Row(
-                            children: [
-                              Expanded(flex: 1, child: Text('KM', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12))),
-                              Expanded(flex: 2, child: Text('TEMPO', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12))),
-                              Expanded(flex: 2, child: Text('RITMO', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12))),
-                              Expanded(flex: 1, child: Text('KCAL', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12), textAlign: TextAlign.right)),
-                            ],
+                        if (_run.splits.isNotEmpty) ...[
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            child: Row(
+                              children: [
+                                Expanded(flex: 1, child: Text('KM', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12))),
+                                Expanded(flex: 2, child: Text('TEMPO', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12))),
+                                Expanded(flex: 2, child: Text('RITMO', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12))),
+                                Expanded(flex: 1, child: Text('KCAL', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12), textAlign: TextAlign.right)),
+                              ],
+                            ),
                           ),
-                        ),
-                        Divider(color: cs.outline.withValues(alpha: 0.2), height: 1),
-                        ...List.generate(_run.splits.length, (index) {
-                          final split = _run.splits[index];
-                          final splitTime = split.timeSeconds;
-                          final minutes = splitTime ~/ 60;
-                          final seconds = splitTime % 60;
-                          final paceStr = '$minutes:${seconds.toString().padLeft(2, '0')}';
+                          Divider(color: cs.outline.withValues(alpha: 0.2), height: 1),
+                          ...List.generate(_run.splits.length, (index) {
+                            final split = _run.splits[index];
+                            final splitTime = split.timeSeconds;
+                            final minutes = splitTime ~/ 60;
+                            final seconds = splitTime % 60;
+                            final paceStr = '$minutes:${seconds.toString().padLeft(2, '0')}';
 
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            decoration: BoxDecoration(
-                              border: Border(bottom: BorderSide(color: cs.outline.withValues(alpha: 0.15), width: 0.5)),
-                            ),
-                            child: Row(
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(
+                                border: Border(bottom: BorderSide(color: cs.outline.withValues(alpha: 0.15), width: 0.5)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(flex: 1, child: Text('${index + 1}', style: GoogleFonts.outfit(color: cs.onSurface, fontWeight: FontWeight.bold))),
+                                  Expanded(flex: 2, child: Text(_formatDuration(splitTime), style: GoogleFonts.outfit(color: cs.onSurface))),
+                                  Expanded(flex: 2, child: Text('$paceStr/km', style: GoogleFonts.outfit(color: cs.primary, fontWeight: FontWeight.w600))),
+                                  Expanded(flex: 1, child: Text('${split.calories}', style: GoogleFonts.outfit(color: Colors.orangeAccent, fontSize: 13), textAlign: TextAlign.right)),
+                                ],
+                              ),
+                            );
+                          }),
+
+                          if (_run.distanceKm > _run.splits.length + 0.01) (() {
+                            final remainingDist = _run.distanceKm - _run.splits.length;
+                            final consumedTime = _run.splits.fold(0, (sum, s) => sum + s.timeSeconds);
+                            final remainingTime = (_run.durationSeconds - consumedTime).clamp(0, _run.durationSeconds);
+                            final consumedCals = _run.splits.fold(0, (sum, s) => sum + s.calories);
+                            final remainingCals = (_run.calories - consumedCals).clamp(0, _run.calories);
+
+                            String partialPace = '--:--';
+                            if (remainingDist > 0 && remainingTime > 0) {
+                              double paceInMinutes = (remainingTime / 60) / remainingDist;
+                              int mins = paceInMinutes.toInt();
+                              int secs = ((paceInMinutes - mins) * 60).toInt();
+                              partialPace = '$mins:${secs.toString().padLeft(2, '0')}';
+                            }
+
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.03)),
+                              child: Row(
+                                children: [
+                                  Expanded(flex: 1, child: Text('RESTO', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 10, fontWeight: FontWeight.bold))),
+                                  Expanded(flex: 2, child: Text('${remainingDist.toStringAsFixed(2)} km', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 13))),
+                                  Expanded(flex: 2, child: Text('$partialPace/km', style: GoogleFonts.outfit(color: cs.primary.withValues(alpha: 0.8), fontSize: 13))),
+                                  Expanded(flex: 1, child: Text('$remainingCals', style: GoogleFonts.outfit(color: Colors.orangeAccent.withValues(alpha: 0.8), fontSize: 13), textAlign: TextAlign.right)),
+                                ],
+                              ),
+                            );
+                          })(),
+                        ] else
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 32),
+                            child: Column(
                               children: [
-                                Expanded(flex: 1, child: Text('${index + 1}', style: GoogleFonts.outfit(color: cs.onSurface, fontWeight: FontWeight.bold))),
-                                Expanded(flex: 2, child: Text(_formatDuration(splitTime), style: GoogleFonts.outfit(color: cs.onSurface))),
-                                Expanded(flex: 2, child: Text('$paceStr/km', style: GoogleFonts.outfit(color: cs.primary, fontWeight: FontWeight.w600))),
-                                Expanded(flex: 1, child: Text('${split.calories}', style: GoogleFonts.outfit(color: Colors.orangeAccent, fontSize: 13), textAlign: TextAlign.right)),
+                                Icon(LucideIcons.list, size: 22, color: cs.onSurfaceVariant),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Nenhuma volta registrada neste treino.',
+                                  style: GoogleFonts.outfit(
+                                    color: cs.onSurfaceVariant,
+                                    fontSize: 12,
+                                  ),
+                                ),
                               ],
                             ),
-                          );
-                        }),
-
-                        if (_run.distanceKm > _run.splits.length + 0.01) (() {
-                          final remainingDist = _run.distanceKm - _run.splits.length;
-                          final consumedTime = _run.splits.fold(0, (sum, s) => sum + s.timeSeconds);
-                          final remainingTime = (_run.durationSeconds - consumedTime).clamp(0, _run.durationSeconds);
-                          final consumedCals = _run.splits.fold(0, (sum, s) => sum + s.calories);
-                          final remainingCals = (_run.calories - consumedCals).clamp(0, _run.calories);
-
-                          String partialPace = '--:--';
-                          if (remainingDist > 0 && remainingTime > 0) {
-                            double paceInMinutes = (remainingTime / 60) / remainingDist;
-                            int mins = paceInMinutes.toInt();
-                            int secs = ((paceInMinutes - mins) * 60).toInt();
-                            partialPace = '$mins:${secs.toString().padLeft(2, '0')}';
-                          }
-
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            decoration: BoxDecoration(color: cs.onSurface.withValues(alpha: 0.03)),
-                            child: Row(
-                              children: [
-                                Expanded(flex: 1, child: Text('RESTO', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 10, fontWeight: FontWeight.bold))),
-                                Expanded(flex: 2, child: Text('${remainingDist.toStringAsFixed(2)} km', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 13))),
-                                Expanded(flex: 2, child: Text('$partialPace/km', style: GoogleFonts.outfit(color: cs.primary.withValues(alpha: 0.8), fontSize: 13))),
-                                Expanded(flex: 1, child: Text('$remainingCals', style: GoogleFonts.outfit(color: Colors.orangeAccent.withValues(alpha: 0.8), fontSize: 13), textAlign: TextAlign.right)),
-                              ],
-                            ),
-                          );
-                        })(),
+                          ),
                       ],
                     ),
                   ),
@@ -422,81 +440,99 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                     ),
                     child: Column(
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          child: Row(
-                            children: [
-                              Expanded(flex: 1, child: Text('#', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.bold))),
-                              Expanded(flex: 3, child: Text('DURAÇÃO DA PAUSA', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.bold))),
-                              Expanded(flex: 2, child: Text('AÇÃO', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
-                            ],
-                          ),
-                        ),
-                        Divider(color: cs.outline.withValues(alpha: 0.2), height: 1),
-                        ...List.generate(_run.autoPauses.length, (index) {
-                          final autoPause = _run.autoPauses[index];
-
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                            decoration: BoxDecoration(
-                              border: Border(bottom: BorderSide(color: cs.outline.withValues(alpha: 0.15), width: 0.5)),
-                            ),
+                        if (_run.autoPauses.isNotEmpty) ...[
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             child: Row(
                               children: [
-                                Expanded(
-                                  flex: 1,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.amber.withValues(alpha: 0.15),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Text(
-                                      '${index + 1}',
-                                      textAlign: TextAlign.center,
-                                      style: GoogleFonts.outfit(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 12),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  flex: 3,
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        autoPause.formattedDuration,
-                                        style: GoogleFonts.outfit(color: cs.onSurface, fontWeight: FontWeight.bold, fontSize: 15),
+                                Expanded(flex: 1, child: Text('#', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.bold))),
+                                Expanded(flex: 3, child: Text('DURAÇÃO DA PAUSA', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.bold))),
+                                Expanded(flex: 2, child: Text('AÇÃO', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12, fontWeight: FontWeight.bold), textAlign: TextAlign.right)),
+                              ],
+                            ),
+                          ),
+                          Divider(color: cs.outline.withValues(alpha: 0.2), height: 1),
+                          ...List.generate(_run.autoPauses.length, (index) {
+                            final autoPause = _run.autoPauses[index];
+
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              decoration: BoxDecoration(
+                                border: Border(bottom: BorderSide(color: cs.outline.withValues(alpha: 0.15), width: 0.5)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    flex: 1,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber.withValues(alpha: 0.15),
+                                        shape: BoxShape.circle,
                                       ),
-                                      if (autoPause.timestamp.isNotEmpty)
-                                        Text(
-                                          'Início: ${_formatDate(DateTime.tryParse(autoPause.timestamp) ?? DateTime.now())}',
-                                          style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 11),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 2,
-                                  child: TextButton.icon(
-                                    style: TextButton.styleFrom(padding: EdgeInsets.zero),
-                                    onPressed: () {
-                                      Navigator.pop(context);
-                                      _mapController?.animateCamera(
-                                        CameraUpdate.newLatLngZoom(autoPause.location, 17),
-                                      );
-                                    },
-                                    icon: const Icon(LucideIcons.mapPin, size: 14, color: Colors.amberAccent),
-                                    label: Text(
-                                      'IR AO MAPA',
-                                      style: GoogleFonts.outfit(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                                      child: Text(
+                                        '${index + 1}',
+                                        textAlign: TextAlign.center,
+                                        style: GoogleFonts.outfit(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                                      ),
                                     ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    flex: 3,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          autoPause.formattedDuration,
+                                          style: GoogleFonts.outfit(color: cs.onSurface, fontWeight: FontWeight.bold, fontSize: 15),
+                                        ),
+                                        if (autoPause.timestamp.isNotEmpty)
+                                          Text(
+                                            'Início: ${_formatDate(DateTime.tryParse(autoPause.timestamp) ?? DateTime.now())}',
+                                            style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 11),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 2,
+                                    child: TextButton.icon(
+                                      style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                                      onPressed: () {
+                                        Navigator.pop(context);
+                                        _mapController?.animateCamera(
+                                          CameraUpdate.newLatLngZoom(autoPause.location, 17),
+                                        );
+                                      },
+                                      icon: const Icon(LucideIcons.mapPin, size: 14, color: Colors.amberAccent),
+                                      label: Text(
+                                        'IR AO MAPA',
+                                        style: GoogleFonts.outfit(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                        ] else
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 32),
+                            child: Column(
+                              children: [
+                                Icon(LucideIcons.pauseCircle, size: 22, color: cs.onSurfaceVariant),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Nenhuma autopausa neste treino.',
+                                  style: GoogleFonts.outfit(
+                                    color: cs.onSurfaceVariant,
+                                    fontSize: 12,
                                   ),
                                 ),
                               ],
                             ),
-                          );
-                        }),
+                          ),
                       ],
                     ),
                   ),
@@ -523,11 +559,9 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
         elevation: 0,
         title: Row(
           children: [
-            Flexible(
-              child: Text(
-                'Treino de ${_formatDate(_run.date)}',
-                style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
-              ),
+            Text(
+              'Detalhes',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
             ),
             if (_showCounter) ...[
               const SizedBox(width: 8),
@@ -916,71 +950,71 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                           ),
                         ],
                         const SizedBox(height: 20),
-                        if (_run.splits.isNotEmpty || _run.autoPauses.isNotEmpty)
-                          Wrap(
-                            spacing: 10,
-                            runSpacing: 10,
-                            children: [
-                              if (_run.splits.isNotEmpty)
-                                OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 8,
-                                      horizontal: 14,
-                                    ),
-                                    side: BorderSide(
-                                      color: cs.primary.withValues(alpha: 0.5),
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(30),
-                                    ),
+                        // Voltas e autopausas sempre acessíveis, mesmo sem
+                        // dados — os modais mostram o estado vazio.
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 10),
+                                  side: BorderSide(
+                                    color: cs.primary.withValues(alpha: 0.5),
                                   ),
-                                  onPressed: _showSplitsModal,
-                                  icon: Icon(
-                                    LucideIcons.list,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                  ),
+                                ),
+                                onPressed: _showSplitsModal,
+                                icon: Icon(
+                                  LucideIcons.list,
+                                  color: cs.primary,
+                                  size: 16,
+                                ),
+                                label: Text(
+                                  'Voltas',
+                                  style: GoogleFonts.outfit(
                                     color: cs.primary,
-                                    size: 16,
-                                  ),
-                                  label: Text(
-                                    'Ver voltas',
-                                    style: GoogleFonts.outfit(
-                                      color: cs.primary,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
                                   ),
                                 ),
-                              if (_run.autoPauses.isNotEmpty)
-                                OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 8,
-                                      horizontal: 14,
-                                    ),
-                                    side: BorderSide(
-                                      color: Colors.amber.withValues(alpha: 0.6),
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(30),
-                                    ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 10),
+                                  side: BorderSide(
+                                    color: Colors.amber.withValues(alpha: 0.6),
                                   ),
-                                  onPressed: _showAutoPausesModal,
-                                  icon: const Icon(
-                                    LucideIcons.pauseCircle,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                  ),
+                                ),
+                                onPressed: _showAutoPausesModal,
+                                icon: const Icon(
+                                  LucideIcons.pauseCircle,
+                                  color: Colors.amberAccent,
+                                  size: 16,
+                                ),
+                                label: Text(
+                                  _run.autoPauses.isEmpty
+                                      ? 'Autopausas'
+                                      : 'Autopausas (${_run.autoPauses.length})',
+                                  style: GoogleFonts.outfit(
                                     color: Colors.amberAccent,
-                                    size: 16,
-                                  ),
-                                  label: Text(
-                                    'Autopausas (${_run.autoPauses.length})',
-                                    style: GoogleFonts.outfit(
-                                      color: Colors.amberAccent,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
                                   ),
                                 ),
-                            ],
-                          ),
+                              ),
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
