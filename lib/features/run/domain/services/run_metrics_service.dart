@@ -48,4 +48,42 @@ class RunMetricsService {
   }) {
     return totalCalories - lastSplitCalories;
   }
+
+  /// Converte "47" (min), "47:30" (min:seg) ou "1:47:30" (h:min:seg) em
+  /// segundos. Devolve null para entrada inválida ou zero.
+  static int? parseDurationInput(String input) {
+    final parts = input.trim().split(':');
+    if (parts.isEmpty || parts.length > 3) return null;
+
+    final numbers = <int>[];
+    for (final part in parts) {
+      if (part.isEmpty) return null;
+      final value = int.tryParse(part);
+      if (value == null || value < 0) return null;
+      numbers.add(value);
+    }
+
+    int seconds;
+    if (numbers.length == 1) {
+      seconds = numbers[0] * 60;
+    } else if (numbers.length == 2) {
+      if (numbers[1] >= 60) return null;
+      seconds = numbers[0] * 60 + numbers[1];
+    } else {
+      if (numbers[1] >= 60 || numbers[2] >= 60) return null;
+      seconds = numbers[0] * 3600 + numbers[1] * 60 + numbers[2];
+    }
+    return seconds > 0 ? seconds : null;
+  }
+
+  /// Segundos → "47:30" ou "1:47:30" (o inverso de [parseDurationInput]).
+  static String formatDuration(int seconds) {
+    final h = seconds ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    final s = seconds % 60;
+    if (h > 0) {
+      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
 }

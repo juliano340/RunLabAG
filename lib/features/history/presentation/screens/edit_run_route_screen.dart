@@ -1,24 +1,21 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:lucide_icons/lucide_icons.dart';
-import 'package:flutter/services.dart' show rootBundle;
-import 'package:provider/provider.dart';
+import 'package:flutter/services.dart'
+    show FilteringTextInputFormatter, LengthLimitingTextInputFormatter;
 import '../../../../core/services/backup_service.dart';
 import '../../../../core/services/database_service.dart';
-import '../../../../core/services/location_service.dart';
-import '../../../../core/services/theme_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../run/domain/services/run_metrics_service.dart';
+import '../widgets/route_drawing_map.dart';
 
 /// Tela para editar a rota de um treino já registrado.
 ///
-/// O usuário toca no mapa para marcar os pontos da rota que fez e a linha
-/// é traçada ao vivo. Ao salvar, um diálogo pergunta se a distância, o pace
-/// e as calorias do treino devem ser recalculados com base na rota desenhada.
-/// A rota original (se existir) fica visível como guia esmaecida.
+/// O desenho acontece no [RouteDrawingMap] (retas ou a dedo). Ao salvar, um
+/// diálogo pergunta se a distância, o pace e as calorias devem ser
+/// recalculados com base na rota desenhada — treino sem duração pede o
+/// tempo no diálogo. A rota original fica visível como guia esmaecida.
 class EditRunRouteScreen extends StatefulWidget {
   final RunModel run;
 
@@ -29,209 +26,29 @@ class EditRunRouteScreen extends StatefulWidget {
 }
 
 class _EditRunRouteScreenState extends State<EditRunRouteScreen> {
-  GoogleMapController? _mapController;
-  String? _mapStyle;
-  String? _minimalMapStyle;
-  String? _darkMinimalMapStyle;
-  ThemeService? _themeService;
-  bool _isMapReady = false;
   bool _isSaving = false;
-
-  /// Pontos marcados pelo usuário — a nova rota.
-  final List<LatLng> _points = [];
-
-  static const LatLng _defaultTarget = LatLng(-23.5505, -46.6333);
-
-  @override
-  void initState() {
-    super.initState();
-    _loadMapStyle();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final newThemeService = context.read<ThemeService>();
-    if (_themeService != newThemeService) {
-      _themeService?.removeListener(_onThemeChanged);
-      _themeService = newThemeService;
-      _themeService!.addListener(_onThemeChanged);
-    }
-  }
-
-  void _onThemeChanged() {
-    if (!mounted) return;
-    setState(() {
-      _mapStyle = _getMapStyleString();
-    });
-  }
-
-  @override
-  void dispose() {
-    _themeService?.removeListener(_onThemeChanged);
-    _mapController?.dispose();
-    super.dispose();
-  }
-
-  void _loadMapStyle() async {
-    try {
-      _minimalMapStyle = await rootBundle.loadString('assets/map_style_minimal.json');
-      _darkMinimalMapStyle = await rootBundle.loadString('assets/map_style_dark_minimal.json');
-
-      if (mounted) {
-        setState(() {
-          _mapStyle = _getMapStyleString();
-        });
-      }
-    } catch (e) {
-      debugPrint('Error loading map style: $e');
-    }
-  }
-
-  String? _getMapStyleString() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return isDark ? _darkMinimalMapStyle : _minimalMapStyle;
-  }
-
-  // ── Interação com a rota ──────────────────────────────────────────────
-
-  void _addPoint(LatLng point) {
-    setState(() => _points.add(point));
-  }
-
-  void _undoLastPoint() {
-    if (_points.isEmpty || _isSaving) return;
-    setState(() => _points.removeLast());
-  }
-
-  void _clearAll() {
-    if (_points.isEmpty || _isSaving) return;
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        final cs = Theme.of(dialogContext).colorScheme;
-        return AlertDialog(
-          backgroundColor: cs.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: cs.outline.withValues(alpha: 0.2)),
-          ),
-          title: Text(
-            'Limpar pontos?',
-            style: GoogleFonts.outfit(color: cs.onSurface, fontWeight: FontWeight.bold),
-          ),
-          content: Text(
-            'Todos os pontos marcados serão removidos e você poderá começar novamente.',
-            style: GoogleFonts.outfit(color: cs.onSurfaceVariant),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text(
-                'CANCELAR',
-                style: GoogleFonts.outfit(color: cs.onSurfaceVariant),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                setState(_points.clear);
-              },
-              child: Text(
-                'LIMPAR',
-                style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  double _calcDrawnDistanceKm() {
-    double meters = 0;
-    for (int i = 1; i < _points.length; i++) {
-      meters += Geolocator.distanceBetween(
-        _points[i - 1].latitude,
-        _points[i - 1].longitude,
-        _points[i].latitude,
-        _points[i].longitude,
-      );
-    }
-    return meters / 1000;
-  }
-
-  // ── Câmera inicial ────────────────────────────────────────────────────
-
-  void _frameInitialView() async {
-    final controller = _mapController;
-    if (controller == null) return;
-
-    // 1) Se o treino já tem rota, enquadra os limites dela.
-    final route = widget.run.route;
-    if (route.isNotEmpty && route.any((s) => s.isNotEmpty)) {
-      double? minLat, minLng, maxLat, maxLng;
-      for (var segment in route) {
-        for (var point in segment) {
-          if (minLat == null || point.latitude < minLat) minLat = point.latitude;
-          if (minLng == null || point.longitude < minLng) minLng = point.longitude;
-          if (maxLat == null || point.latitude > maxLat) maxLat = point.latitude;
-          if (maxLng == null || point.longitude > maxLng) maxLng = point.longitude;
-        }
-      }
-
-      if (minLat != null && minLng != null && maxLat != null && maxLng != null) {
-        // Rota "pontual" (bounds vazios) quebra o newLatLngBounds — usa zoom direto.
-        if ((maxLat - minLat).abs() < 0.00001 && (maxLng - minLng).abs() < 0.00001) {
-          controller.animateCamera(CameraUpdate.newLatLngZoom(LatLng(minLat, minLng), 16));
-        } else {
-          final bounds = LatLngBounds(
-            southwest: LatLng(minLat, minLng),
-            northeast: LatLng(maxLat, maxLng),
-          );
-          controller.animateCamera(CameraUpdate.newLatLngBounds(bounds, 60));
-        }
-      }
-      return;
-    }
-
-    // 2) Sem rota: tenta a posição atual (silencioso se não houver permissão).
-    try {
-      final pos = await LocationService().getCurrentLocation();
-      if (_mapController != null) {
-        _mapController!.animateCamera(
-          CameraUpdate.newLatLngZoom(LatLng(pos.latitude, pos.longitude), 15),
-        );
-      }
-    } catch (_) {
-      // Sem permissão/GPS — mantém o alvo padrão.
-    }
-  }
 
   // ── Salvamento ────────────────────────────────────────────────────────
 
-  Future<void> _save() async {
-    if (_points.length < 2 || _isSaving) return;
+  Future<void> _save(List<LatLng> points) async {
+    if (_isSaving || points.length < 2) return;
     setState(() => _isSaving = true);
 
-    final drawnKm = _calcDrawnDistanceKm();
-    var updated = widget.run.copyWith(route: [_points.toList()]);
+    final drawnKm = RouteDrawingMap.distanceKm(points);
+    var updated = widget.run.copyWith(route: [points]);
     var didUpdateMetrics = false;
 
     if (drawnKm > 0) {
-      final shouldUpdate = await _askUpdateMetrics(drawnKm);
-      if (shouldUpdate == true) {
+      final newDuration = await _askUpdateMetrics(drawnKm);
+      if (newDuration != null) {
         final profile = await DatabaseService().getUserProfile();
-        final newPace = RunMetricsService.calculatePace(widget.run.durationSeconds, drawnKm);
+        final newPace = RunMetricsService.calculatePace(newDuration, drawnKm);
         final newCalories = (profile != null && profile.weight > 0)
             ? RunMetricsService.calculateCalories(drawnKm, profile.weight)
             : updated.calories;
         updated = updated.copyWith(
           distanceKm: drawnKm,
+          durationSeconds: newDuration,
           pace: newPace,
           calories: newCalories,
         );
@@ -247,7 +64,9 @@ class _EditRunRouteScreenState extends State<EditRunRouteScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            didUpdateMetrics ? 'Rota e métricas atualizadas!' : 'Rota atualizada!',
+            didUpdateMetrics
+                ? 'Rota e métricas atualizadas!'
+                : 'Rota atualizada!',
             style: const TextStyle(color: Colors.white),
           ),
           backgroundColor: AppColors.primaryNeonDark,
@@ -259,311 +78,185 @@ class _EditRunRouteScreenState extends State<EditRunRouteScreen> {
       setState(() => _isSaving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Erro ao salvar a rota. Tente novamente.', style: TextStyle(color: Colors.white)),
+          content: Text('Erro ao salvar a rota. Tente novamente.',
+              style: TextStyle(color: Colors.white)),
           backgroundColor: Colors.redAccent,
         ),
       );
     }
   }
 
-  Future<bool?> _askUpdateMetrics(double drawnKm) {
-    final newPace = RunMetricsService.calculatePace(widget.run.durationSeconds, drawnKm);
-    return showDialog<bool>(
+  /// Pergunta se as métricas devem ser recalculadas com base na rota
+  /// desenhada. Devolve a duração a usar (null = manter como está).
+  /// Treino sem duração registrada pede o tempo no diálogo — sem isso o
+  /// pace viraria "0:00" e criaria recorde falso.
+  Future<int?> _askUpdateMetrics(double drawnKm) {
+    return showDialog<int>(
       context: context,
-      builder: (dialogContext) {
-        final cs = Theme.of(dialogContext).colorScheme;
-        return AlertDialog(
-          backgroundColor: cs.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: cs.primary.withValues(alpha: 0.4)),
-          ),
-          title: Text(
-            'Atualizar métricas?',
-            style: GoogleFonts.outfit(color: cs.onSurface, fontWeight: FontWeight.bold),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Rota desenhada: ${drawnKm.toStringAsFixed(2)} km',
-                style: GoogleFonts.outfit(color: cs.onSurface, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Distância registrada: ${widget.run.distanceKm.toStringAsFixed(2)} km',
-                style: GoogleFonts.outfit(color: cs.onSurfaceVariant),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Ao atualizar, a distância, o pace (${widget.run.pace}/km → $newPace/km) e as calorias serão recalculados com base na rota desenhada.',
-                style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(
-                'MANTER REGISTRADO',
-                style: GoogleFonts.outfit(color: cs.onSurfaceVariant),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: cs.primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(
-                'ATUALIZAR',
-                style: GoogleFonts.outfit(color: cs.onPrimary, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // ── Build ─────────────────────────────────────────────────────────────
-
-  Set<Marker> _buildMarkers() {
-    return {
-      if (_points.isNotEmpty)
-        Marker(
-          markerId: const MarkerId('draw_start'),
-          position: _points.first,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-          infoWindow: const InfoWindow(title: 'Início'),
-        ),
-      if (_points.length >= 2)
-        Marker(
-          markerId: const MarkerId('draw_end'),
-          position: _points.last,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: const InfoWindow(title: 'Fim'),
-        ),
-    };
-  }
-
-  Set<Polyline> _buildPolylines(ColorScheme cs) {
-    return {
-      // Rota original — guia esmaecida e tracejada.
-      ...widget.run.route.asMap().entries.map((entry) {
-        return Polyline(
-          polylineId: PolylineId('guide_${entry.key}'),
-          points: entry.value,
-          color: cs.onSurfaceVariant.withValues(alpha: 0.4),
-          width: 4,
-          patterns: [PatternItem.dash(15), PatternItem.gap(10)],
-        );
-      }),
-      // Rota desenhada pelo usuário.
-      if (_points.length >= 2)
-        Polyline(
-          polylineId: const PolylineId('drawn'),
-          points: _points,
-          color: AppColors.primaryNeon,
-          width: 5,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
-    };
-  }
-
-  Widget _buildStatusChip(ColorScheme cs, bool isDark, double drawnKm) {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-        decoration: BoxDecoration(
-          color: (isDark ? const Color(0xFF162222) : Colors.white).withValues(alpha: 0.95),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: cs.outline.withValues(alpha: 0.2)),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(LucideIcons.mapPin, size: 14, color: cs.primary),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                _points.isEmpty
-                    ? 'Toque no mapa para marcar sua rota'
-                    : '${_points.length} ponto${_points.length == 1 ? '' : 's'} · ${drawnKm.toStringAsFixed(2)} km',
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.outfit(
-                  color: cs.onSurface,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCircleAction({
-    required IconData icon,
-    required bool enabled,
-    required VoidCallback onTap,
-  }) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: Container(
-        padding: const EdgeInsets.all(13),
-        decoration: BoxDecoration(
-          color: (isDark ? const Color(0xFF162222) : Colors.white)
-              .withValues(alpha: enabled ? 0.95 : 0.6),
-          shape: BoxShape.circle,
-          border: Border.all(color: cs.outline.withValues(alpha: 0.2)),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8),
-          ],
-        ),
-        child: Icon(
-          icon,
-          size: 20,
-          color: enabled ? cs.onSurface : cs.onSurfaceVariant.withValues(alpha: 0.4),
-        ),
+      builder: (_) => _UpdateMetricsDialog(
+        drawnKm: drawnKm,
+        registeredKm: widget.run.distanceKm,
+        currentPace: widget.run.pace,
+        existingDurationSeconds: widget.run.durationSeconds,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final drawnKm = _calcDrawnDistanceKm();
-    final canSave = _points.length >= 2 && !_isSaving;
+    return RouteDrawingMap(
+      title: 'Editar Rota',
+      guideRoute: widget.run.route,
+      confirmLabel: 'SALVAR ROTA',
+      busy: _isSaving,
+      onConfirm: _save,
+    );
+  }
+}
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: Text(
-          'Editar Rota',
-          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
-        ),
-        leading: IconButton(
-          icon: Icon(LucideIcons.arrowLeft, color: cs.onSurface),
-          onPressed: () => Navigator.pop(context),
+/// Diálogo "Atualizar métricas?" da edição de rota.
+///
+/// Se o treino não tem duração registrada (durationSeconds = 0), exige o
+/// tempo antes de permitir recalcular — sem ele o pace sairia "0:00".
+class _UpdateMetricsDialog extends StatefulWidget {
+  const _UpdateMetricsDialog({
+    required this.drawnKm,
+    required this.registeredKm,
+    required this.currentPace,
+    required this.existingDurationSeconds,
+  });
+
+  final double drawnKm;
+  final double registeredKm;
+  final String currentPace;
+  final int existingDurationSeconds;
+
+  @override
+  State<_UpdateMetricsDialog> createState() => _UpdateMetricsDialogState();
+}
+
+class _UpdateMetricsDialogState extends State<_UpdateMetricsDialog> {
+  final _durationController = TextEditingController();
+
+  bool get _needsDuration => widget.existingDurationSeconds <= 0;
+
+  int? get _durationSeconds {
+    if (!_needsDuration) return widget.existingDurationSeconds;
+    return RunMetricsService.parseDurationInput(_durationController.text);
+  }
+
+  @override
+  void dispose() {
+    _durationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final duration = _durationSeconds;
+    final newPace = duration == null
+        ? null
+        : RunMetricsService.calculatePace(duration, widget.drawnKm);
+
+    return AlertDialog(
+      backgroundColor: cs.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: cs.primary.withValues(alpha: 0.4)),
+      ),
+      title: Text(
+        'Atualizar métricas?',
+        style: GoogleFonts.outfit(
+          color: cs.onSurface,
+          fontWeight: FontWeight.bold,
         ),
       ),
-      body: Stack(
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GoogleMap(
-            style: _mapStyle,
-            initialCameraPosition: const CameraPosition(
-              target: _defaultTarget,
-              zoom: 15,
+          Text(
+            'Rota desenhada: ${widget.drawnKm.toStringAsFixed(2)} km',
+            style: GoogleFonts.outfit(
+              color: cs.onSurface,
+              fontWeight: FontWeight.w600,
             ),
-            markers: _buildMarkers(),
-            polylines: _buildPolylines(cs),
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: false,
-            onTap: _isSaving ? null : _addPoint,
-            onMapCreated: (controller) {
-              _mapController = controller;
-              _frameInitialView();
-              Future.delayed(const Duration(milliseconds: 150), () {
-                if (mounted) {
-                  setState(() => _isMapReady = true);
-                }
-              });
-            },
           ),
-
-          // Anti-flash cover (dark mode)
-          if (!_isMapReady && isDark)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Container(color: const Color(0xFF1d2c2c)),
+          const SizedBox(height: 4),
+          Text(
+            'Distância registrada: ${widget.registeredKm.toStringAsFixed(2)} km',
+            style: GoogleFonts.outfit(color: cs.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          if (_needsDuration) ...[
+            Text(
+              'Este treino não tem duração registrada. Informe quanto tempo '
+              'você levou para o pace e as calorias fazerem sentido.',
+              style: GoogleFonts.outfit(
+                color: cs.onSurfaceVariant,
+                fontSize: 12,
               ),
             ),
-
-          // Chip de status
-          Positioned(
-            top: 12,
-            left: 16,
-            right: 16,
-            child: _buildStatusChip(cs, isDark, drawnKm),
-          ),
-
-          // Barra de ações
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: MediaQuery.of(context).padding.bottom + 16,
-            child: Row(
-              children: [
-                _buildCircleAction(
-                  icon: LucideIcons.undo2,
-                  enabled: _points.isNotEmpty && !_isSaving,
-                  onTap: _undoLastPoint,
-                ),
-                const SizedBox(width: 12),
-                _buildCircleAction(
-                  icon: LucideIcons.eraser,
-                  enabled: _points.isNotEmpty && !_isSaving,
-                  onTap: _clearAll,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: canSave ? _save : null,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                      decoration: BoxDecoration(
-                        color: canSave
-                            ? cs.primary
-                            : cs.primary.withValues(alpha: 0.35),
-                        borderRadius: BorderRadius.circular(30),
-                        boxShadow: canSave
-                            ? [
-                                BoxShadow(
-                                  color: cs.primary.withValues(alpha: 0.4),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ]
-                            : null,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(LucideIcons.check, size: 16, color: cs.onPrimary),
-                          const SizedBox(width: 8),
-                          Text(
-                            'SALVAR ROTA',
-                            style: GoogleFonts.outfit(
-                              color: cs.onPrimary,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _durationController,
+              autofocus: true,
+              keyboardType: TextInputType.text,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9:]')),
+                LengthLimitingTextInputFormatter(8),
               ],
+              decoration: InputDecoration(
+                labelText: 'Duração',
+                hintText: 'ex.: 47:30',
+                errorText:
+                    _durationController.text.isNotEmpty && duration == null
+                        ? 'Use mm:ss ou h:mm:ss'
+                        : null,
+                border: const OutlineInputBorder(),
+              ),
+              onChanged: (_) => setState(() {}),
             ),
-          ),
+          ] else
+            Text(
+              'Ao atualizar, a distância, o pace (${widget.currentPace}/km → '
+              '$newPace/km) e as calorias serão recalculados com base na '
+              'rota desenhada.',
+              style: GoogleFonts.outfit(
+                color: cs.onSurfaceVariant,
+                fontSize: 12,
+              ),
+            ),
         ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, null),
+          child: Text(
+            'MANTER REGISTRADO',
+            style: GoogleFonts.outfit(color: cs.onSurfaceVariant),
+          ),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: cs.primary,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          onPressed: duration == null
+              ? null
+              : () => Navigator.pop(context, duration),
+          child: Text(
+            'ATUALIZAR',
+            style: GoogleFonts.outfit(
+              color: cs.onPrimary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

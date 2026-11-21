@@ -7,9 +7,12 @@ import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/utils/time_utils.dart';
 import '../../../../core/services/recommendation_service.dart';
+import 'add_run_screen.dart';
 import 'run_detail_screen.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/providers/runs_provider.dart';
+import '../../domain/services/pace_zone_service.dart';
+import '../widgets/pace_distribution_card.dart';
 
 class HistoryTab extends StatefulWidget {
   const HistoryTab({super.key});
@@ -29,6 +32,9 @@ class _HistoryTabState extends State<HistoryTab> {
   UserProfile? _userProfile;
   double _currentPeriodGoal =
       20.0; // The historically-locked goal for the displayed period
+
+  // Agregado das faixas de ritmo dos treinos do período (rosquinha do dashboard).
+  Map<PaceZone, double> _paceZoneTotals = {};
 
   // Pagination State
   DateTime _referenceDate = DateTime.now();
@@ -62,7 +68,7 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   Future<void> _loadData() async {
-    final runs = await _dbService.getRuns();
+    final runs = await _dbService.getRunSummaries();
     final profile = await _dbService.getUserProfile();
 
     if (mounted) {
@@ -82,6 +88,14 @@ class _HistoryTabState extends State<HistoryTab> {
       await _filterData();
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// Converte o nome persistido da faixa (`run_pace_zones.zone`) no enum.
+  PaceZone? _zoneForName(String name) {
+    for (final zone in PaceZone.values) {
+      if (zone.name == name) return zone;
+    }
+    return null;
   }
 
   String _getPeriodId() {
@@ -105,6 +119,8 @@ class _HistoryTabState extends State<HistoryTab> {
   Future<void> _filterData() async {
     final periodId = _getPeriodId();
     final goalType = _selectedPeriodIndex == 0 ? 'weekly' : 'monthly';
+    DateTime? rangeStart;
+    DateTime? rangeEnd;
     final defaultGoal = _selectedPeriodIndex == 0
         ? (_userProfile?.weeklyGoal ?? 20.0)
         : (_userProfile?.monthlyGoal ?? 80.0);
@@ -132,6 +148,8 @@ class _HistoryTabState extends State<HistoryTab> {
         startOfWeek.day,
       );
       final end = start.add(const Duration(days: 7));
+      rangeStart = start;
+      rangeEnd = end;
 
       _filteredRuns = _allRuns
           .where(
@@ -174,6 +192,8 @@ class _HistoryTabState extends State<HistoryTab> {
         _referenceDate.month + 1,
         1,
       );
+      rangeStart = startOfMonth;
+      rangeEnd = nextMonth;
 
       _filteredRuns = _allRuns
           .where(
@@ -185,6 +205,17 @@ class _HistoryTabState extends State<HistoryTab> {
           )
           .toList();
     }
+
+    // Faixas de ritmo do período: números já calculados no salvamento do
+    // treino (tabela run_pace_zones). Nenhuma rota é decodificada aqui.
+    final totals = await _dbService.getPaceZoneTotals(rangeStart, rangeEnd);
+    final zoneTotals = <PaceZone, double>{};
+    for (final entry in totals.entries) {
+      final zone = _zoneForName(entry.key);
+      if (zone == null || entry.value <= 0) continue;
+      zoneTotals[zone] = (zoneTotals[zone] ?? 0) + entry.value;
+    }
+    _paceZoneTotals = zoneTotals;
 
     if (mounted) {
       setState(() => _currentPeriodGoal = historicalGoal!);
@@ -504,6 +535,14 @@ class _HistoryTabState extends State<HistoryTab> {
     );
   }
 
+  Future<void> _openAddRun() async {
+    // Ao salvar, o RunsProvider notifica e o histórico recarrega sozinho.
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AddRunScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -523,13 +562,27 @@ class _HistoryTabState extends State<HistoryTab> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                IconButton(
-                  onPressed: _showGoalSettings,
-                  icon: Icon(
-                    LucideIcons.settings,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    size: 20,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      onPressed: _openAddRun,
+                      tooltip: 'Adicionar treino',
+                      icon: Icon(
+                        LucideIcons.plus,
+                        color: Theme.of(context).colorScheme.primary,
+                        size: 24,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _showGoalSettings,
+                      icon: Icon(
+                        LucideIcons.settings,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        size: 20,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -553,6 +606,19 @@ class _HistoryTabState extends State<HistoryTab> {
                       children: [
                         _buildAnalyticsSummary(),
                         const SizedBox(height: 24),
+                        if (_paceZoneTotals.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: PaceDistributionCard(
+                              distanceByZoneKm: _paceZoneTotals,
+                              totalKm: _filteredRuns.fold<double>(
+                                0,
+                                (sum, run) => sum + run.distanceKm,
+                              ),
+                            ),
+                          ),
+                        if (_paceZoneTotals.isNotEmpty)
+                          const SizedBox(height: 24),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 24),
                           child: Row(
@@ -1143,6 +1209,9 @@ class _HistoryTabState extends State<HistoryTab> {
     final cs = Theme.of(context).colorScheme;
     return GlassContainer(
       padding: const EdgeInsets.all(16),
+      // Blur por item de lista é caro no Android (um saveLayer por card a
+      // cada frame de scroll). O visual se mantém com cor + borda.
+      enableBlur: false,
       onTap: () {
         Navigator.push(
           context,

@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import 'database_helper.dart';
+import '../../features/history/domain/services/pace_zone_service.dart';
 import '../../features/run/data/repositories/active_run_repository.dart';
 import '../../features/history/data/repositories/run_repository.dart';
 import '../../features/profile/data/repositories/user_repository.dart';
@@ -16,6 +17,28 @@ export '../../features/history/domain/models/run_split.dart';
 export '../../features/history/domain/models/auto_pause_event.dart';
 export '../../features/profile/domain/models/user_profile.dart';
 
+/// Totais agregados da carreira do usuário (calculados em SQL).
+class UserTotals {
+  final int runCount;
+  final double totalDistanceKm;
+  final int totalSeconds;
+  final int totalCalories;
+
+  const UserTotals({
+    required this.runCount,
+    required this.totalDistanceKm,
+    required this.totalSeconds,
+    required this.totalCalories,
+  });
+
+  static const empty = UserTotals(
+    runCount: 0,
+    totalDistanceKm: 0,
+    totalSeconds: 0,
+    totalCalories: 0,
+  );
+}
+
 class DatabaseService {
   Future<Database> get database => DatabaseHelper.database;
 
@@ -24,16 +47,63 @@ class DatabaseService {
   final _userRepo = UserRepository();
 
   // Active Run Persistence (for recovery)
-  Future<void> saveActiveRun(Map<String, dynamic> data) => _activeRunRepo.saveActiveRun(data);
+  Future<void> saveActiveRun(Map<String, dynamic> data) => _activeRunRepo.saveActiveRunMeta(data);
+  Future<void> saveActiveRunMeta(Map<String, dynamic> data) => _activeRunRepo.saveActiveRunMeta(data);
+  Future<void> saveActiveRunRoute(String routeJson) => _activeRunRepo.saveActiveRunRoute(routeJson);
   Future<Map<String, dynamic>?> getActiveRun() => _activeRunRepo.getActiveRun();
+  Future<Map<String, dynamic>?> getActiveRunMeta() => _activeRunRepo.getActiveRunMeta();
   Future<void> clearActiveRun() => _activeRunRepo.clearActiveRun();
 
   // --- Run CRUD ---
   Future<void> saveRun(RunModel run) => _runRepo.saveRun(run);
-  Future<List<RunModel>> getRuns() => _runRepo.getRuns();
-  Future<List<RunModel>> getRunsBetween(DateTime start, DateTime end) => _runRepo.getRunsBetween(start, end);
-  Future<RunModel?> getLastRun() => _runRepo.getLastRun();
+  /// Treinos **sem rota** — use em listas, totais, gráficos e recordes.
+  Future<List<RunModel>> getRunSummaries() => _runRepo.getSummaries();
+  Future<List<RunModel>> getRunSummariesBetween(DateTime start, DateTime end) =>
+      _runRepo.getSummariesBetween(start, end);
+  Future<RunModel?> getRunById(String id) => _runRepo.getById(id);
+  Future<RunModel?> getLastRun() => _runRepo.getLastRunSummary();
   Future<void> deleteRun(String id) => _runRepo.deleteRun(id);
+
+  // --- Pace zones (pré-calculadas por treino) ---
+  Future<void> savePaceZones(String runId, Map<String, double> distanceByZone) =>
+      _runRepo.savePaceZones(runId, distanceByZone);
+  Future<Map<String, double>> getPaceZoneTotals(DateTime start, DateTime end) =>
+      _runRepo.getPaceZoneTotals(start, end);
+
+  /// Calcula as faixas de ritmo que faltam, um treino por vez.
+  ///
+  /// Roda em segundo plano depois do primeiro frame. Cada iteração carrega a
+  /// rota de um único treino, então o custo é limitado mesmo com histórico
+  /// grande. Retorna quantos treinos foram processados.
+  Future<int> backfillPaceZones({int batchSize = 12}) async {
+    var processed = 0;
+    final pending = await _runRepo.getRunsMissingPaceZones(limit: batchSize);
+    for (final row in pending) {
+      final run = RunModel.fromMap({
+        'id': row['id'],
+        'date': DateTime.now().toIso8601String(),
+        'distanceKm': row['distanceKm'],
+        'durationSeconds': row['durationSeconds'],
+        'pace': '0:00',
+        'calories': 0,
+        'route': row['route'],
+        'splits': row['splits'],
+      });
+      final result = PaceZoneService.analyze(
+        route: run.route,
+        routeTimes: run.routeTimes,
+        distanceKm: run.distanceKm,
+        durationSeconds: run.durationSeconds,
+        splits: run.splits,
+      );
+      await _runRepo.savePaceZones(
+        row['id'] as String,
+        {for (final e in result.distanceByZoneKm.entries) e.key.name: e.value},
+      );
+      processed++;
+    }
+    return processed;
+  }
 
   // --- User Profile ---
   Future<void> saveUserProfile(UserProfile profile) => _userRepo.saveUserProfile(profile);
@@ -48,9 +118,11 @@ class DatabaseService {
     await db.transaction((txn) async {
       for (final table in [
         'runs',
+        'run_pace_zones',
         'user_profile',
         'achievements',
         'active_run',
+        'active_run_route',
         'water_intake',
         'goal_history',
         'training_plans',
@@ -124,40 +196,49 @@ class DatabaseService {
   }
 
   // --- Evolution Analysis ---
+  /// Evolução semanal em **uma única consulta** ao banco (sem a coluna route).
   Future<List<WeeklyEvolutionStats>> getWeeklyEvolution(int numberOfWeeks) async {
-    List<WeeklyEvolutionStats> evolution = [];
+    if (numberOfWeeks <= 0) return [];
+
     final now = DateTime.now();
-    final startOfCurrentWeek = now.subtract(Duration(days: now.weekday % 7));
-    
+    final currentWeekStart = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday % 7));
+    final oldestStart =
+        currentWeekStart.subtract(Duration(days: 7 * (numberOfWeeks - 1)));
+
+    final runs = await getRunSummariesBetween(oldestStart, now);
+    final profile = await getUserProfile();
+
+    final evolution = <WeeklyEvolutionStats>[];
     for (int i = 0; i < numberOfWeeks; i++) {
-      final start = DateTime(startOfCurrentWeek.year, startOfCurrentWeek.month, startOfCurrentWeek.day)
-          .subtract(Duration(days: 7 * i));
-      final end = start.add(const Duration(days: 6, hours: 23, minutes: 59, seconds: 59));
-      
-      final runs = await getRunsBetween(start, end);
+      final start = currentWeekStart.subtract(Duration(days: 7 * i));
+      final end = start.add(const Duration(days: 7));
       final periodId = _getWeekPeriodId(start);
-      
+
       double totalDist = 0;
       int totalSeconds = 0;
-      for (var r in runs) {
-        totalDist += r.distanceKm;
-        totalSeconds += r.durationSeconds;
+      int runCount = 0;
+      for (final r in runs) {
+        if (!r.date.isBefore(start) && r.date.isBefore(end)) {
+          totalDist += r.distanceKm;
+          totalSeconds += r.durationSeconds;
+          runCount++;
+        }
       }
-      
+
       double? goal = await getGoalHistory(periodId, 'weekly');
       if (goal == null && i == 0) {
-        final profile = await getUserProfile();
         goal = profile?.weeklyGoal ?? 20.0;
       }
-      
+
       evolution.add(WeeklyEvolutionStats(
         periodId: periodId,
         startDate: start,
-        endDate: end,
+        endDate: end.subtract(const Duration(seconds: 1)),
         totalDistance: totalDist,
         totalDurationSeconds: totalSeconds,
         goalDistance: goal ?? 20.0,
-        runCount: runs.length,
+        runCount: runCount,
       ));
     }
     return evolution;
@@ -170,18 +251,30 @@ class DatabaseService {
     return '${startOfWeek.year}-W${weekNum.toString().padLeft(2, '0')}';
   }
 
-  Future<Map<String, dynamic>> getUserStats() async {
-    final runs = await getRuns();
-    double totalDistance = 0;
-    int totalRuns = runs.length;
-    int totalSeconds = 0;
-    int totalCalories = 0;
+  /// Totais agregados direto no SQLite — nenhum treino é carregado.
+  Future<UserTotals> getTotals() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      'SELECT COUNT(*) AS c, COALESCE(SUM(distanceKm), 0) AS d, '
+      'COALESCE(SUM(durationSeconds), 0) AS s, '
+      'COALESCE(SUM(calories), 0) AS k FROM runs',
+    );
+    if (rows.isEmpty) return UserTotals.empty;
+    final row = rows.first;
+    return UserTotals(
+      runCount: (row['c'] as num?)?.toInt() ?? 0,
+      totalDistanceKm: (row['d'] as num?)?.toDouble() ?? 0,
+      totalSeconds: (row['s'] as num?)?.toInt() ?? 0,
+      totalCalories: (row['k'] as num?)?.toInt() ?? 0,
+    );
+  }
 
-    for (final run in runs) {
-      totalDistance += run.distanceKm;
-      totalSeconds += run.durationSeconds.toInt();
-      totalCalories += run.calories.toInt();
-    }
+  Future<Map<String, dynamic>> getUserStats() async {
+    final totals = await getTotals();
+    final totalDistance = totals.totalDistanceKm;
+    final totalRuns = totals.runCount;
+    final totalSeconds = totals.totalSeconds;
+    final totalCalories = totals.totalCalories;
 
     String avgPace = '0:00';
     if (totalDistance > 0) {
@@ -219,7 +312,7 @@ class DatabaseService {
   }
 
   Future<Map<String, dynamic>> getPersonalRecords() async {
-    final runs = await getRuns();
+    final runs = await getRunSummaries();
     final monitored = await getMonitoredDistances();
     
     Map<String, Map<String, dynamic>> records = {};
@@ -235,6 +328,9 @@ class DatabaseService {
     for (final run in runs) {
       // Logic for all-time bests for specific distances
       for (double targetDist in monitored) {
+        // Treino sem duração não disputa recorde de tempo: com
+        // durationSeconds = 0, "10km em 00:00" venceria tudo injustamente.
+        if (run.durationSeconds <= 0) continue;
         // Tolerância de 1% (ex: 4.95km conta como 5k para RP)
         final double toleranceFactor = 0.99;
         
@@ -310,7 +406,7 @@ class DatabaseService {
   }
 
   Future<List<Map<String, dynamic>>> getRecordHistory(String category) async {
-    final runs = await getRuns();
+    final runs = await getRunSummaries();
     // Sort by date ascending to track evolution
     final sortedRuns = runs.reversed.toList();
     
@@ -383,7 +479,7 @@ class DatabaseService {
   }
 
   Future<List<Map<String, dynamic>>> getLongestDistanceHistory() async {
-    final runs = await getRuns();
+    final runs = await getRunSummaries();
     // Sort by date ascending to track evolution
     final sortedRuns = runs.reversed.toList();
     
@@ -658,43 +754,49 @@ class DatabaseService {
   // --- Analytics Methods ---
 
   Future<List<MonthlyEvolutionStats>> getMonthlyEvolution(int numberOfMonths) async {
-    List<MonthlyEvolutionStats> evolution = [];
-    final now = DateTime.now();
+    if (numberOfMonths <= 0) return [];
 
+    final now = DateTime.now();
+    final oldestStart = DateTime(now.year, now.month - (numberOfMonths - 1), 1);
+
+    final runs = await getRunSummariesBetween(oldestStart, now);
+    final profile = await getUserProfile();
+
+    final evolution = <MonthlyEvolutionStats>[];
     for (int i = 0; i < numberOfMonths; i++) {
       final start = DateTime(now.year, now.month - i, 1);
       final end = (i == 0)
-          ? now
-          : DateTime(now.year, now.month - i + 1, 0, 23, 59, 59);
-
-      final runs = await getRunsBetween(start, end);
+          ? now.add(const Duration(seconds: 1))
+          : DateTime(now.year, now.month - i + 1, 1);
       final periodId = '${start.year}-${start.month.toString().padLeft(2, '0')}';
 
       double totalDist = 0;
       int totalSeconds = 0;
-      Map<String, int> runsByType = {};
+      int runCount = 0;
+      final Map<String, int> runsByType = {};
 
-      for (var r in runs) {
+      for (final r in runs) {
+        if (r.date.isBefore(start) || !r.date.isBefore(end)) continue;
         totalDist += r.distanceKm;
         totalSeconds += r.durationSeconds;
+        runCount++;
         final type = r.type.isNotEmpty ? r.type : 'Corrida';
         runsByType[type] = (runsByType[type] ?? 0) + 1;
       }
 
       double? goal = await getGoalHistory(periodId, 'monthly');
       if (goal == null && i == 0) {
-        final profile = await getUserProfile();
         goal = profile?.monthlyGoal ?? 80.0;
       }
 
       evolution.add(MonthlyEvolutionStats(
         periodId: periodId,
         startDate: start,
-        endDate: end,
+        endDate: end.subtract(const Duration(seconds: 1)),
         totalDistance: totalDist,
         totalDurationSeconds: totalSeconds,
         goalDistance: goal ?? 80.0,
-        runCount: runs.length,
+        runCount: runCount,
         runsByType: runsByType,
       ));
     }
@@ -702,7 +804,7 @@ class DatabaseService {
   }
 
   Future<Map<String, int>> getRunsByTypeBetween(DateTime start, DateTime end) async {
-    final runs = await getRunsBetween(start, end);
+    final runs = await getRunSummariesBetween(start, end);
     Map<String, int> result = {};
     for (var r in runs) {
       final type = r.type.isNotEmpty ? r.type : 'Corrida';
@@ -712,7 +814,7 @@ class DatabaseService {
   }
 
   Future<Map<String, dynamic>> getConsistencyStats(DateTime since) async {
-    final runs = await getRunsBetween(since, DateTime.now());
+    final runs = await getRunSummariesBetween(since, DateTime.now());
 
     final Set<String> trainedDays = {};
     for (var r in runs) {
@@ -824,8 +926,8 @@ class DatabaseService {
     DateTime start1, DateTime end1,
     DateTime start2, DateTime end2,
   ) async {
-    final runs1 = await getRunsBetween(start1, end1);
-    final runs2 = await getRunsBetween(start2, end2);
+    final runs1 = await getRunSummariesBetween(start1, end1);
+    final runs2 = await getRunSummariesBetween(start2, end2);
 
     double dist1 = 0, dist2 = 0;
     int sec1 = 0, sec2 = 0;
