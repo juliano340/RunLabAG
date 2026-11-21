@@ -3,8 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import '../../../../../../core/theme/app_colors.dart';
-
+/// Mapa do treino em andamento. As polylines vêm prontas do
+/// [ActiveRunScreen] — coloridas por ritmo (degradê) e suavizadas para
+/// desenho — no mesmo padrão dos [markers].
 class ActiveRunMapView extends StatelessWidget {
   final bool isDark;
   final bool hasPermissions;
@@ -13,7 +14,7 @@ class ActiveRunMapView extends StatelessWidget {
   final String? mapStyle;
   final double safeTopInset;
   final double? distanceGoal;
-  final List<List<LatLng>> routePoints;
+  final Set<Polyline> polylines;
   final Set<Circle> circles;
   final Set<Marker> markers;
   final FutureOr<void> Function(GoogleMapController) onMapCreated;
@@ -27,7 +28,7 @@ class ActiveRunMapView extends StatelessWidget {
     required this.mapStyle,
     required this.safeTopInset,
     required this.distanceGoal,
-    required this.routePoints,
+    required this.polylines,
     this.circles = const {},
     this.markers = const {},
     required this.onMapCreated,
@@ -52,18 +53,7 @@ class ActiveRunMapView extends StatelessWidget {
             ),
             onMapCreated: onMapCreated,
             markers: markers,
-            polylines: routePoints.asMap().entries.map((entry) {
-              final int idx = entry.key;
-              final List<LatLng> segment = entry.value;
-              return Polyline(
-                polylineId: PolylineId('route_$idx'),
-                points: segment,
-                color: AppColors.primaryNeon,
-                width: 5,
-                startCap: Cap.roundCap,
-                endCap: Cap.roundCap,
-              );
-            }).toSet(),
+            polylines: polylines,
           ),
           if (!isMapReady && isDark)
             Positioned.fill(

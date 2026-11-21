@@ -736,7 +736,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                     return Polyline(
                       polylineId: PolylineId('pace_${entry.key}'),
                       points: entry.value.points,
-                      color: entry.value.zone.color,
+                      color: entry.value.color,
                       width: 5,
                       startCap: Cap.roundCap,
                       endCap: Cap.roundCap,

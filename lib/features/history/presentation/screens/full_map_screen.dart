@@ -10,6 +10,8 @@ import '../../../../core/services/theme_service.dart';
 import '../../../../core/utils/time_utils.dart';
 import '../../../../core/utils/map_marker_helper.dart';
 import '../../domain/models/run_model.dart';
+import '../../domain/services/pace_zone_service.dart';
+import '../widgets/pace_zone_legend.dart';
 
 class FullMapScreen extends StatefulWidget {
   final RunModel run;
@@ -31,10 +33,18 @@ class _FullMapScreenState extends State<FullMapScreen> {
   bool _showCustomStyle = true;
   BitmapDescriptor? _pauseMarkerIcon;
   BitmapDescriptor? _resumeMarkerIcon;
+  late PaceZoneResult _paceResult;
 
   @override
   void initState() {
     super.initState();
+    _paceResult = PaceZoneService.analyze(
+      route: widget.run.route,
+      routeTimes: widget.run.routeTimes,
+      distanceKm: widget.run.distanceKm,
+      durationSeconds: widget.run.durationSeconds,
+      splits: widget.run.splits,
+    );
     _loadMapStyle();
     _loadMarkerIcons();
   }
@@ -214,11 +224,11 @@ class _FullMapScreenState extends State<FullMapScreen> {
                 ];
               }),
             },
-            polylines: widget.run.route.asMap().entries.map((entry) {
+            polylines: _paceResult.segments.asMap().entries.map((entry) {
               return Polyline(
-                polylineId: PolylineId('full_route_${entry.key}'),
-                points: entry.value,
-                color: _currentMapType == MapType.satellite ? Colors.amberAccent : AppColors.primaryNeon,
+                polylineId: PolylineId('full_pace_${entry.key}'),
+                points: entry.value.points,
+                color: entry.value.color,
                 width: 6,
                 startCap: Cap.roundCap,
                 endCap: Cap.roundCap,
@@ -377,6 +387,21 @@ class _FullMapScreenState extends State<FullMapScreen> {
               ),
             ),
           ),
+
+          // Legenda das faixas de ritmo com percentuais
+          if (_paceResult.segments.isNotEmpty)
+            Positioned(
+              left: 16,
+              bottom: MediaQuery.of(context).padding.bottom + 92,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width - 130,
+                ),
+                child: PaceZoneLegend(
+                  distanceByZoneKm: _paceResult.distanceByZoneKm,
+                ),
+              ),
+            ),
 
           // Floating Controls (Right Side)
           Positioned(

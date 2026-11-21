@@ -31,6 +31,7 @@ import 'run_browse_screen.dart';
 import '../../domain/services/run_finalization_service.dart';
 import '../../domain/services/run_metrics_service.dart';
 import '../../domain/services/gps_filter_service.dart';
+import '../../../history/domain/services/pace_zone_service.dart';
 
 class ActiveRunScreen extends StatefulWidget {
   final Map<String, dynamic>? restoredState;
@@ -58,6 +59,12 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   /// Tempo ativo (segundos) de cada ponto da rota — paralelo a [_routePoints].
   /// Usado para colorir o mapa por faixa de ritmo no histórico.
   List<List<int>> _routePointTimes = [];
+
+  /// Polylines da rota ao vivo (cache por contagem de pontos): a análise
+  /// de cores do degradê só roda quando um ponto novo entra na rota, não a
+  /// cada segundo do cronômetro.
+  Set<Polyline> _cachedRoutePolylines = const {};
+  int _cachedRoutePointsCount = -1;
   bool _isRunning = false;
   bool _isPaused = false;
   bool _isFinished = false;
@@ -511,6 +518,60 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     };
   }
 
+
+  /// Máximo de pontos por polyline ao vivo: o plugin reenvia a polyline
+  /// inteira quando ela muda, então só o bloco da ponta trafega a cada
+  /// atualização — mesmo padrão que existia antes do degradê.
+  static const int _pointsPerPolyline = 250;
+
+  /// Rota ao vivo colorida por ritmo: reutiliza a mesma análise do
+  /// histórico (degradê quantizado + suavização de desenho), com fallback
+  /// em cascata idêntico — tempos por ponto → voltas → média.
+  Set<Polyline> _buildRoutePolylines() {
+    var total = 0;
+    for (final s in _routePoints) {
+      total += s.length;
+    }
+    // Rebuild de 1s do cronômetro: nada mudou na rota, cache resolve.
+    if (total == _cachedRoutePointsCount) return _cachedRoutePolylines;
+
+    final result = PaceZoneService.analyze(
+      route: _routePoints,
+      routeTimes: _routePointTimes,
+      distanceKm: _distanceKm,
+      durationSeconds: _secondsElapsed,
+      splits: _splits,
+    );
+
+    final polylines = <Polyline>{};
+    for (var si = 0; si < result.segments.length; si++) {
+      final segment = result.segments[si];
+      final pts = segment.points;
+      if (pts.isEmpty) continue;
+
+      var block = 0;
+      for (var start = 0; start < pts.length; start += _pointsPerPolyline) {
+        final end = (start + _pointsPerPolyline).clamp(0, pts.length);
+        // Repete o último ponto do bloco anterior para a linha não quebrar.
+        final from = start == 0 ? 0 : start - 1;
+        polylines.add(
+          Polyline(
+            polylineId: PolylineId('route_${si}_$block'),
+            points: pts.sublist(from, end),
+            color: segment.color,
+            width: 5,
+            startCap: Cap.roundCap,
+            endCap: Cap.roundCap,
+          ),
+        );
+        block++;
+      }
+    }
+
+    _cachedRoutePolylines = polylines;
+    _cachedRoutePointsCount = total;
+    return polylines;
+  }
 
   Future<void> _initLocation() async {
     try {
@@ -1346,7 +1407,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               mapStyle: _getMapStyle(),
               safeTopInset: safeTopInset,
               distanceGoal: _distanceGoal,
-              routePoints: _routePoints,
+              polylines: _buildRoutePolylines(),
               markers: _buildMapMarkers(),
               onMapCreated: (GoogleMapController controller) {
                 _controller.complete(controller);
