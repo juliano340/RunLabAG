@@ -204,7 +204,7 @@ class _UpdateMetricsDialogState extends State<_UpdateMetricsDialog> {
               autofocus: true,
               keyboardType: TextInputType.text,
               inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9:]')),
+                FilteringTextInputFormatter.allow(RegExp(r'^[0-9:]*$')),
                 LengthLimitingTextInputFormatter(8),
               ],
               decoration: InputDecoration(

@@ -474,7 +474,7 @@ class _AddRunScreenState extends State<AddRunScreen> {
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                   inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                    FilteringTextInputFormatter.allow(RegExp(r'^[0-9.,]*$')),
                     LengthLimitingTextInputFormatter(6),
                   ],
                   decoration: InputDecoration(
@@ -511,7 +511,7 @@ class _AddRunScreenState extends State<AddRunScreen> {
                       controller: _durationController,
                       keyboardType: TextInputType.text,
                       inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[0-9:]')),
+                        FilteringTextInputFormatter.allow(RegExp(r'^[0-9:]*$')),
                         LengthLimitingTextInputFormatter(8),
                       ],
                       decoration: InputDecoration(
