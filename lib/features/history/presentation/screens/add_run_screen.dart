@@ -46,7 +46,12 @@ const _fallbackPaces = {
 /// (ritmo médio real × fator do esforço), sempre editável. Duração zero é
 /// bloqueada: lição do bug do recorde "10km em 00:00" aplicada na fonte.
 class AddRunScreen extends StatefulWidget {
-  const AddRunScreen({super.key});
+  const AddRunScreen({super.key, this.existingRun});
+
+  /// Quando informado, a tela opera em modo EDIÇÃO: campos pré-preenchidos,
+  /// o treino existente é atualizado (mesmo id) e rota/splits são
+  /// preservados a menos que o usuário os altere.
+  final RunModel? existingRun;
 
   @override
   State<AddRunScreen> createState() => _AddRunScreenState();
@@ -57,18 +62,38 @@ class _AddRunScreenState extends State<AddRunScreen> {
   final _distanceController = TextEditingController();
   final _durationController = TextEditingController();
 
+  bool get _isEditing => widget.existingRun != null;
+
   DateTime _date = DateTime.now();
   _Effort _effort = _Effort.normal;
   // Quando o usuário digita a duração, a estimativa para de sobrescrever.
   bool _durationTouched = false;
   List<LatLng> _routePoints = const [];
+  bool _routeTouched = false; // rota re-desenhada no modo edição
+  String? _selectedType; // tipo explícito no modo edição
   double? _avgPaceMinPerKm; // âncora da estimativa (histórico real)
   double _weightKg = 0;
   bool _isSaving = false;
 
+  /// Tipos de atividade disponíveis na edição.
+  static const _runTypes = ['Corrida', 'Corrida/Caminhada', 'Caminhada'];
+
   @override
   void initState() {
     super.initState();
+    final run = widget.existingRun;
+    if (run != null) {
+      _date = run.date;
+      _distanceController.text = run.distanceKm.toStringAsFixed(2);
+      _durationController.text =
+          RunMetricsService.formatDuration(run.durationSeconds);
+      // Não deixar a estimativa sobrescrever o valor carregado.
+      _durationTouched = true;
+      _routePoints = run.route
+          .firstWhere((s) => s.isNotEmpty, orElse: () => const [])
+          .toList();
+      _selectedType = run.type;
+    }
     _loadAnchors();
   }
 
@@ -153,6 +178,7 @@ class _AddRunScreenState extends State<AddRunScreen> {
     if (points == null) return;
 
     setState(() {
+      _routeTouched = true;
       _routePoints = points;
       if (points.isNotEmpty) {
         // A rota desenhada é a fonte da verdade da distância.
@@ -170,29 +196,59 @@ class _AddRunScreenState extends State<AddRunScreen> {
     final duration = _durationSeconds!;
     final distance = _distanceKm;
     final now = DateTime.now();
+    // Edição preserva o horário original do treino; criação usa o agora.
+    final source = _isEditing ? widget.existingRun!.date : now;
     final date = DateTime(
       _date.year,
       _date.month,
       _date.day,
-      now.hour,
-      now.minute,
+      source.hour,
+      source.minute,
     );
 
-    final run = RunModel(
-      id: const Uuid().v4(),
-      date: date,
-      distanceKm: distance,
-      durationSeconds: duration,
-      pace: RunMetricsService.calculatePace(duration, distance),
-      calories: _weightKg > 0
-          ? RunMetricsService.calculateCalories(distance, _weightKg)
-          : 0,
-      route: _routePoints.isEmpty ? const [] : [_routePoints],
-      // Rota desenhada não tem tempos por ponto: fica vazia e o mapa
-      // colorido cai no fallback (ritmo médio do treino).
-      routeTimes: const [],
-      splits: const [],
-    );
+    final RunModel run;
+    if (_isEditing) {
+      // Edição: preserva rota/tempos/voltas/mood — só o que o usuário
+      // mudou é sobrescrito.
+      final base = widget.existingRun!;
+      run = RunModel(
+        id: base.id,
+        date: date,
+        distanceKm: distance,
+        durationSeconds: duration,
+        pausedDurationSeconds: base.pausedDurationSeconds,
+        pace: RunMetricsService.calculatePace(duration, distance),
+        calories: _weightKg > 0
+            ? RunMetricsService.calculateCalories(distance, _weightKg)
+            : base.calories,
+        route: _routeTouched
+            ? (_routePoints.isEmpty ? const [] : [_routePoints])
+            : base.route,
+        routeTimes: _routeTouched ? const [] : base.routeTimes,
+        type: _selectedType ?? base.type,
+        mood: base.mood,
+        splits: base.splits,
+        autoPauses: base.autoPauses,
+      );
+    } else {
+      run = RunModel(
+        id: const Uuid().v4(),
+        date: date,
+        distanceKm: distance,
+        durationSeconds: duration,
+        pace: RunMetricsService.calculatePace(duration, distance),
+        calories: _weightKg > 0
+            ? RunMetricsService.calculateCalories(distance, _weightKg)
+            : 0,
+        route: _routePoints.isEmpty ? const [] : [_routePoints],
+        // Rota desenhada não tem tempos por ponto: fica vazia e o mapa
+        // colorido cai no fallback (ritmo médio do treino).
+        routeTimes: const [],
+        splits: const [],
+        // Esforço "corri e caminhei" vira tipo próprio na listagem.
+        type: _effort == _Effort.alternada ? 'Corrida/Caminhada' : 'Corrida',
+      );
+    }
 
     try {
       await _dbService.saveRun(run);
@@ -345,6 +401,46 @@ class _AddRunScreenState extends State<AddRunScreen> {
     );
   }
 
+  /// Seletor do tipo de atividade (modo edição).
+  Widget _buildTypeChips(ColorScheme cs) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _runTypes.map((type) {
+        final selected = _selectedType == type;
+        final chipColor = type == 'Caminhada'
+            ? Colors.blueAccent
+            : type == 'Corrida/Caminhada'
+                ? Colors.orangeAccent
+                : cs.primary;
+        return GestureDetector(
+          onTap: () => setState(() => _selectedType = type),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: selected ? chipColor.withValues(alpha: 0.15) : Colors.transparent,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: selected
+                    ? chipColor
+                    : cs.outline.withValues(alpha: 0.4),
+              ),
+            ),
+            child: Text(
+              type,
+              style: GoogleFonts.outfit(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: selected ? chipColor : cs.onSurfaceVariant,
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   Widget _buildEffortChips(ColorScheme cs) {
     return Wrap(
       spacing: 8,
@@ -451,7 +547,7 @@ class _AddRunScreenState extends State<AddRunScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: Text(
-          'Novo Treino',
+          _isEditing ? 'Editar Treino' : 'Novo Treino',
           style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
         ),
         leading: IconButton(
@@ -495,12 +591,16 @@ class _AddRunScreenState extends State<AddRunScreen> {
               ),
               const SizedBox(height: 20),
               _buildSection(
-                label: 'Esforço',
-                child: _buildEffortChips(cs),
-                caption: _avgPaceMinPerKm != null
-                    ? 'Sugestão baseada no teu ritmo médio de '
-                        '${_formatPace(_avgPaceMinPerKm!)}/km'
-                    : 'Sugestão padrão — ajuste como quiser',
+                label: _isEditing ? 'Tipo' : 'Esforço',
+                child: _isEditing
+                    ? _buildTypeChips(cs)
+                    : _buildEffortChips(cs),
+                caption: _isEditing
+                    ? null
+                    : (_avgPaceMinPerKm != null
+                          ? 'Sugestão baseada no teu ritmo médio de '
+                                '${_formatPace(_avgPaceMinPerKm!)}/km'
+                          : 'Sugestão padrão — ajuste como quiser'),
               ),
               const SizedBox(height: 20),
               _buildSection(
@@ -526,7 +626,7 @@ class _AddRunScreenState extends State<AddRunScreen> {
                         _durationTouched = true;
                       }),
                     ),
-                    if (_durationTouched && _estimateSeconds > 0)
+                    if (!_isEditing && _durationTouched && _estimateSeconds > 0)
                       Align(
                         alignment: Alignment.centerLeft,
                         child: TextButton(

@@ -12,6 +12,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../run/presentation/screens/run_share_screen.dart';
 import '../../../../core/utils/time_utils.dart';
 import '../../../../core/utils/map_marker_helper.dart';
+import 'add_run_screen.dart';
 import 'full_map_screen.dart';
 import 'edit_run_route_screen.dart';
 import '../../domain/services/pace_zone_service.dart';
@@ -545,6 +546,20 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     );
   }
 
+  /// Edita os dados do treino (data, distância, duração, tipo).
+  Future<void> _editRun() async {
+    final updated = await Navigator.push<RunModel>(
+      context,
+      MaterialPageRoute(builder: (_) => AddRunScreen(existingRun: _run)),
+    );
+    if (updated != null && mounted) {
+      setState(() {
+        _run = updated;
+        _paceResult = _analyzePace();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -582,9 +597,9 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
         actions: [
           IconButton(
             visualDensity: VisualDensity.compact,
-            icon: Icon(LucideIcons.spline, color: cs.primary, size: 20),
-            tooltip: 'Editar rota',
-            onPressed: _editRoute,
+            icon: Icon(LucideIcons.pencil, color: cs.primary, size: 20),
+            tooltip: 'Editar treino',
+            onPressed: _editRun,
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
@@ -608,9 +623,24 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             onSelected: (value) {
-              if (value == 'delete') _showDeleteConfirmation(context);
+              if (value == 'route') {
+                _editRoute();
+              } else if (value == 'delete') {
+                _showDeleteConfirmation(context);
+              }
             },
             itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'route',
+                child: Row(
+                  children: [
+                    Icon(LucideIcons.spline, size: 18),
+                    SizedBox(width: 10),
+                    Text('Editar rota'),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
               const PopupMenuItem(
                 value: 'delete',
                 child: Row(
