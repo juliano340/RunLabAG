@@ -252,12 +252,15 @@ class DatabaseService {
   }
 
   /// Totais agregados direto no SQLite — nenhum treino é carregado.
-  Future<UserTotals> getTotals() async {
+  /// [since] filtra por data (string ISO, mesma convenção de getWeeklyProgress).
+  Future<UserTotals> getTotals({DateTime? since}) async {
     final db = await database;
     final rows = await db.rawQuery(
       'SELECT COUNT(*) AS c, COALESCE(SUM(distanceKm), 0) AS d, '
       'COALESCE(SUM(durationSeconds), 0) AS s, '
-      'COALESCE(SUM(calories), 0) AS k FROM runs',
+      'COALESCE(SUM(calories), 0) AS k FROM runs'
+      '${since != null ? ' WHERE date >= ?' : ''}',
+      since != null ? [since.toIso8601String()] : null,
     );
     if (rows.isEmpty) return UserTotals.empty;
     final row = rows.first;
@@ -269,8 +272,8 @@ class DatabaseService {
     );
   }
 
-  Future<Map<String, dynamic>> getUserStats() async {
-    final totals = await getTotals();
+  Future<Map<String, dynamic>> getUserStats({DateTime? since}) async {
+    final totals = await getTotals(since: since);
     final totalDistance = totals.totalDistanceKm;
     final totalRuns = totals.runCount;
     final totalSeconds = totals.totalSeconds;

@@ -28,6 +28,8 @@ class _HomeTabState extends State<HomeTab> {
     'avgPace': '0:00',
     'totalCalories': '0',
   };
+  // Janela da Visão Geral: 0 = tudo, 1 = 30d, 2 = 60d, 3 = 90d.
+  int _statsPeriod = 0;
   List<double> _weeklyProgress = List.filled(7, 0.0);
   UserProfile? _profile;
   RunModel? _lastRun;
@@ -41,7 +43,7 @@ class _HomeTabState extends State<HomeTab> {
 
   Future<void> _loadData() async {
     // Dispara em paralelo: o boot não deve esperar uma consulta por vez.
-    final statsFuture = _dbService.getUserStats();
+    final statsFuture = _dbService.getUserStats(since: _statsSince);
     final progressFuture = _dbService.getWeeklyProgress();
     final profileFuture = _dbService.getUserProfile();
     final lastRunFuture = _dbService.getLastRun();
@@ -210,6 +212,25 @@ class _HomeTabState extends State<HomeTab> {
 
   // Semana começa no domingo (mesma convenção de getWeeklyProgress).
   int get _todayIndex => DateTime.now().weekday % 7;
+
+  // ── Visão Geral: janela dos totais ─────────────────────────────────────
+
+  DateTime? get _statsSince {
+    final days = switch (_statsPeriod) {
+      1 => 30,
+      2 => 60,
+      3 => 90,
+      _ => 0,
+    };
+    return days == 0 ? null : DateTime.now().subtract(Duration(days: days));
+  }
+
+  Future<void> _changeStatsPeriod(int index) async {
+    if (index == _statsPeriod) return;
+    setState(() => _statsPeriod = index);
+    final stats = await _dbService.getUserStats(since: _statsSince);
+    if (mounted) setState(() => _stats = stats);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -437,7 +458,16 @@ class _HomeTabState extends State<HomeTab> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  _buildStatsPeriodChip('Tudo', 0, isDark),
+                  _buildStatsPeriodChip('30d', 1, isDark),
+                  _buildStatsPeriodChip('60d', 2, isDark),
+                  _buildStatsPeriodChip('90d', 3, isDark),
+                ],
+              ),
+              const SizedBox(height: 12),
               GlassContainer(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Row(
@@ -647,6 +677,42 @@ class _HomeTabState extends State<HomeTab> {
       final s = seconds % 60;
       return '${m}m ${s.toString().padLeft(2, '0')}s';
     }
+  }
+
+  Widget _buildStatsPeriodChip(String label, int index, bool isDark) {
+    final selected = _statsPeriod == index;
+    final accent = isDark ? AppColors.primaryNeon : AppColors.lightPrimary;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _changeStatsPeriod(index),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          margin: EdgeInsets.only(right: index < 3 ? 8 : 0),
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            color: selected ? accent : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected
+                  ? accent
+                  : (isDark ? Colors.white24 : AppColors.borderLight),
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: GoogleFonts.outfit(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: selected
+                    ? (isDark ? Colors.black : Colors.white)
+                    : (isDark ? AppColors.textMuted : AppColors.textMutedDark),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildCompactStat({
