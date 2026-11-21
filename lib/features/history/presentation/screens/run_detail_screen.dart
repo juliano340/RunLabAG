@@ -95,8 +95,9 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     final velocity = details.primaryVelocity ?? 0;
     if (velocity.abs() < 350) return;
 
-    // Lista DESC: arrastar para a esquerda (-v) avança para o passado.
-    final target = _runIndex + (velocity < 0 ? 1 : -1);
+    // Coerente com as setas: arrastar para a direita (+v) volta no tempo —
+    // mesmo destino da seta esquerda. Arrastar para a esquerda avança.
+    final target = _runIndex + (velocity < 0 ? -1 : 1);
     if (target < 0 || target >= _runIds.length) return;
     _navigateTo(_runIds[target]);
   }
@@ -814,27 +815,35 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Contexto: data + tipo à esquerda, humor à direita
+                        // Data e hora completas — linha própria, nunca cortada
                         Row(
                           children: [
-                            Flexible(
-                              child: Text(
-                                _formatDate(_run.date),
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.outfit(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: cs.onSurfaceVariant,
-                                ),
+                            Icon(
+                              LucideIcons.calendar,
+                              size: 14,
+                              color: muted,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              _formatDate(_run.date),
+                              style: GoogleFonts.outfit(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: cs.onSurfaceVariant,
                               ),
                             ),
-                            const SizedBox(width: 10),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        // Tipo à esquerda, humor à direita — sem disputar espaço
+                        Row(
+                          children: [
                             _buildTypeChip(cs),
                             const Spacer(),
                             if (_run.mood.isNotEmpty) _buildMoodChip(cs),
                           ],
                         ),
-                        const SizedBox(height: 18),
+                        const SizedBox(height: 20),
                         // Herói: a distância conta a história primeiro
                         Text(
                           'DISTÂNCIA',
