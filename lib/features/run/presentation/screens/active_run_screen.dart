@@ -79,11 +79,15 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   bool _isMapStylesLoaded = false;
   bool _isMapReady = false;
 
-  /// Inicialização do GPS (permissão + primeiro fix). O início expresso e o
-  /// restauro esperam por ela antes de abrir a stream — sem isso a permissão
-  /// de notificação do foreground service (Android 13+) ainda não estava
-  /// concedida e a subscription morria em silêncio: mapa andava, rota zerada.
-  Future<void>? _locationInitFuture;
+  /// Completa assim que a permissão de localização (incluindo a de
+  /// notificação do foreground service no Android 13+) está resolvida —
+  /// ANTES do primeiro fix. Quem abre a stream espera por ela; o fix
+  /// não pode estar no caminho, senão o início trava por segundos.
+  final Completer<void> _permissionsReady = Completer<void>();
+
+  /// Guard contra start duplo (botão INICIAR tocado durante o início
+  /// expresso: o segundo chamador vira no-op e nada é zerado).
+  bool _isStartingRun = false;
 
   // Metrics
   double _distanceKm = 0.0;
@@ -129,17 +133,18 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     _loadAutoPausePreference();
     _loadMapStyle();
     _loadMarkerIcons();
-    _locationInitFuture = _initLocation();
+    _initLocation();
     _loadUserProfile();
     if (widget.restoredState != null) {
       _restoreState(widget.restoredState!);
     } else if (widget.autoStart) {
-      // Início expresso: começa no primeiro frame, mas só depois de o GPS
-      // ter permissão. A sensação continua sendo "um toque e já correndo" —
-      // a espera é a mesma que o usuário tinha na tela pré-início.
+      // Início expresso: espera só a PERMISSÃO (praticamente instantâneo),
+      // nunca o primeiro fix. O relógio arranca no toque e o GPS esquenta em
+      // paralelo — sem a permissão resolvida a stream morria em silêncio
+      // (era isso que zerava a rota no Expresso).
       WidgetsBinding.instance.addPostFrameCallback((_) async {
-        await _locationInitFuture;
-        if (mounted) _startRun();
+        await _permissionsReady.future;
+        if (mounted) _startRun(warmUpGps: false);
       });
     }
   }
@@ -304,12 +309,12 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     });
 
     if (!_isFinished && !_isPaused) {
-      // Mesma corrida do início expresso: numa retomada a frio a stream
-      // também podia nascer antes da permissão e deixar a rota zerada.
-      _locationInitFuture?.then((_) {
+      // Retomada a frio: espera só a permissão — numa retomada ela já foi
+      // concedida antes, então é praticamente instantâneo e o cronômetro
+      // não congela esperando fix de GPS.
+      _permissionsReady.future.then((_) {
         if (mounted) _startTimersAndStreams(isNew: false);
-      }) ??
-          _startTimersAndStreams(isNew: false);
+      });
     }
   }
 
@@ -510,11 +515,18 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   Future<void> _initLocation() async {
     try {
       final hasPermission = await _locationService.requestPermission();
-      if (!mounted || !hasPermission) return;
+      if (!hasPermission || !mounted) {
+        _completePermissionsReady();
+        return;
+      }
 
       setState(() {
         _hasPermissions = true;
       });
+      // A partir daqui a stream do GPS já pode nascer com vida — é este o
+      // ponto exato que o início expresso e a retomada esperam.
+      _completePermissionsReady();
+
       final pos = await _locationService.getCurrentLocation();
       if (!mounted) return;
       final latLng = LatLng(pos.latitude, pos.longitude);
@@ -538,7 +550,12 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _centerMapOn(pos);
     } catch (e) {
       debugPrint("Error initializing location: $e");
+      _completePermissionsReady();
     }
+  }
+
+  void _completePermissionsReady() {
+    if (!_permissionsReady.isCompleted) _permissionsReady.complete();
   }
 
   void _centerMapOn(Position pos) {
@@ -550,15 +567,25 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     });
   }
 
-  void _startRun() async {
+  Future<void> _startRun({bool warmUpGps = true}) async {
+    // Expresso + botão INICIAR podem disputar a mesma janela: só um vence.
+    // Sem este guard, o segundo start zerava métricas do primeiro.
+    if (_isStartingRun || _isRunning) return;
+    _isStartingRun = true;
+
     _stopRunInternals();
 
     _runStartTime = DateTime.now();
 
-    try {
-      await _locationService.getCurrentLocation();
-    } catch (e) {
-      debugPrint("Could not get initial position for run: $e");
+    if (warmUpGps) {
+      // Fluxo do botão INICIAR (já passou pela tela pré-início): espera um
+      // fix para o GPS estar quente. O Expresso pula esta espera — o
+      // relógio arranca no toque e a stream esquenta em paralelo.
+      try {
+        await _locationService.getCurrentLocation();
+      } catch (e) {
+        debugPrint("Could not get initial position for run: $e");
+      }
     }
 
     setState(() {
@@ -583,6 +610,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _autoPauseAnchor = null;
       _lowSpeedTicks = 0;
     });
+    _isStartingRun = false;
 
     _startTimersAndStreams(isNew: true);
 
@@ -1359,7 +1387,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               eta: _calculateETA(),
               pausedSeconds: _pausedSecondsElapsed,
               pacingFeedback: _pacingFeedback,
-              onStart: _startRun,
+              onStart: () => _startRun(),
               onPause: _pauseRun,
               onResume: _resumeRun,
               onStop: _stopRun,
