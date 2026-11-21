@@ -365,16 +365,6 @@ class _HistoryTabState extends State<HistoryTab> {
     }
   }
 
-  String _formatDateShort(DateTime date) {
-    final now = DateTime.now();
-    if (date.year == now.year &&
-        date.month == now.month &&
-        date.day == now.day) {
-      return 'Hoje';
-    }
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}';
-  }
-
   void _showGoalSettings() {
     final periodId = _getPeriodId();
     final goalType = _selectedPeriodIndex == 0 ? 'weekly' : 'monthly';
@@ -604,21 +594,6 @@ class _HistoryTabState extends State<HistoryTab> {
                     physics: const BouncingScrollPhysics(),
                     child: Column(
                       children: [
-                        _buildAnalyticsSummary(),
-                        const SizedBox(height: 24),
-                        if (_paceZoneTotals.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 24),
-                            child: PaceDistributionCard(
-                              distanceByZoneKm: _paceZoneTotals,
-                              totalKm: _filteredRuns.fold<double>(
-                                0,
-                                (sum, run) => sum + run.distanceKm,
-                              ),
-                            ),
-                          ),
-                        if (_paceZoneTotals.isNotEmpty)
-                          const SizedBox(height: 24),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 24),
                           child: Row(
@@ -642,8 +617,28 @@ class _HistoryTabState extends State<HistoryTab> {
                             ],
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 4),
                         _buildActivitiesList(),
+                        const SizedBox(height: 24),
+                        _buildAnalyticsSummary(),
+                        const SizedBox(height: 24),
+                        if (_paceZoneTotals.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: PaceDistributionCard(
+                              distanceByZoneKm: _paceZoneTotals,
+                              totalKm: _filteredRuns.fold<double>(
+                                0,
+                                (sum, run) => sum + run.distanceKm,
+                              ),
+                            ),
+                          ),
+                        if (_paceZoneTotals.isNotEmpty)
+                          const SizedBox(height: 24),
+                        // Dica de evolução no fim do scroll: contexto, não
+                        // obstáculo antes da lista.
+                        if (_recommendation != null && _selectedPeriodIndex == 0)
+                          _buildRecommendationCard(),
                         const SizedBox(height: 24),
                       ],
                     ),
@@ -1064,30 +1059,21 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   Widget _buildActivitiesList() {
-    return Column(
-      children: [
-        if (_recommendation != null && _selectedPeriodIndex == 0)
-          _buildRecommendationCard(),
-        _filteredRuns.isEmpty
-            ? _buildEmptyState()
-            : ListView.builder(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _filteredRuns.length,
-                itemBuilder: (context, index) {
-                  final run = _filteredRuns[index];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 6,
-                    ),
-                    child: _buildRunCard(run),
-                  );
-                },
-              ),
-      ],
-    );
+    return _filteredRuns.isEmpty
+        ? _buildEmptyState()
+        : ListView.builder(
+            padding: EdgeInsets.zero,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _filteredRuns.length,
+            itemBuilder: (context, index) {
+              final run = _filteredRuns[index];
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: _buildRunCard(run),
+              );
+            },
+          );
   }
 
   Widget _buildRecommendationCard() {
@@ -1207,87 +1193,102 @@ class _HistoryTabState extends State<HistoryTab> {
 
   Widget _buildRunCard(RunModel run) {
     final cs = Theme.of(context).colorScheme;
-    return GlassContainer(
-      padding: const EdgeInsets.all(16),
-      // Blur por item de lista é caro no Android (um saveLayer por card a
-      // cada frame de scroll). O visual se mantém com cor + borda.
-      enableBlur: false,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final typeColor =
+        run.type == 'Caminhada' ? Colors.blueAccent : cs.primary;
+
+    // Item plano estilo Strava: sem card, sem caixa de ícone — distância
+    // manda, métricas em linha, data à direita. Divisor de 1px separa.
+    return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => RunDetailScreen(run: run)),
         ).then((_) => _loadData());
       },
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: run.type == 'Caminhada'
-                  ? Colors.blue.withValues(alpha: 0.1)
-                  : cs.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              run.type == 'Caminhada'
-                  ? LucideIcons.footprints
-                  : LucideIcons.zap,
-              color: run.type == 'Caminhada' ? Colors.blueAccent : cs.primary,
-              size: 24,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: (isDark ? Colors.white : Colors.black)
+                  .withValues(alpha: 0.06),
+              width: 1,
             ),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        ),
+        child: Row(
+          children: [
+            // Indicador fino do tipo de atividade
+            Container(
+              width: 3,
+              height: 34,
+              decoration: BoxDecoration(
+                color: typeColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${run.distanceKm.toStringAsFixed(2)} km',
+                    style: GoogleFonts.outfit(
+                      color: cs.onSurface,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${TimeUtils.formatDuration(run.durationSeconds)}'
+                    ' · ${run.pace}/km · ${run.calories} kcal',
+                    style: GoogleFonts.outfit(
+                      color: cs.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  '${run.distanceKm.toStringAsFixed(2)} km',
-                  style: GoogleFonts.outfit(
-                    color: cs.onSurface,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  '${_formatDateShort(run.date)} • ${TimeUtils.formatDuration(run.durationSeconds)}',
+                  _relativeDate(run.date),
                   style: GoogleFonts.outfit(
                     color: cs.onSurfaceVariant,
                     fontSize: 12,
                   ),
                 ),
+                if (run.mood.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      run.mood,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
               ],
             ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                run.pace,
-                style: GoogleFonts.outfit(
-                  color: cs.primary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                'ritmo',
-                style: GoogleFonts.outfit(
-                  color: cs.onSurfaceVariant,
-                  fontSize: 10,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 8),
-          Icon(
-            LucideIcons.chevronRight,
-            color: cs.outline.withValues(alpha: 0.4),
-            size: 16,
-          ),
-        ],
+          ],
+        ),
       ),
     );
+  }
+
+  /// 'Hoje' / 'Ontem' / 'dd/MM' — datas recentes ficam mais humanas.
+  String _relativeDate(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(date.year, date.month, date.day);
+    final diff = today.difference(day).inDays;
+    if (diff == 0) return 'Hoje';
+    if (diff == 1) return 'Ontem';
+    return '${date.day.toString().padLeft(2, '0')}'
+        '/${date.month.toString().padLeft(2, '0')}';
   }
 
   Widget _buildEmptyState() {
