@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../widgets/start_run_button.dart';
@@ -35,9 +36,21 @@ class _HomeTabState extends State<HomeTab> {
   RunModel? _lastRun;
   bool _isLoading = true;
 
+  // Última janela selecionada na Visão Geral (persiste entre sessões).
+  static const _statsPeriodKey = 'home_stats_period';
+
   @override
   void initState() {
     super.initState();
+    _restoreStatsPeriod();
+  }
+
+  Future<void> _restoreStatsPeriod() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _statsPeriod = prefs.getInt(_statsPeriodKey) ?? 0;
+    });
     _loadData();
   }
 
@@ -217,9 +230,11 @@ class _HomeTabState extends State<HomeTab> {
 
   DateTime? get _statsSince {
     final days = switch (_statsPeriod) {
-      1 => 30,
-      2 => 60,
-      3 => 90,
+      1 => 7,
+      2 => 15,
+      3 => 30,
+      4 => 60,
+      5 => 90,
       _ => 0,
     };
     return days == 0 ? null : DateTime.now().subtract(Duration(days: days));
@@ -228,6 +243,8 @@ class _HomeTabState extends State<HomeTab> {
   Future<void> _changeStatsPeriod(int index) async {
     if (index == _statsPeriod) return;
     setState(() => _statsPeriod = index);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_statsPeriodKey, index);
     final stats = await _dbService.getUserStats(since: _statsSince);
     if (mounted) setState(() => _stats = stats);
   }
@@ -462,9 +479,11 @@ class _HomeTabState extends State<HomeTab> {
               Row(
                 children: [
                   _buildStatsPeriodChip('Tudo', 0, isDark),
-                  _buildStatsPeriodChip('30d', 1, isDark),
-                  _buildStatsPeriodChip('60d', 2, isDark),
-                  _buildStatsPeriodChip('90d', 3, isDark),
+                  _buildStatsPeriodChip('7d', 1, isDark),
+                  _buildStatsPeriodChip('15d', 2, isDark),
+                  _buildStatsPeriodChip('30d', 3, isDark),
+                  _buildStatsPeriodChip('60d', 4, isDark),
+                  _buildStatsPeriodChip('90d', 5, isDark),
                 ],
               ),
               const SizedBox(height: 12),
@@ -687,7 +706,7 @@ class _HomeTabState extends State<HomeTab> {
         onTap: () => _changeStatsPeriod(index),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          margin: EdgeInsets.only(right: index < 3 ? 8 : 0),
+          margin: EdgeInsets.only(right: index < 5 ? 8 : 0),
           padding: const EdgeInsets.symmetric(vertical: 7),
           decoration: BoxDecoration(
             color: selected ? accent : Colors.transparent,
