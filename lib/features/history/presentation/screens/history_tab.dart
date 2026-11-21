@@ -36,6 +36,9 @@ class _HistoryTabState extends State<HistoryTab> {
   // Agregado das faixas de ritmo dos treinos do período (rosquinha do dashboard).
   Map<PaceZone, double> _paceZoneTotals = {};
 
+  // Lista de atividades: 3 primeiras + "Ver mais"/"Ver menos".
+  bool _runsExpanded = false;
+
   // Pagination State
   DateTime _referenceDate = DateTime.now();
   DateTime? _minDate;
@@ -218,7 +221,10 @@ class _HistoryTabState extends State<HistoryTab> {
     _paceZoneTotals = zoneTotals;
 
     if (mounted) {
-      setState(() => _currentPeriodGoal = historicalGoal!);
+      setState(() {
+        _currentPeriodGoal = historicalGoal!;
+        _runsExpanded = false;
+      });
     }
   }
 
@@ -1059,21 +1065,55 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   Widget _buildActivitiesList() {
-    return _filteredRuns.isEmpty
-        ? _buildEmptyState()
-        : ListView.builder(
-            padding: EdgeInsets.zero,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _filteredRuns.length,
-            itemBuilder: (context, index) {
-              final run = _filteredRuns[index];
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: _buildRunCard(run),
-              );
-            },
-          );
+    if (_filteredRuns.isEmpty) return _buildEmptyState();
+
+    const previewCount = 3;
+    final hasMore = _filteredRuns.length > previewCount;
+    final visibleCount = _runsExpanded || !hasMore
+        ? _filteredRuns.length
+        : previewCount;
+
+    return Column(
+      children: [
+        for (var i = 0; i < visibleCount; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: _buildRunCard(_filteredRuns[i]),
+          ),
+        if (hasMore) _buildRunsToggle(),
+      ],
+    );
+  }
+
+  /// "Ver mais / Ver menos" — mesmo idioma plano da lista, centralizado.
+  Widget _buildRunsToggle() {
+    final cs = Theme.of(context).colorScheme;
+    final hidden = _filteredRuns.length - 3;
+    return GestureDetector(
+      onTap: () => setState(() => _runsExpanded = !_runsExpanded),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              _runsExpanded ? 'Ver menos' : 'Ver mais $hidden treinos',
+              style: GoogleFonts.outfit(
+                color: cs.primary,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              _runsExpanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+              size: 14,
+              color: cs.primary,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildRecommendationCard() {
