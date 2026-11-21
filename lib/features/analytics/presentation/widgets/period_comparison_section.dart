@@ -15,6 +15,9 @@ const _monthShort = [
 /// Comparativo mês a mês: escolhe um mês em cima, outro embaixo, e vê a
 /// diferença em gráfico de barras duplas (distância, treinos, calorias,
 /// pace). Os meses vêm do histórico carregado (até 36 meses).
+///
+/// A seleção guarda o periodId (não a identidade do objeto): após hot
+/// reload a lista é reconstruída e a escolha continua valendo.
 class PeriodComparisonSection extends StatefulWidget {
   const PeriodComparisonSection({super.key, required this.monthlyData});
 
@@ -27,10 +30,18 @@ class PeriodComparisonSection extends StatefulWidget {
 }
 
 class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
-  MonthlyEvolutionStats? _monthA;
-  MonthlyEvolutionStats? _monthB;
+  String? _periodIdA;
+  String? _periodIdB;
 
   List<MonthlyEvolutionStats> get _months => widget.monthlyData;
+
+  MonthlyEvolutionStats? _byId(String? id) {
+    if (id == null) return null;
+    for (final m in _months) {
+      if (m.periodId == id) return m;
+    }
+    return null;
+  }
 
   String _label(MonthlyEvolutionStats? m) {
     if (m == null) return '--';
@@ -58,14 +69,16 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
     if (months.isNotEmpty) {
       // A = mês mais recente; B = mês mais recente COM treinos, para a
       // comparação inicial fazer sentido.
-      _monthA = months.first;
+      _periodIdA = months.first.periodId;
       for (final m in months.skip(1)) {
         if (m.runCount > 0) {
-          _monthB = m;
+          _periodIdB = m.periodId;
           break;
         }
       }
-      _monthB ??= months.length > 1 ? months[1] : months.first;
+      _periodIdB ??= months.length > 1
+          ? months[1].periodId
+          : months.first.periodId;
     }
   }
 
@@ -76,11 +89,10 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
     final accent = isDark ? AppColors.primaryNeon : AppColors.lightPrimary;
     final textColor = isDark ? AppColors.textLight : AppColors.textDark;
 
-    if (_months.isEmpty ||
-        _monthA == null ||
-        _monthB == null ||
-        !_months.contains(_monthA) ||
-        !_months.contains(_monthB)) {
+    final a = _byId(_periodIdA);
+    final b = _byId(_periodIdB);
+
+    if (_months.isEmpty || a == null || b == null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -102,9 +114,6 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
       );
     }
 
-    final a = _monthA!;
-    final b = _monthB!;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -120,7 +129,14 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
         // Seletores: um mês em cima, outro embaixo
         Row(
           children: [
-            Expanded(child: _monthDropdown(_monthA, accent, isDark)),
+            Expanded(
+              child: _monthDropdown(
+                selected: a,
+                color: accent,
+                isDark: isDark,
+                onChanged: (m) => setState(() => _periodIdA = m?.periodId),
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
@@ -132,7 +148,25 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
                 ),
               ),
             ),
-            Expanded(child: _monthDropdown(_monthB, muted, isDark)),
+            Expanded(
+              child: _monthDropdown(
+                selected: b,
+                color: muted,
+                isDark: isDark,
+                onChanged: (m) {
+                  if (m == null) return;
+                  setState(() {
+                    if (m.periodId == _periodIdA) {
+                      // Escolheu o mês do topo no dropdown de baixo: troca.
+                      _periodIdB = _periodIdA;
+                      _periodIdA = m.periodId;
+                    } else {
+                      _periodIdB = m.periodId;
+                    }
+                  });
+                },
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 16),
@@ -146,6 +180,8 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
                 valueB: '${b.totalDistance.toStringAsFixed(1)} km',
                 a: a.totalDistance,
                 b: b.totalDistance,
+                labelA: _label(a),
+                labelB: _label(b),
                 accent: accent,
                 muted: muted,
                 textColor: textColor,
@@ -158,6 +194,8 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
                 valueB: '${b.runCount}',
                 a: a.runCount.toDouble(),
                 b: b.runCount.toDouble(),
+                labelA: _label(a),
+                labelB: _label(b),
                 accent: accent,
                 muted: muted,
                 textColor: textColor,
@@ -170,6 +208,8 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
                 valueB: '${b.totalCalories} kcal',
                 a: a.totalCalories.toDouble(),
                 b: b.totalCalories.toDouble(),
+                labelA: _label(a),
+                labelB: _label(b),
                 accent: accent,
                 muted: muted,
                 textColor: textColor,
@@ -182,6 +222,8 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
                 valueB: _paceLabel(b),
                 a: _paceMinPerKm(a),
                 b: _paceMinPerKm(b),
+                labelA: _label(a),
+                labelB: _label(b),
                 accent: accent,
                 muted: muted,
                 textColor: textColor,
@@ -196,11 +238,12 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
     );
   }
 
-  Widget _monthDropdown(
-    MonthlyEvolutionStats? value,
-    Color color,
-    bool isDark,
-  ) {
+  Widget _monthDropdown({
+    required MonthlyEvolutionStats selected,
+    required Color color,
+    required bool isDark,
+    required ValueChanged<MonthlyEvolutionStats?> onChanged,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
@@ -213,7 +256,7 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<MonthlyEvolutionStats>(
-          value: _months.contains(value) ? value : null,
+          value: selected,
           isExpanded: true,
           icon: Icon(LucideIcons.chevronDown, size: 16, color: color),
           dropdownColor: isDark ? AppColors.cardBackground : Colors.white,
@@ -231,17 +274,7 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
                 ),
               ),
           ],
-          onChanged: (m) {
-            if (m == null) return;
-            setState(() {
-              if (m == _monthA) {
-                _monthA = _monthB;
-                _monthB = m;
-              } else {
-                _monthB = m;
-              }
-            });
-          },
+          onChanged: onChanged,
         ),
       ),
     );
@@ -253,6 +286,8 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
     required String label,
     required String valueA,
     required String valueB,
+    required String labelA,
+    required String labelB,
     required double a,
     required double b,
     required Color accent,
@@ -289,9 +324,9 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
           ],
         ),
         const SizedBox(height: 6),
-        _bar(_label(_monthA), valueA, a, max, accent, barColor, muted),
+        _bar(labelA, valueA, a, max, accent, barColor),
         const SizedBox(height: 5),
-        _bar(_label(_monthB), valueB, b, max, muted, barColor, muted),
+        _bar(labelB, valueB, b, max, muted, barColor),
       ],
     );
   }
@@ -303,7 +338,6 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
     double max,
     Color color,
     Color trackColor,
-    Color muted,
   ) {
     final fraction = max > 0 ? (value / max).clamp(0.0, 1.0) : 0.0;
     return Row(
