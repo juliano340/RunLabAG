@@ -130,11 +130,11 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
         Row(
           children: [
             Expanded(
-              child: _monthDropdown(
+              child: _monthSelector(
                 selected: a,
                 color: accent,
                 isDark: isDark,
-                onChanged: (m) => setState(() => _periodIdA = m?.periodId),
+                onSelected: (m) => setState(() => _periodIdA = m.periodId),
               ),
             ),
             Padding(
@@ -149,12 +149,11 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
               ),
             ),
             Expanded(
-              child: _monthDropdown(
+              child: _monthSelector(
                 selected: b,
                 color: muted,
                 isDark: isDark,
-                onChanged: (m) {
-                  if (m == null) return;
+                onSelected: (m) {
                   setState(() {
                     if (m.periodId == _periodIdA) {
                       // Escolheu o mês do topo no dropdown de baixo: troca.
@@ -238,46 +237,152 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
     );
   }
 
-  Widget _monthDropdown({
+  Widget _monthSelector({
     required MonthlyEvolutionStats selected,
     required Color color,
     required bool isDark,
-    required ValueChanged<MonthlyEvolutionStats?> onChanged,
+    required ValueChanged<MonthlyEvolutionStats> onSelected,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: Theme.of(context)
-            .colorScheme
-            .surfaceContainerHighest
-            .withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<MonthlyEvolutionStats>(
-          value: selected,
-          isExpanded: true,
-          icon: Icon(LucideIcons.chevronDown, size: 16, color: color),
-          dropdownColor: isDark ? AppColors.cardBackground : Colors.white,
-          items: [
-            for (final m in _months)
-              DropdownMenuItem(
-                value: m,
-                child: Text(
-                  _label(m),
-                  style: GoogleFonts.outfit(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: color,
-                  ),
+    return GestureDetector(
+      onTap: () => _openMonthPicker(selected, color, isDark, onSelected),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: BoxDecoration(
+          color: Theme.of(context)
+              .colorScheme
+              .surfaceContainerHighest
+              .withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                _label(selected),
+                style: GoogleFonts.outfit(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: color,
                 ),
               ),
+            ),
+            Icon(LucideIcons.chevronDown, size: 16, color: color),
           ],
-          onChanged: onChanged,
         ),
       ),
     );
+  }
+
+  /// Lista de meses em bottom sheet (60% da tela), com a contagem de
+  /// treinos de cada mês à direita — nada de menu translúcido gigante.
+  Future<void> _openMonthPicker(
+    MonthlyEvolutionStats selected,
+    Color color,
+    bool isDark,
+    ValueChanged<MonthlyEvolutionStats> onSelected,
+  ) async {
+    final picked = await showModalBottomSheet<MonthlyEvolutionStats>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final cs = Theme.of(sheetContext).colorScheme;
+        final sheetIsDark = Theme.of(sheetContext).brightness == Brightness.dark;
+        final sheetTextColor =
+            sheetIsDark ? AppColors.textLight : AppColors.textDark;
+        final sheetMuted =
+            sheetIsDark ? AppColors.textMuted : AppColors.textMutedDark;
+
+        return Container(
+          height: MediaQuery.of(sheetContext).size.height * 0.6,
+          decoration: BoxDecoration(
+            color: cs.surface,
+            borderRadius:
+                const BorderRadius.vertical(top: Radius.circular(30)),
+            border: Border.all(color: cs.outline.withValues(alpha: 0.2)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Escolha o mês',
+                style: GoogleFonts.outfit(
+                  color: sheetTextColor,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  itemCount: _months.length,
+                  itemBuilder: (context, index) {
+                    final m = _months[index];
+                    final isSelected = m.periodId == selected.periodId;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: GestureDetector(
+                        onTap: () => Navigator.pop(sheetContext, m),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? color.withValues(alpha: 0.12)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isSelected
+                                  ? color.withValues(alpha: 0.4)
+                                  : cs.outline.withValues(alpha: 0.15),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Text(
+                                _label(m),
+                                style: GoogleFonts.outfit(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: isSelected ? color : sheetTextColor,
+                                ),
+                              ),
+                              const Spacer(),
+                              Text(
+                                m.runCount > 0
+                                    ? '${m.runCount} treino${m.runCount == 1 ? '' : 's'}'
+                                    : 'sem treinos',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 11,
+                                  color: sheetMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (picked != null) onSelected(picked);
   }
 
   /// Grupo de métrica: duas barras horizontais (A em cima, B embaixo),
