@@ -12,10 +12,9 @@ const _monthShort = [
   'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez',
 ];
 
-/// Comparativo entre dois blocos de meses com janela deslizante:
-/// "últimos N meses" vs "os N meses imediatamente anteriores". As setas
-/// deslizam a janela no tempo; o tamanho do bloco é 1, 3 ou 6 meses —
-/// dá pra comparar o começo do ano com o meio do ano, por exemplo.
+/// Comparativo mês a mês: escolhe um mês em cima, outro embaixo, e vê a
+/// diferença em gráfico de barras duplas (distância, treinos, calorias,
+/// pace). Os meses vêm do histórico carregado (até 36 meses).
 class PeriodComparisonSection extends StatefulWidget {
   const PeriodComparisonSection({super.key, required this.monthlyData});
 
@@ -28,76 +27,46 @@ class PeriodComparisonSection extends StatefulWidget {
 }
 
 class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
-  static const _windowOptions = [1, 3, 6];
-  static const _windowLabels = ['1 mês', '3 meses', '6 meses'];
+  MonthlyEvolutionStats? _monthA;
+  MonthlyEvolutionStats? _monthB;
 
-  int _windowMonths = 3;
-  int _slide = 0; // 0 = blocos mais recentes; aumenta para trás no tempo.
+  List<MonthlyEvolutionStats> get _months => widget.monthlyData;
 
-  int get _maxSlide {
-    final blocks = (widget.monthlyData.length / _windowMonths).floor();
-    return math.max(0, blocks - 2); // dois blocos completos no mínimo
+  String _label(MonthlyEvolutionStats? m) {
+    if (m == null) return '--';
+    return '${_monthShort[m.startDate.month - 1]}'
+        '/${(m.startDate.year % 100).toString().padLeft(2, '0')}';
   }
 
-  List<MonthlyEvolutionStats> _block(int index) {
-    final start = _slide * _windowMonths + index * _windowMonths;
-    final end = start + _windowMonths;
-    if (start < 0 || end > widget.monthlyData.length) return const [];
-    return widget.monthlyData.sublist(start, end);
+  double _paceMinPerKm(MonthlyEvolutionStats m) {
+    return m.totalDistance > 0
+        ? (m.totalDurationSeconds / 60) / m.totalDistance
+        : 0;
   }
 
-  ({double distance, int seconds, int runs, int calories}) _aggregate(
-    List<MonthlyEvolutionStats> months,
-  ) {
-    var distance = 0.0;
-    var seconds = 0;
-    var runs = 0;
-    var calories = 0;
-    for (final m in months) {
-      distance += m.totalDistance;
-      seconds += m.totalDurationSeconds;
-      runs += m.runCount;
-      calories += m.totalCalories;
+  String _paceLabel(MonthlyEvolutionStats m) {
+    final pace = _paceMinPerKm(m);
+    if (pace <= 0) return '--:--/km';
+    final total = (pace * 60).round();
+    return '${total ~/ 60}:${(total % 60).toString().padLeft(2, '0')}/km';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final months = widget.monthlyData;
+    if (months.isNotEmpty) {
+      // A = mês mais recente; B = mês mais recente COM treinos, para a
+      // comparação inicial fazer sentido.
+      _monthA = months.first;
+      for (final m in months.skip(1)) {
+        if (m.runCount > 0) {
+          _monthB = m;
+          break;
+        }
+      }
+      _monthB ??= months.length > 1 ? months[1] : months.first;
     }
-    return (
-      distance: distance,
-      seconds: seconds,
-      runs: runs,
-      calories: calories,
-    );
-  }
-
-  String _blockLabel(List<MonthlyEvolutionStats> months) {
-    if (months.isEmpty) return '--';
-    final oldest = months.last;
-    final newest = months.first;
-    final start = '${_monthShort[oldest.startDate.month - 1]}'
-        '/${(oldest.startDate.year % 100).toString().padLeft(2, '0')}';
-    final end = '${_monthShort[newest.startDate.month - 1]}'
-        '/${(newest.startDate.year % 100).toString().padLeft(2, '0')}';
-    return start == end ? end : '$start – $end';
-  }
-
-  double _paceMinPerKmOf(
-    ({double distance, int seconds, int runs, int calories}) agg,
-  ) {
-    return agg.distance > 0 ? (agg.seconds / 60) / agg.distance : 0;
-  }
-
-  String _formatPace(double minutes) {
-    if (minutes <= 0) return '--:--';
-    final total = (minutes * 60).round();
-    final m = total ~/ 60;
-    final s = total % 60;
-    return '$m:${s.toString().padLeft(2, '0')}';
-  }
-
-  /// Delta de pace em segundos, com sinal ("−0:12" = ficou mais rápido).
-  String _paceDeltaText(int deltaSeconds) {
-    if (deltaSeconds == 0) return '0:00';
-    final sign = deltaSeconds > 0 ? '+' : '-';
-    final abs = deltaSeconds.abs();
-    return '$sign${abs ~/ 60}:${(abs % 60).toString().padLeft(2, '0')}';
   }
 
   @override
@@ -107,288 +76,283 @@ class _PeriodComparisonSectionState extends State<PeriodComparisonSection> {
     final accent = isDark ? AppColors.primaryNeon : AppColors.lightPrimary;
     final textColor = isDark ? AppColors.textLight : AppColors.textDark;
 
-    // Slide além dos dados disponíveis: gruda no máximo possível.
-    if (_slide > _maxSlide) _slide = _maxSlide;
+    if (_months.isEmpty ||
+        _monthA == null ||
+        _monthB == null ||
+        !_months.contains(_monthA) ||
+        !_months.contains(_monthB)) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Comparativo',
+            style: GoogleFonts.outfit(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: textColor,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Sem dados suficientes para comparar — registre treinos em pelo '
+            'menos dois meses.',
+            style: GoogleFonts.outfit(fontSize: 11, color: muted),
+          ),
+        ],
+      );
+    }
 
-    final recent = _aggregate(_block(0));
-    final previous = _aggregate(_block(1));
-    final hasBlocks = recent.runs + previous.runs > 0;
+    final a = _monthA!;
+    final b = _monthB!;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Título + tamanho da janela
-        Row(
-          children: [
-            Text(
-              'Comparativo',
-              style: GoogleFonts.outfit(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: textColor,
-              ),
-            ),
-            const Spacer(),
-            for (var i = 0; i < _windowOptions.length; i++) ...[
-              if (i > 0) const SizedBox(width: 6),
-              _windowChip(i, isDark),
-            ],
-          ],
+        Text(
+          'Comparativo',
+          style: GoogleFonts.outfit(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: textColor,
+          ),
         ),
         const SizedBox(height: 12),
-        // Navegação temporal
+        // Seletores: um mês em cima, outro embaixo
         Row(
           children: [
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              onPressed: _slide < _maxSlide
-                  ? () => setState(() => _slide++)
-                  : null,
-              icon: Icon(LucideIcons.chevronLeft, size: 18, color: muted),
-            ),
-            Expanded(
+            Expanded(child: _monthDropdown(_monthA, accent, isDark)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
-                '${_blockLabel(_block(1))}  vs  ${_blockLabel(_block(0))}',
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                'vs',
                 style: GoogleFonts.outfit(
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: textColor,
+                  color: muted,
                 ),
               ),
             ),
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              onPressed: _slide > 0 ? () => setState(() => _slide--) : null,
-              icon: Icon(LucideIcons.chevronRight, size: 18, color: muted),
-            ),
+            Expanded(child: _monthDropdown(_monthB, muted, isDark)),
           ],
         ),
-        const SizedBox(height: 10),
-        hasBlocks
-            ? GlassContainer(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                child: Column(
-                  children: [
-                    _headerRow(muted),
-                    Divider(color: muted.withValues(alpha: 0.15), height: 1),
-                    _buildRow(
-                      label: 'Distância',
-                      previous:
-                          '${previous.distance.toStringAsFixed(1)} km',
-                      current:
-                          '${recent.distance.toStringAsFixed(1)} km',
-                      deltaText:
-                          '${recent.distance - previous.distance >= 0 ? '+' : ''}'
-                          '${(recent.distance - previous.distance).toStringAsFixed(1)} km',
-                      hasDelta: true,
-                      isGood: recent.distance - previous.distance > 0.01,
-                      muted: muted,
-                      textColor: textColor,
-                      accent: accent,
-                    ),
-                    _divider(muted),
-                    _buildRow(
-                      label: 'Treinos',
-                      previous: '${previous.runs}',
-                      current: '${recent.runs}',
-                      deltaText:
-                          '${recent.runs - previous.runs >= 0 ? '+' : ''}'
-                          '${recent.runs - previous.runs}',
-                      hasDelta: true,
-                      isGood: recent.runs - previous.runs > 0,
-                      muted: muted,
-                      textColor: textColor,
-                      accent: accent,
-                    ),
-                    _divider(muted),
-                    _buildRow(
-                      label: 'Pace',
-                      previous:
-                          '${_formatPace(_paceMinPerKmOf(previous))}/km',
-                      current: '${_formatPace(_paceMinPerKmOf(recent))}/km',
-                      deltaText: _paceDeltaText(
-                        ((_paceMinPerKmOf(recent) - _paceMinPerKmOf(previous)) *
-                                60)
-                            .round(),
-                      ),
-                      hasDelta: previous.distance > 0 && recent.distance > 0,
-                      isGood: _paceMinPerKmOf(recent) <
-                          _paceMinPerKmOf(previous),
-                      muted: muted,
-                      textColor: textColor,
-                      accent: accent,
-                    ),
-                    _divider(muted),
-                    _buildRow(
-                      label: 'Calorias',
-                      previous: '${previous.calories} kcal',
-                      current: '${recent.calories} kcal',
-                      deltaText:
-                          '${recent.calories - previous.calories >= 0 ? '+' : ''}'
-                          '${recent.calories - previous.calories}',
-                      hasDelta: true,
-                      isGood: recent.calories - previous.calories > 0,
-                      muted: muted,
-                      textColor: textColor,
-                      accent: accent,
-                    ),
-                  ],
-                ),
-              )
-            : Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Text(
-                  'Sem dados suficientes para comparar — registre treinos em '
-                  'pelo menos dois meses.',
-                  style: GoogleFonts.outfit(fontSize: 11, color: muted),
-                ),
+        const SizedBox(height: 16),
+        GlassContainer(
+          padding: const EdgeInsets.fromLTRB(14, 16, 14, 10),
+          child: Column(
+            children: [
+              _metric(
+                label: 'Distância',
+                valueA: '${a.totalDistance.toStringAsFixed(1)} km',
+                valueB: '${b.totalDistance.toStringAsFixed(1)} km',
+                a: a.totalDistance,
+                b: b.totalDistance,
+                accent: accent,
+                muted: muted,
+                textColor: textColor,
+                isDark: isDark,
               ),
-        if (_slide == 0)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              'O bloco recente inclui o mês em andamento.',
-              style: GoogleFonts.outfit(fontSize: 10, color: muted),
-            ),
+              const SizedBox(height: 14),
+              _metric(
+                label: 'Treinos',
+                valueA: '${a.runCount}',
+                valueB: '${b.runCount}',
+                a: a.runCount.toDouble(),
+                b: b.runCount.toDouble(),
+                accent: accent,
+                muted: muted,
+                textColor: textColor,
+                isDark: isDark,
+              ),
+              const SizedBox(height: 14),
+              _metric(
+                label: 'Calorias',
+                valueA: '${a.totalCalories} kcal',
+                valueB: '${b.totalCalories} kcal',
+                a: a.totalCalories.toDouble(),
+                b: b.totalCalories.toDouble(),
+                accent: accent,
+                muted: muted,
+                textColor: textColor,
+                isDark: isDark,
+              ),
+              const SizedBox(height: 14),
+              _metric(
+                label: 'Pace',
+                valueA: _paceLabel(a),
+                valueB: _paceLabel(b),
+                a: _paceMinPerKm(a),
+                b: _paceMinPerKm(b),
+                accent: accent,
+                muted: muted,
+                textColor: textColor,
+                isDark: isDark,
+                note: 'menor é melhor',
+              ),
+              const SizedBox(height: 4),
+            ],
           ),
+        ),
       ],
     );
   }
 
-  Widget _windowChip(int index, bool isDark) {
-    final selected = _windowMonths == _windowOptions[index];
-    final accent = isDark ? AppColors.primaryNeon : AppColors.lightPrimary;
-    return GestureDetector(
-      onTap: () {
-        if (_windowMonths == _windowOptions[index]) return;
-        setState(() {
-          _windowMonths = _windowOptions[index];
-          if (_slide > _maxSlide) _slide = _maxSlide;
-        });
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: selected ? accent.withValues(alpha: 0.12) : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? accent : accent.withValues(alpha: 0.25),
-          ),
-        ),
-        child: Text(
-          _windowLabels[index],
-          style: GoogleFonts.outfit(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            color: selected ? accent : accent.withValues(alpha: 0.7),
-          ),
+  Widget _monthDropdown(
+    MonthlyEvolutionStats? value,
+    Color color,
+    bool isDark,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<MonthlyEvolutionStats>(
+          value: _months.contains(value) ? value : null,
+          isExpanded: true,
+          icon: Icon(LucideIcons.chevronDown, size: 16, color: color),
+          dropdownColor: isDark ? AppColors.cardBackground : Colors.white,
+          items: [
+            for (final m in _months)
+              DropdownMenuItem(
+                value: m,
+                child: Text(
+                  _label(m),
+                  style: GoogleFonts.outfit(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+              ),
+          ],
+          onChanged: (m) {
+            if (m == null) return;
+            setState(() {
+              if (m == _monthA) {
+                _monthA = _monthB;
+                _monthB = m;
+              } else {
+                _monthB = m;
+              }
+            });
+          },
         ),
       ),
     );
   }
 
-  Widget _headerRow(Color muted) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4, top: 4),
-      child: Row(
-        children: [
-          const SizedBox(width: 64),
-          Expanded(
-            child: Text(
-              'Anterior',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(fontSize: 9, color: muted),
-            ),
-          ),
-          SizedBox(
-            width: 58,
-            child: Text(
-              'Δ',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(fontSize: 9, color: muted),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              'Recente',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(fontSize: 9, color: muted),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRow({
+  /// Grupo de métrica: duas barras horizontais (A em cima, B embaixo),
+  /// escaladas pelo maior valor do par.
+  Widget _metric({
     required String label,
-    required String previous,
-    required String current,
-    required String deltaText,
-    required bool hasDelta,
-    required bool isGood,
+    required String valueA,
+    required String valueB,
+    required double a,
+    required double b,
+    required Color accent,
     required Color muted,
     required Color textColor,
-    required Color accent,
+    required bool isDark,
+    String? note,
   }) {
-    var deltaColor = muted;
-    if (hasDelta) {
-      deltaColor = isGood ? accent : AppColors.error;
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 64,
-            child: Text(
+    final max = math.max(a, b);
+    final barColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.05);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
               label,
-              style: GoogleFonts.outfit(fontSize: 11, color: muted),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              previous,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(fontSize: 12, color: textColor),
-            ),
-          ),
-          SizedBox(
-            width: 58,
-            child: Text(
-              deltaText,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: deltaColor,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              current,
-              textAlign: TextAlign.center,
               style: GoogleFonts.outfit(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: accent,
+                color: textColor,
               ),
             ),
-          ),
-        ],
-      ),
+            if (note != null) ...[
+              const Spacer(),
+              Text(
+                note,
+                style: GoogleFonts.outfit(fontSize: 10, color: muted),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 6),
+        _bar(_label(_monthA), valueA, a, max, accent, barColor, muted),
+        const SizedBox(height: 5),
+        _bar(_label(_monthB), valueB, b, max, muted, barColor, muted),
+      ],
     );
   }
 
-  Widget _divider(Color muted) {
-    return Divider(color: muted.withValues(alpha: 0.12), height: 1);
+  Widget _bar(
+    String monthLabel,
+    String valueText,
+    double value,
+    double max,
+    Color color,
+    Color trackColor,
+    Color muted,
+  ) {
+    final fraction = max > 0 ? (value / max).clamp(0.0, 1.0) : 0.0;
+    return Row(
+      children: [
+        SizedBox(
+          width: 42,
+          child: Text(
+            monthLabel,
+            style: GoogleFonts.outfit(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Container(
+            height: 14,
+            alignment: Alignment.centerLeft,
+            decoration: BoxDecoration(
+              color: trackColor,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: FractionallySizedBox(
+              widthFactor: fraction,
+              heightFactor: 1.0,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 62,
+          child: Text(
+            valueText,
+            textAlign: TextAlign.right,
+            style: GoogleFonts.outfit(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

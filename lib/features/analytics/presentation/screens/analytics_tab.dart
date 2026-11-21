@@ -49,9 +49,10 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
 
     // Dispara em paralelo: quatro consultas independentes.
     // "Mês" = últimas 5 semanas; Trimestre/Semestre/Ano usam meses
-    // agregados (12 meses cobrem as três janelas mensais).
+    // agregados (12 cobrem as três janelas) e o comparativo alcança
+    // até 36 meses de histórico nos dropdowns.
     final weeklyFuture = _dbService.getWeeklyEvolution(5);
-    final monthlyFuture = _dbService.getMonthlyEvolution(12);
+    final monthlyFuture = _dbService.getMonthlyEvolution(36);
     final weekRunsFuture = _dbService.getRunSummariesBetween(startOfWeek, now);
     final consistencyFuture = _dbService.getConsistencyStats(
       now.subtract(const Duration(days: 90)),
