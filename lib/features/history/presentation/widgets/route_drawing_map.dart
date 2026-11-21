@@ -263,19 +263,29 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
   void _onDrawStart(DragStartDetails details) {
     if (!_interactive) return;
     _strokeStarts.add(_points.length);
+    _captureDrawnPoint(details.localPosition);
   }
 
-  void _onDrawUpdate(DragUpdateDetails details) async {
-    if (!_interactive || _capturingPoint) return;
+  void _onDrawUpdate(DragUpdateDetails details) {
+    if (!_interactive) return;
+    _captureDrawnPoint(details.localPosition);
+  }
+
+  /// Converte a posição lógica do dedo em LatLng. O getLatLng do
+  /// google_maps_flutter espera pixels FÍSICOS na plataforma nativa —
+  /// sem o devicePixelRatio o ponto cai longe de onde o dedo toca.
+  Future<void> _captureDrawnPoint(Offset position) async {
+    if (_capturingPoint) return;
     final controller = _mapController;
     if (controller == null) return;
 
     _capturingPoint = true;
     try {
+      final dpr = MediaQuery.of(context).devicePixelRatio;
       final latLng = await controller.getLatLng(
         ScreenCoordinate(
-          x: details.localPosition.dx.round(),
-          y: details.localPosition.dy.round(),
+          x: (position.dx * dpr).round(),
+          y: (position.dy * dpr).round(),
         ),
       );
       if (!mounted) return;
