@@ -787,11 +787,8 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
             flex: 5,
             child: GestureDetector(
               onHorizontalDragEnd: _onSwipe,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Container(
-                  width: double.infinity,
+              child: Container(
+                width: double.infinity,
               decoration: BoxDecoration(
                 color: cs.surface,
                 borderRadius: const BorderRadius.only(
@@ -855,27 +852,40 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                         ),
                         const SizedBox(height: 2),
                         Row(
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
                           children: [
-                            Text(
-                              _run.distanceKm.toStringAsFixed(2),
-                              style: GoogleFonts.outfit(
-                                fontSize: 34,
-                                fontWeight: FontWeight.bold,
-                                color: cs.onSurface,
-                                height: 1.1,
-                              ),
+                            // Seta esquerda flanqueia o herói — volta no tempo
+                            if (_runIndex >= 0 &&
+                                _runIndex < _runIds.length - 1) ...[
+                              _buildSwipeArrow(cs, isLeft: true),
+                              const SizedBox(width: 12),
+                            ],
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.baseline,
+                              textBaseline: TextBaseline.alphabetic,
+                              children: [
+                                Text(
+                                  _run.distanceKm.toStringAsFixed(2),
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 34,
+                                    fontWeight: FontWeight.bold,
+                                    color: cs.onSurface,
+                                    height: 1.1,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'km',
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: accent,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'km',
-                              style: GoogleFonts.outfit(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: accent,
-                              ),
-                            ),
+                            const Spacer(),
+                            if (_runIndex > 0)
+                              _buildSwipeArrow(cs, isLeft: false),
                           ],
                         ),
                         const SizedBox(height: 16),
@@ -998,11 +1008,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                   ),
                 ),
               ),
-                ),
-                _buildSwipeArrow(cs, isLeft: true),
-                _buildSwipeArrow(cs, isLeft: false),
-                ],
-              ),
+            ),
             ),
           ),
         ],
@@ -1116,40 +1122,28 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     );
   }
 
-  /// Seta lateral do painel: esquerda volta no tempo (treinos mais antigos),
-  /// direita avança para o mais recente. Some quando não há para onde ir.
+  /// Seta que flanqueia o herói: esquerda volta no tempo (treinos mais
+  /// antigos), direita avança para o mais recente. A visibilidade é
+  /// controlada por quem chama.
   Widget _buildSwipeArrow(ColorScheme cs, {required bool isLeft}) {
-    final hasTarget = isLeft
-        ? _runIndex < _runIds.length - 1
-        : _runIndex > 0;
-    if (!hasTarget) return const SizedBox.shrink();
-
-    return Positioned(
-      top: 0,
-      bottom: 0,
-      left: isLeft ? 6 : null,
-      right: isLeft ? null : 6,
-      child: Center(
-        child: GestureDetector(
-          onTap: () {
-            final target = _runIndex + (isLeft ? 1 : -1);
-            if (target >= 0 && target < _runIds.length) {
-              _navigateTo(_runIds[target]);
-            }
-          },
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: cs.surface.withValues(alpha: 0.85),
-              shape: BoxShape.circle,
-              border: Border.all(color: cs.outline.withValues(alpha: 0.25)),
-            ),
-            child: Icon(
-              isLeft ? LucideIcons.chevronLeft : LucideIcons.chevronRight,
-              size: 16,
-              color: cs.onSurfaceVariant,
-            ),
-          ),
+    return GestureDetector(
+      onTap: () {
+        final target = _runIndex + (isLeft ? 1 : -1);
+        if (target >= 0 && target < _runIds.length) {
+          _navigateTo(_runIds[target]);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(7),
+        decoration: BoxDecoration(
+          color: cs.surface.withValues(alpha: 0.9),
+          shape: BoxShape.circle,
+          border: Border.all(color: cs.outline.withValues(alpha: 0.3)),
+        ),
+        child: Icon(
+          isLeft ? LucideIcons.chevronLeft : LucideIcons.chevronRight,
+          size: 15,
+          color: cs.onSurfaceVariant,
         ),
       ),
     );
