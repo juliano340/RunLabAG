@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -14,9 +17,18 @@ import '../../../../features/profile/presentation/screens/profile_tab.dart';
 import '../../../../core/widgets/ad_banner_widget.dart';
 import '../../../../core/services/ad_service.dart';
 import '../../../../core/services/analytics_service.dart';
+import '../../../../core/services/location_service.dart';
+import '../../../../core/services/backup_service.dart';
+
+/// Garante que o fluxo de permissões do primeiro acesso rode uma vez só.
+const _startupPermissionsDoneKey = 'startup_permissions_done';
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  /// Boot sem abas pesadas nem anúncios — usado quando o app detecta que
+  /// está em ciclo de falha de inicialização.
+  final bool safeMode;
+
+  const MainScreen({super.key, this.safeMode = false});
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -27,11 +39,63 @@ class _MainScreenState extends State<MainScreen> {
   int _tabSwitchCount = 0;
   DateTime? _lastBackPressTime;
 
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_requestStartupPermissionsOnce());
+  }
+
+  /// Primeiro acesso ao app de verdade (logo após o onboarding no primeiro
+  /// uso, ou abrir direto para usuário antigo): pede as permissões
+  /// essenciais em sequência, uma única vez.
+  ///
+  /// Quem pular continua sendo pedido sob demanda: a corrida pede GPS na
+  /// hora e o toggle de backup pede o acesso a arquivos.
+  Future<void> _requestStartupPermissionsOnce() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_startupPermissionsDoneKey) ?? false) return;
+      await prefs.setBool(_startupPermissionsDoneKey, true);
+      if (!Platform.isAndroid || widget.safeMode) return;
+
+      // Deixa o primeiro frame assentar antes da rajada de diálogos.
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+
+      // 1. Localização — o mesmo fluxo da corrida; no Android 13+ já
+      //    inclui a permissão de notificação do foreground service.
+      await LocationService().requestPermission();
+
+      // 2. "Acesso a todos os arquivos" — o auto-backup (ligado por padrão)
+      //    escreve em /Download/RunLab. Abre a tela especial do sistema;
+      //    sem conceder, o backup simplesmente não escreve (silencioso).
+      await BackupService().requestStoragePermission();
+    } catch (e) {
+      debugPrint('[Permissões] Fluxo de inicialização falhou: $e');
+    }
+  }
+
+  /// Abas só são montadas na primeira visita. Antes, o IndexedStack construía
+  /// as cinco de uma vez e cada uma disparava suas consultas no boot.
+  late final List<bool> _built = [true, false, false, false, false];
+
   // Mostra intersticial no máximo 1x por dia, somente a cada 3 trocas de aba.
   // Nunca interrompe ação ativa — só em navegação passiva.
   Future<void> _onTabChanged(int newIndex) async {
+    if (widget.safeMode && newIndex != 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Modo seguro ativo: use Perfil > Apagar Todos os Dados para liberar o app.',
+          ),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _currentIndex = newIndex;
+      _built[newIndex] = true;
       _tabSwitchCount++;
     });
 
@@ -54,6 +118,15 @@ class _MainScreenState extends State<MainScreen> {
 
     AnalyticsService().logInterstitialShown();
     AdService().showInterstitialAd(onAdDismissed: () {});
+  }
+
+  /// Monta a aba só na primeira visita e silencia os tickers das abas
+  /// invisíveis (o IndexedStack mantém todas vivas — e animando).
+  Widget _buildTab(int index, Widget child) {
+    return TickerMode(
+      enabled: index == _currentIndex,
+      child: _built[index] ? child : const SizedBox.shrink(),
+    );
   }
 
   @override
@@ -120,18 +193,22 @@ class _MainScreenState extends State<MainScreen> {
               child: IndexedStack(
                 index: _currentIndex,
                 children: [
-                  HomeTab(
-                    key: PageStorageKey('tab_home'),
-                    onNavigateToProfile: () => _onTabChanged(4),
+                  _buildTab(
+                    0,
+                    HomeTab(
+                      key: const PageStorageKey('tab_home'),
+                      onNavigateToProfile: () => _onTabChanged(4),
+                    ),
                   ),
-                  HistoryTab(key: PageStorageKey('tab_history')),
-                  AnalyticsTab(key: PageStorageKey('tab_analytics')),
-                  RecordsTab(key: PageStorageKey('tab_records')),
-                  ProfileTab(key: PageStorageKey('tab_profile')),
+                  _buildTab(1, const HistoryTab(key: PageStorageKey('tab_history'))),
+                  _buildTab(2, const AnalyticsTab(key: PageStorageKey('tab_analytics'))),
+                  _buildTab(3, const RecordsTab(key: PageStorageKey('tab_records'))),
+                  _buildTab(4, const ProfileTab(key: PageStorageKey('tab_profile'))),
                 ],
               ),
             ),
-            AdBannerWidget(key: ValueKey('ad_banner_${Theme.of(context).brightness}')),
+            if (!widget.safeMode)
+              AdBannerWidget(key: ValueKey('ad_banner_${Theme.of(context).brightness}')),
           ],
         ),
         bottomNavigationBar: Container(
