@@ -775,6 +775,7 @@ class DatabaseService {
 
       double totalDist = 0;
       int totalSeconds = 0;
+      int totalCal = 0;
       int runCount = 0;
       final Map<String, int> runsByType = {};
 
@@ -782,6 +783,7 @@ class DatabaseService {
         if (r.date.isBefore(start) || !r.date.isBefore(end)) continue;
         totalDist += r.distanceKm;
         totalSeconds += r.durationSeconds;
+        totalCal += r.calories;
         runCount++;
         final type = r.type.isNotEmpty ? r.type : 'Corrida';
         runsByType[type] = (runsByType[type] ?? 0) + 1;
@@ -800,6 +802,7 @@ class DatabaseService {
         totalDurationSeconds: totalSeconds,
         goalDistance: goal ?? 80.0,
         runCount: runCount,
+        totalCalories: totalCal,
         runsByType: runsByType,
       ));
     }

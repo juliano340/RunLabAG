@@ -14,6 +14,7 @@ import '../widgets/alert_card.dart';
 import '../widgets/consistency_card.dart';
 import '../widgets/pace_summary_strip.dart';
 import '../widgets/pace_trend_chart.dart';
+import '../widgets/period_comparison_section.dart';
 import '../widgets/volume_bar_chart.dart';
 
 class AnalyticsTab extends StatefulWidget {
@@ -47,9 +48,10 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
         .subtract(Duration(days: now.weekday % 7));
 
     // Dispara em paralelo: quatro consultas independentes.
-    // "Mês" = últimas 5 semanas; "Trimestre" = últimos 3 meses.
+    // "Mês" = últimas 5 semanas; Trimestre/Semestre/Ano usam meses
+    // agregados (12 meses cobrem as três janelas mensais).
     final weeklyFuture = _dbService.getWeeklyEvolution(5);
-    final monthlyFuture = _dbService.getMonthlyEvolution(3);
+    final monthlyFuture = _dbService.getMonthlyEvolution(12);
     final weekRunsFuture = _dbService.getRunSummariesBetween(startOfWeek, now);
     final consistencyFuture = _dbService.getConsistencyStats(
       now.subtract(const Duration(days: 90)),
@@ -85,6 +87,12 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
       case 2:
         // "Trimestre": últimos 3 meses
         return PaceSeriesService.fromMonthly(_monthlyData.take(3).toList());
+      case 3:
+        // "Semestre": últimos 6 meses
+        return PaceSeriesService.fromMonthly(_monthlyData.take(6).toList());
+      case 4:
+        // "Ano": últimos 12 meses
+        return PaceSeriesService.fromMonthly(_monthlyData.toList());
       case 0:
       default:
         // "Semana": dias da semana corrente (domingo → sábado)
@@ -103,6 +111,8 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     return switch (_selectedPeriod) {
       1 => 'últimas 5 semanas',
       2 => 'últimos 3 meses',
+      3 => 'últimos 6 meses',
+      4 => 'últimos 12 meses',
       _ => 'semana corrente, dia a dia',
     };
   }
@@ -144,6 +154,8 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
                 const SizedBox(height: 20),
                 _buildVolumeSection(context),
                 const SizedBox(height: 20),
+                _buildComparisonSection(context),
+                const SizedBox(height: 20),
                 if (_alerts.isNotEmpty) ...[
                   _buildAlertsSection(context),
                   const SizedBox(height: 20),
@@ -181,7 +193,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
 
   Widget _buildPeriodSelector(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final periods = ['Semana', 'Mês', 'Trimestre'];
+    final periods = ['Semana', 'Mês', 'Trimestre', 'Semestre', 'Ano'];
 
     return Container(
       padding: const EdgeInsets.all(4),
@@ -389,6 +401,11 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
             )),
       ],
     );
+  }
+
+  /// Comparativo de blocos mensais com janela deslizante.
+  Widget _buildComparisonSection(BuildContext context) {
+    return PeriodComparisonSection(monthlyData: _monthlyData);
   }
 
   Widget _buildConsistencySection(BuildContext context) {

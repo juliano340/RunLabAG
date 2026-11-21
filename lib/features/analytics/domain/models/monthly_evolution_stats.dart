@@ -6,6 +6,7 @@ class MonthlyEvolutionStats {
   final int totalDurationSeconds;
   final double goalDistance;
   final int runCount;
+  final int totalCalories;
   final Map<String, int> runsByType;
 
   MonthlyEvolutionStats({
@@ -16,6 +17,7 @@ class MonthlyEvolutionStats {
     required this.totalDurationSeconds,
     required this.goalDistance,
     required this.runCount,
+    this.totalCalories = 0,
     this.runsByType = const {},
   });
 
