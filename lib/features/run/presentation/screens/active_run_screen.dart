@@ -79,6 +79,12 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   bool _isMapStylesLoaded = false;
   bool _isMapReady = false;
 
+  /// Inicialização do GPS (permissão + primeiro fix). O início expresso e o
+  /// restauro esperam por ela antes de abrir a stream — sem isso a permissão
+  /// de notificação do foreground service (Android 13+) ainda não estava
+  /// concedida e a subscription morria em silêncio: mapa andava, rota zerada.
+  Future<void>? _locationInitFuture;
+
   // Metrics
   double _distanceKm = 0.0;
   double? _distanceGoal;
@@ -123,14 +129,16 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     _loadAutoPausePreference();
     _loadMapStyle();
     _loadMarkerIcons();
-    _initLocation();
+    _locationInitFuture = _initLocation();
     _loadUserProfile();
     if (widget.restoredState != null) {
       _restoreState(widget.restoredState!);
     } else if (widget.autoStart) {
-      // Início expresso: a corrida começa no primeiro frame, com a mesma
-      // semântica de ter apertado INICIAR.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Início expresso: começa no primeiro frame, mas só depois de o GPS
+      // ter permissão. A sensação continua sendo "um toque e já correndo" —
+      // a espera é a mesma que o usuário tinha na tela pré-início.
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await _locationInitFuture;
         if (mounted) _startRun();
       });
     }
@@ -296,7 +304,12 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     });
 
     if (!_isFinished && !_isPaused) {
-      _startTimersAndStreams(isNew: false);
+      // Mesma corrida do início expresso: numa retomada a frio a stream
+      // também podia nascer antes da permissão e deixar a rota zerada.
+      _locationInitFuture?.then((_) {
+        if (mounted) _startTimersAndStreams(isNew: false);
+      }) ??
+          _startTimersAndStreams(isNew: false);
     }
   }
 
@@ -497,33 +510,44 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   Future<void> _initLocation() async {
     try {
       final hasPermission = await _locationService.requestPermission();
-      if (hasPermission) {
+      if (!mounted || !hasPermission) return;
+
+      setState(() {
+        _hasPermissions = true;
+      });
+      final pos = await _locationService.getCurrentLocation();
+      if (!mounted) return;
+      final latLng = LatLng(pos.latitude, pos.longitude);
+
+      // Nunca sobrescreve a rota de um treino retomado: o GPS inicial
+      // chegando depois do restore apagava o trajeto já percorrido.
+      if (!_isRunning) {
         setState(() {
-          _hasPermissions = true;
+          _routePoints = [
+            [latLng],
+          ];
+          _routePointTimes = [
+            [_secondsElapsed],
+          ];
         });
-        final pos = await _locationService.getCurrentLocation();
-        final latLng = LatLng(pos.latitude, pos.longitude);
-
-        // Nunca sobrescreve a rota de um treino retomado: o GPS inicial
-        // chegando depois do restore apagava o trajeto já percorrido.
-        if (!_isRunning) {
-          setState(() {
-            _routePoints = [
-              [latLng],
-            ];
-            _routePointTimes = [
-              [_secondsElapsed],
-            ];
-          });
-        }
-
-        final controller = await _controller.future;
-        final cameraTarget = LatLng(pos.latitude - 0.002, pos.longitude);
-        controller.animateCamera(CameraUpdate.newLatLngZoom(cameraTarget, 16));
       }
+
+      // Centralizar o mapa NÃO pode bloquear o início expresso: a permissão
+      // e o primeiro fix já estão prontos aqui; a câmera acompanha quando
+      // o platform view do Google Maps terminar de nascer.
+      _centerMapOn(pos);
     } catch (e) {
       debugPrint("Error initializing location: $e");
     }
+  }
+
+  void _centerMapOn(Position pos) {
+    _controller.future.then((controller) {
+      final cameraTarget = LatLng(pos.latitude - 0.002, pos.longitude);
+      controller.animateCamera(CameraUpdate.newLatLngZoom(cameraTarget, 16));
+    }, onError: (Object e) {
+      debugPrint("Error centering map: $e");
+    });
   }
 
   void _startRun() async {
