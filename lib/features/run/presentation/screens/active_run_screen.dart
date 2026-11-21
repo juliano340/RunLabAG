@@ -33,7 +33,16 @@ import '../../domain/services/gps_filter_service.dart';
 
 class ActiveRunScreen extends StatefulWidget {
   final Map<String, dynamic>? restoredState;
-  const ActiveRunScreen({super.key, this.restoredState});
+
+  /// Início expresso: dispara a corrida no primeiro toque, pulando a tela
+  /// pré-início (META/INICIAR). Ignorado quando há estado restaurado.
+  final bool autoStart;
+
+  const ActiveRunScreen({
+    super.key,
+    this.restoredState,
+    this.autoStart = false,
+  });
 
   @override
   State<ActiveRunScreen> createState() => _ActiveRunScreenState();
@@ -45,6 +54,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
 
   StreamSubscription<Position>? _positionStream;
   List<List<LatLng>> _routePoints = []; // Lista de segmentos
+  /// Tempo ativo (segundos) de cada ponto da rota — paralelo a [_routePoints].
+  /// Usado para colorir o mapa por faixa de ritmo no histórico.
+  List<List<int>> _routePointTimes = [];
   bool _isRunning = false;
   bool _isPaused = false;
   bool _isFinished = false;
@@ -92,6 +104,15 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   DateTime? _lastAutoResumeSnackAt;
   DateTime? _runStartTime;
 
+  // Persistência do treino ativo: metadados são baratos (5 s), a rota é
+  // grande e só é reescrita a cada 30 s / na virada de km / em pausa.
+  bool _metaPersistInFlight = false;
+  bool _routePersistInFlight = false;
+  DateTime? _lastRoutePersistAt;
+  DateTime? _lastCameraUpdateAt;
+  static const Duration _routePersistInterval = Duration(seconds: 30);
+  static const Duration _cameraUpdateInterval = Duration(seconds: 3);
+
   ThemeService? _themeService;
 
   @override
@@ -105,6 +126,12 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     _loadUserProfile();
     if (widget.restoredState != null) {
       _restoreState(widget.restoredState!);
+    } else if (widget.autoStart) {
+      // Início expresso: a corrida começa no primeiro frame, com a mesma
+      // semântica de ter apertado INICIAR.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startRun();
+      });
     }
   }
 
@@ -244,10 +271,12 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
                     .toList(),
               )
               .toList();
+          _routePointTimes = _decodePersistedTimes(decoded, _routePoints);
         } else {
           _routePoints = [
             decoded.map((p) => LatLng(p['lat'], p['lng'])).toList(),
           ];
+          _routePointTimes = [];
         }
       }
 
@@ -261,18 +290,93 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         _autoPauses = [];
       }
 
-      _isRunning = true;
+      _isFinished = (state['finished'] ?? 0) == 1;
+      _isRunning = !_isFinished;
     });
 
-    if (!_isPaused) {
+    if (!_isFinished && !_isPaused) {
       _startTimersAndStreams(isNew: false);
     }
   }
 
-  void _persistState() {
+  void _persistState({bool forceRoute = false}) {
     if (!_isRunning || _isFinished) return;
+    _persistMeta();
+    _persistRoute(force: forceRoute);
+  }
 
-    DatabaseService().saveActiveRun({
+  /// Linha pequena de metadados — pode rodar com frequência.
+  Future<void> _persistMeta() async {
+    if (!_isRunning || _isFinished || _metaPersistInFlight) return;
+    _metaPersistInFlight = true;
+    try {
+      await DatabaseService().saveActiveRunMeta({
+        'startTime': (_runStartTime ?? DateTime.now()).toIso8601String(),
+        'distanceKm': _distanceKm,
+        'secondsElapsed': _secondsElapsed,
+        'pausedDurationSeconds': _pausedSecondsElapsed,
+        'lastKmNotified': _lastKmNotified,
+        'distanceGoal': _distanceGoal,
+        'targetTimeSeconds': _targetTimeSeconds,
+        'isPaused': _isPaused ? 1 : 0,
+        'finished': 0,
+        'splits': jsonEncode(_splits.map((s) => s.toMap()).toList()),
+        'autoPauses': jsonEncode(_autoPauses.map((ap) => ap.toMap()).toList()),
+      });
+    } catch (e) {
+      debugPrint('Falha ao persistir metadados do treino: $e');
+    } finally {
+      _metaPersistInFlight = false;
+    }
+  }
+
+  /// Rota completa — payload grande, com throttle e sem escritas concorrentes.
+  Future<void> _persistRoute({bool force = false}) async {
+    if (!_isRunning || _isFinished || _routePersistInFlight) return;
+
+    final now = DateTime.now();
+    final last = _lastRoutePersistAt;
+    if (!force && last != null && now.difference(last) < _routePersistInterval) {
+      return;
+    }
+
+    _routePersistInFlight = true;
+    _lastRoutePersistAt = now;
+    try {
+      await DatabaseService().saveActiveRunRoute(_encodeRouteJson());
+    } catch (e) {
+      debugPrint('Falha ao persistir rota do treino: $e');
+      _lastRoutePersistAt = null; // tenta de novo na próxima chamada
+    } finally {
+      _routePersistInFlight = false;
+    }
+  }
+
+  /// Serializa a rota em uma única passada (uma consulta de tempo por ponto).
+  String _encodeRouteJson() {
+    final segments = <List<Map<String, dynamic>>>[];
+    for (var si = 0; si < _routePoints.length; si++) {
+      final segment = _routePoints[si];
+      final times = si < _routePointTimes.length ? _routePointTimes[si] : null;
+      final encoded = <Map<String, dynamic>>[];
+      for (var pi = 0; pi < segment.length; pi++) {
+        final point = segment[pi];
+        final time = (times != null && pi < times.length) ? times[pi] : null;
+        encoded.add(
+          time == null
+              ? {'lat': point.latitude, 'lng': point.longitude}
+              : {'lat': point.latitude, 'lng': point.longitude, 't': time},
+        );
+      }
+      segments.add(encoded);
+    }
+    return jsonEncode(segments);
+  }
+
+  /// Snapshot final: permite recuperar o treino mesmo se o app morrer antes
+  /// do usuário confirmar o salvamento.
+  Future<void> _persistFinished() async {
+    final meta = <String, dynamic>{
       'startTime': (_runStartTime ?? DateTime.now()).toIso8601String(),
       'distanceKm': _distanceKm,
       'secondsElapsed': _secondsElapsed,
@@ -280,19 +384,35 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       'lastKmNotified': _lastKmNotified,
       'distanceGoal': _distanceGoal,
       'targetTimeSeconds': _targetTimeSeconds,
-      'isPaused': _isPaused ? 1 : 0,
-      'route': jsonEncode(
-        _routePoints
-            .map(
-              (segment) => segment
-                  .map((p) => {'lat': p.latitude, 'lng': p.longitude})
-                  .toList(),
-            )
-            .toList(),
-      ),
+      'isPaused': 1,
+      'finished': 1,
       'splits': jsonEncode(_splits.map((s) => s.toMap()).toList()),
       'autoPauses': jsonEncode(_autoPauses.map((ap) => ap.toMap()).toList()),
-    });
+    };
+    try {
+      await DatabaseService().saveActiveRunMeta(meta);
+      await DatabaseService().saveActiveRunRoute(_encodeRouteJson());
+    } catch (e) {
+      debugPrint('Falha ao persistir treino finalizado: $e');
+    }
+  }
+
+  /// Decodifica os tempos por ponto do JSON persistido.
+  /// Retorna [] se algum ponto estiver sem 't' (formato antigo).
+  List<List<int>> _decodePersistedTimes(List<dynamic> decoded, List<List<LatLng>> points) {
+    if (decoded.length != points.length) return [];
+    var allHaveTime = true;
+    final times = decoded.asMap().entries.map((entry) {
+      final segment = entry.value as List;
+      return segment.asMap().entries.map((p) {
+        final t = p.value is Map ? p.value['t'] : null;
+        if (t is int) return t;
+        if (t is num) return t.toInt();
+        allHaveTime = false;
+        return 0;
+      }).toList();
+    }).toList();
+    return allHaveTime ? times : [];
   }
 
   Future<void> _loadUserProfile() async {
@@ -383,11 +503,18 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         final pos = await _locationService.getCurrentLocation();
         final latLng = LatLng(pos.latitude, pos.longitude);
 
-        setState(() {
-          _routePoints = [
-            [latLng],
-          ];
-        });
+        // Nunca sobrescreve a rota de um treino retomado: o GPS inicial
+        // chegando depois do restore apagava o trajeto já percorrido.
+        if (!_isRunning) {
+          setState(() {
+            _routePoints = [
+              [latLng],
+            ];
+            _routePointTimes = [
+              [_secondsElapsed],
+            ];
+          });
+        }
 
         final controller = await _controller.future;
         final cameraTarget = LatLng(pos.latitude - 0.002, pos.longitude);
@@ -422,6 +549,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _currentAutoPauseDurationSeconds = 0;
       _autoPauseStartTime = null;
       _routePoints = [[]];
+      _routePointTimes = [[]];
       _isRunning = true;
       _isPaused = false;
       _isFinished = false;
@@ -477,7 +605,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     WakelockPlus.enable();
 
     if (isNew) {
-      _persistState();
+      _persistState(forceRoute: true);
     }
 
     try {
@@ -530,6 +658,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               _lastResumeSeconds = _secondsElapsed;
               if (_routePoints.isEmpty || _routePoints.last.isNotEmpty) {
                 _routePoints.add([]);
+                _routePointTimes.add([]);
               }
             });
             _vibrateAutoPauseEnded();
@@ -597,8 +726,10 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             setState(() {
               if (_routePoints.last.isEmpty) {
                 _routePoints.last.add(newPoint);
+                _routePointTimes.last.add(_secondsElapsed);
               } else {
                 _routePoints.add([newPoint]);
+                _routePointTimes.add([_secondsElapsed]);
               }
               _paceBuffer = [position];
               _isFirstPointAfterResume = false;
@@ -634,6 +765,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               _updateSmoothedPace();
 
               _routePoints.last.add(newPoint);
+              _routePointTimes.last.add(_secondsElapsed);
             });
 
             _updateCamera(newPoint);
@@ -651,7 +783,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               _lastSplitCalories = totalCalories;
 
               _lastKmNotified = currentKm;
-              _persistState();
+              _persistState(forceRoute: true);
 
               if (_userProfile?.kmNotificationsEnabled == true) {
                 final currentPace = _currentSmoothedPace.isNotEmpty
@@ -698,10 +830,15 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               _routePoints = [
                 [newPoint],
               ];
+              _routePointTimes = [
+                [_secondsElapsed],
+              ];
             } else if (_routePoints.last.isEmpty) {
               _routePoints.last.add(newPoint);
+              _routePointTimes.last.add(_secondsElapsed);
             } else {
               _routePoints.add([newPoint]);
+              _routePointTimes.add([_secondsElapsed]);
             }
             _paceBuffer = [position];
             _isFirstPointAfterResume = false;
@@ -756,7 +893,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     });
     _timer?.cancel();
     WakelockPlus.disable();
-    _persistState();
+    _persistState(forceRoute: true);
   }
 
   void _resumeRun() {
@@ -769,10 +906,11 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       _lastResumeSeconds = _secondsElapsed;
       if (_routePoints.isEmpty || _routePoints.last.isNotEmpty) {
         _routePoints.add([]);
+        _routePointTimes.add([]);
       }
     });
     _startTimersAndStreams(isNew: false);
-    _persistState();
+    _persistState(forceRoute: true);
   }
 
   void _stopRun() async {
@@ -872,7 +1010,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         _isRunning = false;
         _isFinished = true;
       });
-      DatabaseService().clearActiveRun();
+      // NÃO limpa o treino ativo aqui: se o app morrer antes de o usuário
+      // salvar, o snapshot continua recuperável no próximo boot.
+      _persistFinished();
     }
   }
 
@@ -899,6 +1039,13 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   }
 
   Future<void> _updateCamera(LatLng target) async {
+    // Reposicionar a câmera a cada ponto custa caro no Maps. 3 s já acompanha
+    // o corredor e sobra para o mapa respirar.
+    final now = DateTime.now();
+    final last = _lastCameraUpdateAt;
+    if (last != null && now.difference(last) < _cameraUpdateInterval) return;
+    _lastCameraUpdateAt = now;
+
     final controller = await _controller.future;
     controller.animateCamera(CameraUpdate.newLatLng(target));
   }
@@ -1035,6 +1182,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         pace: _calculatePace(),
         calories: _calculateCalories(),
         route: List<List<LatLng>>.from(_routePoints),
+        routeTimes: List<List<int>>.from(_routePointTimes),
         type: selectedType,
         mood: selectedMood,
         splits: List.from(_splits),
@@ -1072,7 +1220,20 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         (route) => false,
       );
     } catch (e) {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Não foi possível salvar o treino. Seus dados continuam salvos '
+              'no aparelho — tente novamente.',
+            ),
+            backgroundColor: Colors.redAccent,
+            duration: Duration(seconds: 6),
+          ),
+        );
+      }
+      // O snapshot do treino permanece no banco: nada é perdido aqui.
       AnalyticsService().recordError(
         e,
         StackTrace.current,
@@ -1212,6 +1373,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     _timer?.cancel();
     _positionStream?.cancel();
     _themeService?.removeListener(_onThemeChanged);
+    // Evita a tela ficar acesa para sempre se o usuário sair sem parar o treino.
+    WakelockPlus.disable();
     super.dispose();
   }
 }

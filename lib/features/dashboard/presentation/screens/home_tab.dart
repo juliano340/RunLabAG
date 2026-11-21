@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -383,6 +384,59 @@ class _HomeTabState extends State<HomeTab> {
                       ),
                     ).then((_) => _loadData());
                   },
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Início expresso: GO de um toque só, sem tela pré-início
+              Center(
+                child: GestureDetector(
+                  onTap: () {
+                    HapticFeedback.mediumImpact();
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ActiveRunScreen(autoStart: true),
+                      ),
+                    ).then((_) => _loadData());
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: (isDark
+                              ? Colors.white
+                              : Colors.black)
+                          .withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: (isDark ? Colors.white : Colors.black)
+                            .withValues(alpha: 0.15),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          LucideIcons.zap,
+                          size: 14,
+                          color: isDark
+                              ? AppColors.primaryNeon
+                              : AppColors.lightPrimary,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Início expresso',
+                          style: GoogleFonts.outfit(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 32),
