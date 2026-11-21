@@ -5,7 +5,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:provider/provider.dart';
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/services/theme_service.dart';
 import '../../../../core/services/backup_service.dart';
@@ -15,6 +14,8 @@ import '../../../../core/utils/time_utils.dart';
 import '../../../../core/utils/map_marker_helper.dart';
 import 'full_map_screen.dart';
 import 'edit_run_route_screen.dart';
+import '../../domain/services/pace_zone_service.dart';
+import '../widgets/pace_zone_legend.dart';
 
 class RunDetailScreen extends StatefulWidget {
   final RunModel run;
@@ -27,6 +28,7 @@ class RunDetailScreen extends StatefulWidget {
 
 class _RunDetailScreenState extends State<RunDetailScreen> {
   late RunModel _run;
+  late PaceZoneResult _paceResult;
   GoogleMapController? _mapController;
   String? _mapStyle;
   String? _minimalMapStyle;
@@ -36,12 +38,95 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   BitmapDescriptor? _pauseMarkerIcon;
   BitmapDescriptor? _resumeMarkerIcon;
 
+  // Navegação por swipe: vizinhos na ordem do histórico (mais recente primeiro).
+  List<String> _runIds = const [];
+  int _runIndex = -1;
+  bool _isNavigating = false;
+
   @override
   void initState() {
     super.initState();
     _run = widget.run;
+    _paceResult = _analyzePace();
     _loadMapStyle();
     _loadMarkerIcons();
+    _loadNeighbors();
+    // A lista do histórico passa resumos (sem rota) para o boot ser leve.
+    // Aqui carregamos o treino completo só porque a tela vai desenhar o mapa.
+    if (!widget.run.hasRoute && widget.run.distanceKm > 0) {
+      _loadFullRun();
+    }
+  }
+
+  Future<void> _loadFullRun() async {
+    try {
+      final full = await DatabaseService().getRunById(widget.run.id);
+      if (!mounted || full == null) return;
+      setState(() {
+        _run = full;
+        _paceResult = _analyzePace();
+      });
+    } catch (e) {
+      debugPrint('Falha ao carregar rota do treino: $e');
+    }
+  }
+
+  // ── Navegação por swipe entre treinos vizinhos ────────────────────────
+
+  bool get _showCounter => _runIds.length > 1 && _runIndex >= 0;
+
+  Future<void> _loadNeighbors() async {
+    try {
+      final summaries = await DatabaseService().getRunSummaries();
+      if (!mounted) return;
+      // getRunSummaries já ordena do mais recente para o mais antigo.
+      setState(() {
+        _runIds = summaries.map((r) => r.id).toList();
+        _runIndex = _runIds.indexOf(_run.id);
+      });
+    } catch (e) {
+      debugPrint('Falha ao carregar treinos vizinhos: $e');
+    }
+  }
+
+  /// Esquerda = treino mais recente · direita = mais antigo.
+  void _onSwipe(DragEndDetails details) {
+    if (_isNavigating || _runIds.isEmpty || _runIndex < 0) return;
+    final velocity = details.primaryVelocity ?? 0;
+    if (velocity.abs() < 350) return;
+
+    // Lista DESC: arrastar para a esquerda (-v) volta uma posição.
+    final target = _runIndex + (velocity < 0 ? -1 : 1);
+    if (target < 0 || target >= _runIds.length) return;
+    _navigateTo(_runIds[target]);
+  }
+
+  Future<void> _navigateTo(String runId) async {
+    setState(() => _isNavigating = true);
+    try {
+      final run = await DatabaseService().getRunById(runId);
+      if (!mounted) return;
+      if (run == null) {
+        setState(() => _isNavigating = false);
+        return;
+      }
+      await Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => RunDetailScreen(run: run)),
+      );
+    } catch (e) {
+      if (mounted) setState(() => _isNavigating = false);
+    }
+  }
+
+  PaceZoneResult _analyzePace() {
+    return PaceZoneService.analyze(
+      route: _run.route,
+      routeTimes: _run.routeTimes,
+      distanceKm: _run.distanceKm,
+      durationSeconds: _run.durationSeconds,
+      splits: _run.splits,
+    );
   }
 
   @override
@@ -119,7 +204,10 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       MaterialPageRoute(builder: (context) => EditRunRouteScreen(run: _run)),
     );
     if (updated != null && mounted) {
-      setState(() => _run = updated);
+      setState(() {
+        _run = updated;
+        _paceResult = _analyzePace();
+      });
     }
   }
 
@@ -430,9 +518,25 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text(
-          'Treino de ${_formatDate(_run.date)}',
-          style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(
+                'Treino de ${_formatDate(_run.date)}',
+                style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+              ),
+            ),
+            if (_showCounter) ...[
+              const SizedBox(width: 8),
+              Text(
+                '${_runIndex + 1}/${_runIds.length}',
+                style: GoogleFonts.outfit(
+                  fontSize: 12,
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ],
         ),
         leading: IconButton(
           icon: Icon(LucideIcons.arrowLeft, color: cs.onSurface),
@@ -516,11 +620,11 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                         ];
                       }),
                     },
-                    polylines: _run.route.asMap().entries.map((entry) {
+                    polylines: _paceResult.segments.asMap().entries.map((entry) {
                     return Polyline(
-                      polylineId: PolylineId('route_${entry.key}'),
-                      points: entry.value,
-                      color: AppColors.primaryNeon,
+                      polylineId: PolylineId('pace_${entry.key}'),
+                      points: entry.value.points,
+                      color: entry.value.zone.color,
                       width: 5,
                       startCap: Cap.roundCap,
                       endCap: Cap.roundCap,
@@ -628,15 +732,37 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                     ],
                   ),
                 ),
+
+                // Legenda das faixas de ritmo com percentuais
+                if (_paceResult.segments.isNotEmpty)
+                  Positioned(
+                    left: 12,
+                    bottom: 12,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.of(context).size.width - 100,
+                      ),
+                      child: PaceZoneLegend(
+                        distanceByZoneKm: _paceResult.distanceByZoneKm,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
           
           // Metrics Panel in Scrollable Sheet Container
+          // Swipe horizontal no painel navega entre os treinos vizinhos;
+          // as setas laterais indicam (e permitem) o caminho disponível.
           Expanded(
             flex: 5,
-            child: Container(
-              width: double.infinity,
+            child: GestureDetector(
+              onHorizontalDragEnd: _onSwipe,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Container(
+                  width: double.infinity,
               decoration: BoxDecoration(
                 color: cs.surface,
                 borderRadius: const BorderRadius.only(
@@ -886,9 +1012,53 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                   ),
                 ),
               ),
+                ),
+                _buildSwipeArrow(cs, isLeft: true),
+                _buildSwipeArrow(cs, isLeft: false),
+                ],
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Seta lateral do painel: indica (e permite, ao tocar) o lado com
+  /// treino vizinho. Some quando não há para onde ir.
+  Widget _buildSwipeArrow(ColorScheme cs, {required bool isLeft}) {
+    final hasTarget = isLeft
+        ? _runIndex > 0
+        : _runIndex >= 0 && _runIndex < _runIds.length - 1;
+    if (!hasTarget) return const SizedBox.shrink();
+
+    return Positioned(
+      top: 0,
+      bottom: 0,
+      left: isLeft ? 6 : null,
+      right: isLeft ? null : 6,
+      child: Center(
+        child: GestureDetector(
+          onTap: () {
+            final target = _runIndex + (isLeft ? -1 : 1);
+            if (target >= 0 && target < _runIds.length) {
+              _navigateTo(_runIds[target]);
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: cs.surface.withValues(alpha: 0.85),
+              shape: BoxShape.circle,
+              border: Border.all(color: cs.outline.withValues(alpha: 0.25)),
+            ),
+            child: Icon(
+              isLeft ? LucideIcons.chevronLeft : LucideIcons.chevronRight,
+              size: 16,
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+        ),
       ),
     );
   }
