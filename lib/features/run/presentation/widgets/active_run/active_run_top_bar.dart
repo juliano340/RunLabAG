@@ -14,6 +14,7 @@ class ActiveRunTopBar extends StatelessWidget {
   final bool autoPauseEnabled;
 
   final VoidCallback onBack;
+  final VoidCallback onMinimize;
   final VoidCallback onToggleMinimalMap;
   final VoidCallback onToggleAutoPause;
   final VoidCallback onLock;
@@ -27,6 +28,7 @@ class ActiveRunTopBar extends StatelessWidget {
     required this.showMinimalMap,
     required this.autoPauseEnabled,
     required this.onBack,
+    required this.onMinimize,
     required this.onToggleMinimalMap,
     required this.onToggleAutoPause,
     required this.onLock,
@@ -120,10 +122,22 @@ class ActiveRunTopBar extends StatelessWidget {
                   ],
                 ),
               ),
-              // Coluna direita: Olho + Auto Pause + Cadeado
+              // Coluna direita: Minimizar + Olho + Auto Pause + Cadeado
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  CircleAvatar(
+                    backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                    child: IconButton(
+                      icon: Icon(
+                        LucideIcons.minimize2,
+                        color: AppColors.primaryNeon,
+                      ),
+                      onPressed: onMinimize,
+                      tooltip: 'Minimizar e navegar pelo app',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   CircleAvatar(
                     backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
                     child: IconButton(

@@ -27,6 +27,7 @@ import '../../../../core/services/analytics_service.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/providers/runs_provider.dart';
 import '../../application/run_persistence_coordinator.dart';
+import 'run_browse_screen.dart';
 import '../../domain/services/run_finalization_service.dart';
 import '../../domain/services/run_metrics_service.dart';
 import '../../domain/services/gps_filter_service.dart';
@@ -1259,6 +1260,16 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       );
   }
 
+  /// Minimiza o treino: empurra o modo navegação POR CIMA. O motor (GPS,
+  /// timers, persistência) continua vivo na rota de baixo — o treino segue
+  /// contando e traçando enquanto o usuário navega pelas abas.
+  void _minimizeRun() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const RunBrowseScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool canExit = !_isRunning && !_isFinished;
@@ -1303,6 +1314,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               showMinimalMap: _showMinimalMap,
               autoPauseEnabled: _autoPauseEnabled,
               onBack: _handleBackPress,
+              onMinimize: _minimizeRun,
               onToggleMinimalMap: _toggleMinimalMap,
               onToggleAutoPause: _toggleAutoPause,
               onLock: _lockScreen,

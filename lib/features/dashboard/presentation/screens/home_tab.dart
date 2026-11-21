@@ -16,7 +16,17 @@ import '../../../history/presentation/screens/run_detail_screen.dart';
 class HomeTab extends StatefulWidget {
   final VoidCallback? onNavigateToProfile;
 
-  const HomeTab({super.key, this.onNavigateToProfile});
+  /// Modo embutido (navegar durante o treino): sem check de recuperação
+  /// e o GO vira "Voltar ao treino" — uma corrida já está em andamento.
+  final bool embedded;
+  final VoidCallback? onReturnToRun;
+
+  const HomeTab({
+    super.key,
+    this.onNavigateToProfile,
+    this.embedded = false,
+    this.onReturnToRun,
+  });
 
   @override
   State<HomeTab> createState() => _HomeTabState();
@@ -75,7 +85,9 @@ class _HomeTabState extends State<HomeTab> {
         _lastRun = lastRun;
         _isLoading = false;
       });
-      _checkForActiveRun();
+      // No modo embutido há um treino vivo por definição: o sheet de
+      // recuperação seria absurdo (o pill do modo navegação cobre).
+      if (!widget.embedded) _checkForActiveRun();
     }
   }
 
@@ -373,72 +385,113 @@ class _HomeTabState extends State<HomeTab> {
               ),
               const SizedBox(height: 32),
 
-              // Start Run Button (Center)
-              Center(
-                child: StartRunButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ActiveRunScreen(),
-                      ),
-                    ).then((_) => _loadData());
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Início expresso: GO de um toque só, sem tela pré-início
-              Center(
-                child: GestureDetector(
-                  onTap: () {
-                    HapticFeedback.mediumImpact();
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ActiveRunScreen(autoStart: true),
-                      ),
-                    ).then((_) => _loadData());
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: (isDark
-                              ? Colors.white
-                              : Colors.black)
-                          .withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: (isDark ? Colors.white : Colors.black)
-                            .withValues(alpha: 0.15),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          LucideIcons.zap,
-                          size: 14,
+              if (widget.embedded && widget.onReturnToRun != null) ...[
+                // Modo embutido: o GO vira retorno ao treino vivo — nunca
+                // uma segunda corrida sobre a primeira.
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: GestureDetector(
+                      onTap: widget.onReturnToRun,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        decoration: BoxDecoration(
                           color: isDark
                               ? AppColors.primaryNeon
                               : AppColors.lightPrimary,
+                          borderRadius: BorderRadius.circular(30),
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Início expresso',
-                          style: GoogleFonts.outfit(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              LucideIcons.zap,
+                              size: 16,
+                              color: isDark ? Colors.black : Colors.white,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Voltar ao treino',
+                              style: GoogleFonts.outfit(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.black : Colors.white,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ] else ...[
+                // Start Run Button (Center)
+                Center(
+                  child: StartRunButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ActiveRunScreen(),
+                        ),
+                      ).then((_) => _loadData());
+                    },
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Início expresso: GO de um toque só, sem tela pré-início
+                Center(
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.mediumImpact();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              const ActiveRunScreen(autoStart: true),
+                        ),
+                      ).then((_) => _loadData());
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: (isDark ? Colors.white : Colors.black)
+                            .withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: (isDark ? Colors.white : Colors.black)
+                              .withValues(alpha: 0.15),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            LucideIcons.zap,
+                            size: 14,
+                            color: isDark
+                                ? AppColors.primaryNeon
+                                : AppColors.lightPrimary,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Início expresso',
+                            style: GoogleFonts.outfit(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 32),
 
               // Last Training Summary
