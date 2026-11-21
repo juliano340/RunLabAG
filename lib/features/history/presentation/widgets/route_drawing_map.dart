@@ -313,6 +313,10 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
     widget.onConfirm(_points.toList());
   }
 
+  void _zoomIn() => _mapController?.animateCamera(CameraUpdate.zoomIn());
+
+  void _zoomOut() => _mapController?.animateCamera(CameraUpdate.zoomOut());
+
   // ── UI ────────────────────────────────────────────────────────────────
 
   Set<Marker> _buildMarkers() {
@@ -457,6 +461,30 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
     );
   }
 
+  Widget _buildZoomButton(
+    ColorScheme cs,
+    bool isDark,
+    IconData icon,
+    VoidCallback onTap,
+  ) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: (isDark ? const Color(0xFF162222) : Colors.white)
+              .withValues(alpha: 0.95),
+          shape: BoxShape.circle,
+          border: Border.all(color: cs.outline.withValues(alpha: 0.2)),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8),
+          ],
+        ),
+        child: Icon(icon, size: 20, color: cs.onSurface),
+      ),
+    );
+  }
+
   Widget _buildCircleAction({
     required IconData icon,
     required bool enabled,
@@ -566,6 +594,25 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
               ],
             ),
           ),
+
+          // Zoom manual durante o desenho: a pinça fica bloqueada pelo
+          // overlay de captura do traço. No modo Retas, pinça nativa.
+          if (_mode == _DrawMode.desenhar)
+            Positioned(
+              top: 0,
+              bottom: 0,
+              right: 12,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildZoomButton(cs, isDark, LucideIcons.plus, _zoomIn),
+                    const SizedBox(height: 12),
+                    _buildZoomButton(cs, isDark, LucideIcons.minus, _zoomOut),
+                  ],
+                ),
+              ),
+            ),
 
           // Barra de ações
           Positioned(
