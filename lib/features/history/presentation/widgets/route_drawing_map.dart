@@ -22,7 +22,10 @@ enum _DrawMode { retas, desenhar }
 ///   dois dedos fazem pan e pinça da câmera sem sair do modo. Segure o
 ///   botão de desfazer para rebobinar o traço ponto a ponto.
 ///
-/// Ao confirmar, chama [onConfirm] com os pontos na ordem do traçado.
+/// Ao confirmar, chama [onConfirm] com os pontos na ordem do traçado e um
+/// flag indicando se o traçado deve ser **somado** à rota-guia (modo
+/// "Adicionar trecho", usado na edição para completar pedaços que o GPS
+/// não registrou) ou **substituí-la** (refazer do zero).
 class RouteDrawingMap extends StatefulWidget {
   const RouteDrawingMap({
     super.key,
@@ -32,14 +35,26 @@ class RouteDrawingMap extends StatefulWidget {
     this.initialPoints = const [],
     this.guideRoute = const [],
     this.busy = false,
+    this.allowAppend = false,
+    this.appendConfirmLabel,
   });
 
   final String title;
-  final void Function(List<LatLng> points) onConfirm;
+
+  /// [appendToGuide] = true → o traçado é SOMADO à [guideRoute] (novo
+  /// segmento); false → substitui.
+  final void Function(List<LatLng> points, bool appendToGuide) onConfirm;
   final String confirmLabel;
   final List<LatLng> initialPoints;
   final List<List<LatLng>> guideRoute;
   final bool busy;
+
+  /// Habilita o seletor "Adicionar trecho / Refazer": com rota-guia
+  /// presente, o traçado pode ser somado a ela em vez de substituí-la.
+  final bool allowAppend;
+
+  /// Rótulo do botão de confirmar no modo adicionar (ex.: 'ADICIONAR TRECHO').
+  final String? appendConfirmLabel;
 
   /// Distância (km) ao longo dos pontos, pelo caminho mais curto entre eles.
   static double distanceKm(List<LatLng> points) {
@@ -69,6 +84,9 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
 
   _DrawMode _mode = _DrawMode.retas;
   final List<LatLng> _points = [];
+
+  /// Modo da edição: somar o traçado à rota-guia (true) ou substituí-la.
+  late bool _appendMode = widget.allowAppend;
   bool _capturingPoint = false; // getLatLng em voo no modo desenhar
 
   // Pan/pinça com dois dedos durante o desenho.
@@ -362,7 +380,7 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
 
   void _confirm() {
     if (_points.length < 2 || !_interactive) return;
-    widget.onConfirm(_points.toList());
+    widget.onConfirm(_points.toList(), _appendMode);
   }
 
   void _zoomIn() => _mapController?.animateCamera(CameraUpdate.zoomIn());
@@ -392,14 +410,19 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
 
   Set<Polyline> _buildPolylines(ColorScheme cs) {
     return {
-      // Rota-guia — esmaecida e tracejada (rota original na edição).
+      // Rota-guia: no modo "adicionar" ela faz parte do resultado (sólida);
+      // no modo refazer fica esmaecida e tracejada, só como referência.
       ...widget.guideRoute.asMap().entries.map((entry) {
         return Polyline(
           polylineId: PolylineId('guide_${entry.key}'),
           points: entry.value,
-          color: cs.onSurfaceVariant.withValues(alpha: 0.4),
-          width: 4,
-          patterns: [PatternItem.dash(15), PatternItem.gap(10)],
+          color: _appendMode
+              ? AppColors.primaryNeon.withValues(alpha: 0.85)
+              : cs.onSurfaceVariant.withValues(alpha: 0.4),
+          width: _appendMode ? 5 : 4,
+          patterns: _appendMode
+              ? const <PatternItem>[]
+              : [PatternItem.dash(15), PatternItem.gap(10)],
         );
       }),
       // Rota desenhada pelo usuário.
@@ -472,7 +495,76 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
     );
   }
 
-  Widget _buildStatusChip(ColorScheme cs, bool isDark, double drawnKm) {
+  /// Seletor "Adicionar trecho / Refazer": define se o traçado é somado à
+  /// rota-guia (completar um pedaço que o GPS não registrou) ou se ela é
+  /// substituída. Só aparece na edição com rota existente.
+  Widget _buildAppendToggle(ColorScheme cs, bool isDark) {
+    Widget pill({
+      required bool append,
+      required IconData icon,
+      required String label,
+    }) {
+      final selected = _appendMode == append;
+      return GestureDetector(
+        onTap: _interactive ? () => setState(() => _appendMode = append) : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: selected ? cs.primary : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon,
+                  size: 13,
+                  color: selected ? cs.onPrimary : cs.onSurfaceVariant),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: GoogleFonts.outfit(
+                  color: selected ? cs.onPrimary : cs.onSurface,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: (isDark ? const Color(0xFF162222) : Colors.white)
+              .withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: cs.outline.withValues(alpha: 0.2)),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            pill(append: true, icon: LucideIcons.plus, label: 'Adicionar'),
+            pill(append: false, icon: LucideIcons.refreshCw, label: 'Refazer'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusChip(
+    ColorScheme cs,
+    bool isDark,
+    double drawnKm,
+    double guideKm,
+  ) {
+    final showAppendTotals = _appendMode && guideKm > 0;
     return Center(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
@@ -496,8 +588,11 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
                     ? (_mode == _DrawMode.retas
                         ? 'Toque no mapa para marcar sua rota'
                         : 'Arraste o dedo para desenhar o caminho')
-                    : '${_points.length} ponto${_points.length == 1 ? '' : 's'}'
-                        ' · ${drawnKm.toStringAsFixed(2)} km',
+                    : showAppendTotals
+                        ? '+${drawnKm.toStringAsFixed(2)} km riscado'
+                            ' · total ${(guideKm + drawnKm).toStringAsFixed(2)} km'
+                        : '${_points.length} ponto${_points.length == 1 ? '' : 's'}'
+                            ' · ${drawnKm.toStringAsFixed(2)} km',
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.outfit(
                   color: cs.onSurface,
@@ -584,7 +679,16 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final drawnKm = RouteDrawingMap.distanceKm(_points);
+    final guideKm = widget.guideRoute.fold<double>(
+      0,
+      (sum, s) => sum + RouteDrawingMap.distanceKm(s),
+    );
+    final showAppendToggle =
+        widget.allowAppend && widget.guideRoute.any((s) => s.isNotEmpty);
     final canConfirm = _points.length >= 2 && _interactive;
+    final confirmLabel = _appendMode && widget.appendConfirmLabel != null
+        ? widget.appendConfirmLabel!
+        : widget.confirmLabel;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -652,8 +756,12 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
             child: Column(
               children: [
                 _buildModeToggle(cs, isDark),
+                if (showAppendToggle) ...[
+                  const SizedBox(height: 8),
+                  _buildAppendToggle(cs, isDark),
+                ],
                 const SizedBox(height: 8),
-                _buildStatusChip(cs, isDark, drawnKm),
+                _buildStatusChip(cs, isDark, drawnKm, guideKm),
               ],
             ),
           ),
@@ -724,7 +832,7 @@ class _RouteDrawingMapState extends State<RouteDrawingMap> {
                           Icon(LucideIcons.check, size: 16, color: cs.onPrimary),
                           const SizedBox(width: 8),
                           Text(
-                            widget.confirmLabel,
+                            confirmLabel,
                             style: GoogleFonts.outfit(
                               color: cs.onPrimary,
                               fontWeight: FontWeight.bold,

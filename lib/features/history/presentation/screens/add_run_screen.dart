@@ -171,7 +171,7 @@ class _AddRunScreenState extends State<AddRunScreen> {
           title: 'Desenhar Rota',
           confirmLabel: 'CONFIRMAR ROTA',
           initialPoints: _routePoints,
-          onConfirm: (p) => Navigator.pop(context, p),
+          onConfirm: (p, _) => Navigator.pop(context, p),
         ),
       ),
     );

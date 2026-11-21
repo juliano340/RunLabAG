@@ -4,10 +4,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter/services.dart'
     show FilteringTextInputFormatter, LengthLimitingTextInputFormatter;
+import 'package:geolocator/geolocator.dart';
 import '../../../../core/services/backup_service.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../run/domain/services/run_metrics_service.dart';
+import '../../domain/services/pace_zone_service.dart';
 import '../widgets/route_drawing_map.dart';
 
 /// Tela para editar a rota de um treino já registrado.
@@ -30,43 +32,100 @@ class _EditRunRouteScreenState extends State<EditRunRouteScreen> {
 
   // ── Salvamento ────────────────────────────────────────────────────────
 
-  Future<void> _save(List<LatLng> points) async {
+  Future<void> _save(List<LatLng> points, bool appendToGuide) async {
     if (_isSaving || points.length < 2) return;
     setState(() => _isSaving = true);
 
     final drawnKm = RouteDrawingMap.distanceKm(points);
-    var updated = widget.run.copyWith(route: [points]);
+
+    // Adicionar: o traçado vira um NOVO segmento depois da rota original
+    // (nunca atravessa a pausa/gap) e a distância é SOMADA à registrada —
+    // é para isso que o modo existe: completar um pedaço que o GPS não
+    // registrou sem zerar o que já estava lá.
+    // Refazer: comportamento antigo — o traçado substitui tudo.
+    final List<List<LatLng>> newRoute;
+    final double newDistanceKm;
+    if (appendToGuide) {
+      newRoute = [...widget.run.route, points];
+      newDistanceKm = widget.run.distanceKm + drawnKm;
+    } else {
+      newRoute = [points];
+      newDistanceKm = drawnKm;
+    }
+
+    // copyWith(route:) limpa routeTimes — repassamos para preservar os
+    // tempos por ponto do trecho GPS; o trecho riscado entra com tempos
+    // estimados (só para colorir o mapa), quando dá para estimar.
+    final List<List<int>> newRouteTimes;
+    if (appendToGuide) {
+      final estimated = _estimatedTimesForDrawn(points);
+      newRouteTimes = estimated != null
+          ? [...widget.run.routeTimes, estimated]
+          : const <List<int>>[];
+    } else {
+      newRouteTimes = const <List<int>>[];
+    }
+
+    var updated = widget.run.copyWith(
+      route: newRoute,
+      routeTimes: newRouteTimes,
+      distanceKm: newDistanceKm,
+    );
     var didUpdateMetrics = false;
 
-    if (drawnKm > 0) {
-      final newDuration = await _askUpdateMetrics(drawnKm);
-      if (newDuration != null) {
-        final profile = await DatabaseService().getUserProfile();
-        final newPace = RunMetricsService.calculatePace(newDuration, drawnKm);
-        final newCalories = (profile != null && profile.weight > 0)
-            ? RunMetricsService.calculateCalories(drawnKm, profile.weight)
-            : updated.calories;
-        updated = updated.copyWith(
-          distanceKm: drawnKm,
-          durationSeconds: newDuration,
-          pace: newPace,
-          calories: newCalories,
-        );
-        didUpdateMetrics = true;
+    if (!appendToGuide) {
+      // Refazer: mantém o diálogo — a distância "oficial" passa a ser a
+      // da rota desenhada e o usuário decide recalcular as métricas.
+      if (drawnKm > 0) {
+        final newDuration = await _askUpdateMetrics(drawnKm);
+        if (newDuration != null) {
+          final profile = await DatabaseService().getUserProfile();
+          final newPace = RunMetricsService.calculatePace(newDuration, drawnKm);
+          final newCalories = (profile != null && profile.weight > 0)
+              ? RunMetricsService.calculateCalories(drawnKm, profile.weight)
+              : updated.calories;
+          updated = updated.copyWith(
+            distanceKm: drawnKm,
+            durationSeconds: newDuration,
+            pace: newPace,
+            calories: newCalories,
+          );
+          didUpdateMetrics = true;
+        }
       }
+    } else {
+      // Adicionar: o tempo do trecho riscado JÁ está dentro da duração
+      // registrada (a corrida aconteceu) — soma a distância e atualiza
+      // pace/calorias na hora, sem perguntar.
+      final profile = await DatabaseService().getUserProfile();
+      final duration = updated.durationSeconds;
+      updated = updated.copyWith(
+        pace: duration > 0
+            ? RunMetricsService.calculatePace(duration, newDistanceKm)
+            : updated.pace,
+        calories: (profile != null && profile.weight > 0)
+            ? RunMetricsService.calculateCalories(newDistanceKm, profile.weight)
+            : updated.calories,
+      );
+      didUpdateMetrics = true;
     }
 
     try {
       await DatabaseService().saveRun(updated);
+      // Faixas de ritmo: rota e distância mudaram — as salvas na gravação
+      // original ficariam velhas. Depois do save, em segundo plano.
+      unawaited(_refreshPaceZones(updated));
       unawaited(BackupService().runAutoBackupIfEnabled());
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            didUpdateMetrics
-                ? 'Rota e métricas atualizadas!'
-                : 'Rota atualizada!',
+            appendToGuide
+                ? 'Trecho adicionado! +${drawnKm.toStringAsFixed(2)} km'
+                : didUpdateMetrics
+                    ? 'Rota e métricas atualizadas!'
+                    : 'Rota atualizada!',
             style: const TextStyle(color: Colors.white),
           ),
           backgroundColor: AppColors.primaryNeonDark,
@@ -83,6 +142,57 @@ class _EditRunRouteScreenState extends State<EditRunRouteScreen> {
           backgroundColor: Colors.redAccent,
         ),
       );
+    }
+  }
+
+  /// Tempos por ponto do trecho riscado, estimados com o pace médio do
+  /// treino. O riscado não tem tempo real — a estimativa existe apenas
+  /// para manter os arrays paralelos válidos e a coloração por pontos do
+  /// trecho GPS original intacta. Devolve null quando não dá para
+  /// estimar (sem duração ou sem tempos por ponto válidos).
+  List<int>? _estimatedTimesForDrawn(List<LatLng> points) {
+    final route = widget.run.route;
+    final routeTimes = widget.run.routeTimes;
+    final hasValidTimes = routeTimes.length == route.length &&
+        routeTimes.every((segment) => segment.isNotEmpty);
+    final duration = widget.run.durationSeconds;
+    final distanceKm = widget.run.distanceKm;
+    if (!hasValidTimes || duration <= 0 || distanceKm <= 0) return null;
+
+    final lastTime = routeTimes.last.last;
+    final paceSecPerKm = duration / distanceKm;
+    final times = <int>[lastTime];
+    var cumulativeKm = 0.0;
+    for (var i = 1; i < points.length; i++) {
+      cumulativeKm += Geolocator.distanceBetween(
+            points[i - 1].latitude,
+            points[i - 1].longitude,
+            points[i].latitude,
+            points[i].longitude,
+          ) /
+          1000;
+      times.add(lastTime + (cumulativeKm * paceSecPerKm).round());
+    }
+    return times;
+  }
+
+  /// Recalcula as faixas de ritmo do treino no banco: rota e distância
+  /// mudaram, e as salvas na gravação original ficariam velhas.
+  Future<void> _refreshPaceZones(RunModel run) async {
+    try {
+      final zones = PaceZoneService.analyze(
+        route: run.route,
+        routeTimes: run.routeTimes,
+        distanceKm: run.distanceKm,
+        durationSeconds: run.durationSeconds,
+        splits: run.splits,
+      );
+      await DatabaseService().savePaceZones(
+        run.id,
+        {for (final e in zones.distanceByZoneKm.entries) e.key.name: e.value},
+      );
+    } catch (e) {
+      debugPrint('Falha ao atualizar faixas de ritmo: $e');
     }
   }
 
@@ -108,6 +218,8 @@ class _EditRunRouteScreenState extends State<EditRunRouteScreen> {
       title: 'Editar Rota',
       guideRoute: widget.run.route,
       confirmLabel: 'SALVAR ROTA',
+      appendConfirmLabel: 'ADICIONAR TRECHO',
+      allowAppend: true,
       busy: _isSaving,
       onConfirm: _save,
     );
