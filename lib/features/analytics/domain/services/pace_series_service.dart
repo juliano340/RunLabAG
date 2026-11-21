@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../../../dashboard/domain/models/weekly_evolution_stats.dart';
+import '../../../history/domain/models/run_model.dart';
 import '../models/monthly_evolution_stats.dart';
 import '../models/pace_series_point.dart';
 
@@ -56,6 +57,51 @@ class PaceSeriesService {
 
   static List<PaceSeriesPoint> fromMonthly(List<MonthlyEvolutionStats> stats) {
     return stats.map(PaceSeriesPoint.fromMonthly).toList().reversed.toList();
+  }
+
+  /// Dias da semana corrente (domingo → sábado), um ponto por dia.
+  /// O agrupamento é por dia de calendário; [runs] deve estar dentro da janela.
+  static List<PaceSeriesPoint> fromDays({
+    required List<RunModel> runs,
+    required DateTime startOfWeek,
+    double goalKm = 0,
+  }) {
+    final start =
+        DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+    final points = <PaceSeriesPoint>[];
+
+    for (var i = 0; i < 7; i++) {
+      final dayStart = start.add(Duration(days: i));
+      final dayEnd =
+          DateTime(dayStart.year, dayStart.month, dayStart.day, 23, 59, 59);
+
+      var distance = 0.0;
+      var seconds = 0;
+      var count = 0;
+      for (final run in runs) {
+        if (!run.date.isBefore(dayStart) &&
+            run.date.isBefore(dayEnd.add(const Duration(seconds: 1)))) {
+          distance += run.distanceKm;
+          seconds += run.durationSeconds;
+          count++;
+        }
+      }
+
+      points.add(PaceSeriesPoint(
+        periodId:
+            '${dayStart.year}-${dayStart.month.toString().padLeft(2, '0')}-'
+            '${dayStart.day.toString().padLeft(2, '0')}',
+        type: TrendPeriodType.day,
+        startDate: dayStart,
+        endDate: dayEnd,
+        distanceKm: distance,
+        durationSeconds: seconds,
+        runCount: count,
+        goalKm: goalKm,
+      ));
+    }
+
+    return points; // já em ordem cronológica
   }
 
   /// Agrupa meses em trimestres. Recebe os meses do mais recente para o mais

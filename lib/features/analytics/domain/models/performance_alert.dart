@@ -1,4 +1,4 @@
-enum AlertType { plateau, newRecord, performanceDrop, streakAtRisk }
+enum AlertType { plateau, performanceDrop, streakAtRisk }
 
 enum AlertSeverity { info, warning, success }
 
@@ -30,20 +30,6 @@ class PerformanceAlert {
       description:
           'Seu pace estável há $weeks semanas. Varie os treinos para evoluir.',
       suggestion: suggestion,
-    );
-  }
-
-  factory PerformanceAlert.newRecord({
-    required String distance,
-    required String time,
-    required double improvement,
-  }) {
-    final pct = (improvement * 100).toStringAsFixed(0);
-    return PerformanceAlert(
-      type: AlertType.newRecord,
-      severity: AlertSeverity.success,
-      title: 'Novo recorde pessoal!',
-      description: '$distance em $time (melhorou $pct%)',
     );
   }
 

@@ -3,13 +3,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/database_service.dart';
+import '../../../../core/widgets/glass_container.dart';
 import '../../../dashboard/domain/models/weekly_evolution_stats.dart';
 import '../../domain/models/monthly_evolution_stats.dart';
 import '../../domain/models/pace_series_point.dart';
 import '../../domain/models/performance_alert.dart';
 import '../../domain/services/pace_series_service.dart';
 import '../../domain/services/performance_alert_service.dart';
-import '../widgets/comparison_card.dart';
 import '../widgets/alert_card.dart';
 import '../widgets/consistency_card.dart';
 import '../widgets/pace_summary_strip.dart';
@@ -29,9 +29,9 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
 
   List<WeeklyEvolutionStats> _weeklyData = [];
   List<MonthlyEvolutionStats> _monthlyData = [];
+  List<RunModel> _weekRuns = [];
   List<PerformanceAlert> _alerts = [];
   Map<String, dynamic> _consistency = {};
-  Map<String, dynamic> _comparison = {};
   bool _isLoading = true;
 
   @override
@@ -41,72 +41,70 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
   }
 
   Future<void> _loadData() async {
-    final weekly = await _dbService.getWeeklyEvolution(12);
-    // 12 meses: 6 alimentam a visão "Mês" e todos alimentam a visão "Trimestre".
-    final monthly = await _dbService.getMonthlyEvolution(12);
-
     final now = DateTime.now();
-    final startOfCurrentWeek = now.subtract(Duration(days: now.weekday % 7));
-    final startOfPrevWeek = startOfCurrentWeek.subtract(const Duration(days: 7));
-    final endOfPrevWeek = startOfCurrentWeek.subtract(const Duration(seconds: 1));
+    // "Semana" = dias da semana corrente: começa no domingo.
+    final startOfWeek = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday % 7));
 
-    final comparison = await _dbService.comparePeriods(
-      startOfCurrentWeek,
-      now,
-      startOfPrevWeek,
-      endOfPrevWeek,
-    );
-
-    final records = await _dbService.getPersonalRecords();
-    final recentRuns = await _dbService.getRunsBetween(
-      now.subtract(const Duration(days: 30)),
-      now,
-    );
-
-    final alerts = PerformanceAlertService.analyze(
-      recentRuns: recentRuns,
-      evolution: weekly,
-      personalRecords: records,
-    );
-
-    final consistency = await _dbService.getConsistencyStats(
+    // Dispara em paralelo: quatro consultas independentes.
+    // "Mês" = últimas 5 semanas; "Trimestre" = últimos 3 meses.
+    final weeklyFuture = _dbService.getWeeklyEvolution(5);
+    final monthlyFuture = _dbService.getMonthlyEvolution(3);
+    final weekRunsFuture = _dbService.getRunSummariesBetween(startOfWeek, now);
+    final consistencyFuture = _dbService.getConsistencyStats(
       now.subtract(const Duration(days: 90)),
     );
+
+    final weekly = await weeklyFuture;
+    final monthly = await monthlyFuture;
+    final weekRuns = await weekRunsFuture;
+    final consistency = await consistencyFuture;
+
+    // Alertas seguem na granularidade semanal — só semanas completas.
+    final alerts = PerformanceAlertService.analyze(evolution: weekly);
 
     if (mounted) {
       setState(() {
         _weeklyData = weekly;
         _monthlyData = monthly;
-        _alerts = alerts;
+        _weekRuns = weekRuns;
         _consistency = consistency;
-        _comparison = comparison;
+        _alerts = alerts;
         _isLoading = false;
       });
     }
   }
 
   /// Série exibida nos gráficos, sempre em ordem cronológica (passado → presente).
+  /// O seletor é a JANELA: semana corrente, últimas 5 semanas ou últimos 3 meses.
   List<PaceSeriesPoint> get _series {
     switch (_selectedPeriod) {
       case 1:
-        return PaceSeriesService.fromMonthly(
-          _monthlyData.take(6).toList(),
-        );
+        // "Mês": últimas 5 semanas
+        return PaceSeriesService.fromWeekly(_weeklyData.take(5).toList());
       case 2:
-        return PaceSeriesService.quarters(_monthlyData);
+        // "Trimestre": últimos 3 meses
+        return PaceSeriesService.fromMonthly(_monthlyData.take(3).toList());
       case 0:
       default:
-        return PaceSeriesService.fromWeekly(_weeklyData);
+        // "Semana": dias da semana corrente (domingo → sábado)
+        final now = DateTime.now();
+        final startOfWeek = DateTime(now.year, now.month, now.day)
+            .subtract(Duration(days: now.weekday % 7));
+        return PaceSeriesService.fromDays(
+          runs: _weekRuns,
+          startOfWeek: startOfWeek,
+          goalKm: _weeklyData.isNotEmpty ? _weeklyData[0].goalDistance / 7 : 0,
+        );
     }
   }
 
   String get _periodCaption {
-    final unit = switch (_selectedPeriod) {
-      1 => 'meses',
-      2 => 'trimestres',
-      _ => 'semanas',
+    return switch (_selectedPeriod) {
+      1 => 'últimas 5 semanas',
+      2 => 'últimos 3 meses',
+      _ => 'semana corrente, dia a dia',
     };
-    return 'últimas ${_series.length} $unit';
   }
 
   @override
@@ -127,29 +125,33 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     return Scaffold(
       backgroundColor: isDark ? AppColors.background : AppColors.backgroundLight,
       body: SafeArea(
-        child: SingleChildScrollView(
-          key: const PageStorageKey('analytics-scroll'),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(context),
-              const SizedBox(height: 20),
-              _buildPeriodSelector(context),
-              const SizedBox(height: 20),
-              _buildTrendSection(context),
-              const SizedBox(height: 20),
-              _buildVolumeSection(context),
-              const SizedBox(height: 20),
-              if (_alerts.isNotEmpty) ...[
-                _buildAlertsSection(context),
+        child: RefreshIndicator(
+          onRefresh: _loadData,
+          color: isDark ? AppColors.primaryNeon : AppColors.lightPrimary,
+          backgroundColor:
+              isDark ? AppColors.background : AppColors.backgroundLight,
+          child: SingleChildScrollView(
+            key: const PageStorageKey('analytics-scroll'),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(context),
                 const SizedBox(height: 20),
+                _buildPeriodSelector(context),
+                const SizedBox(height: 20),
+                _buildTrendSection(context),
+                const SizedBox(height: 20),
+                _buildVolumeSection(context),
+                const SizedBox(height: 20),
+                if (_alerts.isNotEmpty) ...[
+                  _buildAlertsSection(context),
+                  const SizedBox(height: 20),
+                ],
+                _buildConsistencySection(context),
+                const SizedBox(height: 24),
               ],
-              _buildComparisonSection(context),
-              const SizedBox(height: 20),
-              _buildConsistencySection(context),
-              const SizedBox(height: 24),
-            ],
+            ),
           ),
         ),
       ),
@@ -262,17 +264,8 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
           style: GoogleFonts.outfit(fontSize: 10, color: muted),
         ),
         const SizedBox(height: 12),
-        Container(
+        GlassContainer(
           padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.cardBackground : AppColors.cardLight,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDark
-                  ? AppColors.cardBorder.withValues(alpha: 0.3)
-                  : AppColors.borderLight,
-            ),
-          ),
           child: summary.hasData
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -300,7 +293,6 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
   Widget _buildVolumeSection(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final muted = isDark ? AppColors.textMuted : AppColors.textMutedDark;
-    final accent = isDark ? AppColors.primaryNeon : AppColors.lightPrimary;
     final series = _series;
 
     var totalKm = 0.0;
@@ -325,11 +317,12 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
             ),
             const Spacer(),
             Flexible(
-              child: VolumeHeader(
-                totalKm: totalKm,
-                totalRuns: totalRuns,
-                mutedColor: muted,
-                accentColor: accent,
+              child: Text(
+                _periodCaption,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: GoogleFonts.outfit(fontSize: 10, color: muted),
               ),
             ),
           ],
@@ -340,18 +333,28 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
           style: GoogleFonts.outfit(fontSize: 10, color: muted),
         ),
         const SizedBox(height: 12),
-        Container(
+        GlassContainer(
           padding: const EdgeInsets.fromLTRB(10, 14, 14, 10),
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.cardBackground : AppColors.cardLight,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isDark
-                  ? AppColors.cardBorder.withValues(alpha: 0.3)
-                  : AppColors.borderLight,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Totais em linha própria: no header apertavam e truncavam
+              // ("32 trei...") em telas estreitas.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: VolumeHeader(
+                  totalKm: totalKm,
+                  totalRuns: totalRuns,
+                  mutedColor: muted,
+                  accentColor: isDark
+                      ? AppColors.primaryNeon
+                      : AppColors.lightPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              VolumeBarChart(points: series),
+            ],
           ),
-          child: VolumeBarChart(points: series),
         ),
       ],
     );
@@ -388,34 +391,39 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     );
   }
 
-  Widget _buildComparisonSection(BuildContext context) {
-    if (_comparison.isEmpty) return const SizedBox();
-
-    final p1 = _comparison['period1'] as Map<String, dynamic>;
-    final p2 = _comparison['period2'] as Map<String, dynamic>;
-
-    return ComparisonCard(
-      subtitle: 'Esta semana vs. semana anterior',
-      period1Label: 'Esta Sem.',
-      period2Label: 'Sem Ant.',
-      distance1: (p1['distance'] as num).toDouble(),
-      distance2: (p2['distance'] as num).toDouble(),
-      runs1: p1['runs'] as int,
-      runs2: p2['runs'] as int,
-      pace1: (p1['pace'] as num).toDouble(),
-      pace2: (p2['pace'] as num).toDouble(),
-      calories1: p1['calories'] as int,
-      calories2: p2['calories'] as int,
-    );
-  }
-
   Widget _buildConsistencySection(BuildContext context) {
-    return ConsistencyCard(
-      currentStreak: _consistency['currentStreak'] ?? 0,
-      bestStreak: _consistency['bestStreak'] ?? 0,
-      trainedDays: _consistency['trainedDays'] ?? 0,
-      totalDays: _consistency['totalDays'] ?? 0,
-      taxaFrequencia: (_consistency['taxaFrequencia'] as num?)?.toDouble() ?? 0.0,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final muted = isDark ? AppColors.textMuted : AppColors.textMutedDark;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Consistência',
+          style: GoogleFonts.outfit(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: isDark ? AppColors.textLight : AppColors.textDark,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          'últimos 90 dias',
+          style: GoogleFonts.outfit(fontSize: 10, color: muted),
+        ),
+        const SizedBox(height: 12),
+        GlassContainer(
+          padding: const EdgeInsets.all(16),
+          child: ConsistencyCard(
+            currentStreak: _consistency['currentStreak'] ?? 0,
+            bestStreak: _consistency['bestStreak'] ?? 0,
+            trainedDays: _consistency['trainedDays'] ?? 0,
+            totalDays: _consistency['totalDays'] ?? 0,
+            taxaFrequencia:
+                (_consistency['taxaFrequencia'] as num?)?.toDouble() ?? 0.0,
+          ),
+        ),
+      ],
     );
   }
 }

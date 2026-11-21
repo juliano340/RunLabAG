@@ -99,8 +99,6 @@ class AlertCard extends StatelessWidget {
     switch (alert.type) {
       case AlertType.plateau:
         return LucideIcons.pause;
-      case AlertType.newRecord:
-        return LucideIcons.trophy;
       case AlertType.performanceDrop:
         return LucideIcons.trendingDown;
       case AlertType.streakAtRisk:

@@ -2,7 +2,7 @@ import '../../../dashboard/domain/models/weekly_evolution_stats.dart';
 import 'monthly_evolution_stats.dart';
 
 /// Granularidade de agrupamento usada nos gráficos de análise.
-enum TrendPeriodType { week, month, quarter }
+enum TrendPeriodType { day, week, month, quarter }
 
 const List<String> _monthShort = [
   'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
@@ -12,6 +12,14 @@ const List<String> _monthShort = [
 const List<String> _monthLong = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+];
+
+const List<String> _weekdayShort = [
+  'Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb',
+];
+
+const List<String> _weekdayLong = [
+  'Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado',
 ];
 
 /// Um ponto de uma série temporal de treinos (uma semana, um mês ou um trimestre).
@@ -76,11 +84,24 @@ class PaceSeriesPoint {
 
   String get paceLabel => formatPace(paceMinPerKm);
 
-  /// Período ainda em andamento (semana/mês/trimestre corrente).
-  bool get isOngoing => endDate.isAfter(DateTime.now());
+  /// Período ainda em andamento (dia/semana/mês/trimestre corrente).
+  ///
+  /// Nos dias: só o dia de hoje conta — dias futuros da semana nem
+  /// aconteceram ainda, não são "em andamento".
+  bool get isOngoing {
+    final now = DateTime.now();
+    if (type == TrendPeriodType.day) {
+      final today = DateTime(now.year, now.month, now.day);
+      return !startDate.isAfter(today) && endDate.isAfter(now);
+    }
+    return endDate.isAfter(now);
+  }
 
   /// Rótulo curto usado no eixo X dos gráficos.
   String get axisLabel {
+    if (type == TrendPeriodType.day) {
+      return _weekdayShort[startDate.weekday % 7];
+    }
     if (type == TrendPeriodType.month) {
       return _monthShort[startDate.month - 1];
     }
@@ -92,6 +113,9 @@ class PaceSeriesPoint {
 
   /// Rótulo curto usado como legenda secundária no resumo.
   String get shortLabel {
+    if (type == TrendPeriodType.day) {
+      return _weekdayShort[startDate.weekday % 7];
+    }
     if (type == TrendPeriodType.month) {
       return '${_monthShort[startDate.month - 1]}/${_twoDigits(startDate.year % 100)}';
     }
@@ -103,6 +127,10 @@ class PaceSeriesPoint {
 
   /// Rótulo completo do intervalo, usado no tooltip.
   String get rangeLabel {
+    if (type == TrendPeriodType.day) {
+      return '${_weekdayLong[startDate.weekday % 7]}, '
+          '${startDate.day}/${startDate.month}';
+    }
     if (type == TrendPeriodType.month) {
       return '${_monthLong[startDate.month - 1]} de ${startDate.year}';
     }

@@ -1,6 +1,7 @@
 /// Índices que devem receber rótulo no eixo X (no máximo [maxLabels]),
 /// sempre incluindo o mais recente. Evita a faixa de números sobrepostos.
-Set<int> pickLabelIndexes(int length, {int maxLabels = 5}) {
+/// As janelas atuais têm no máximo 7 pontos (dias da semana) — todos rotulados.
+Set<int> pickLabelIndexes(int length, {int maxLabels = 7}) {
   if (length <= 0) return <int>{};
   if (length <= maxLabels) return {for (var i = 0; i < length; i++) i};
 
