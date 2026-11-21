@@ -204,7 +204,9 @@ class BackupService {
 
   Future<bool> isAutoBackupEnabled() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_autoBackupEnabledKey) ?? false;
+    // Padrão ATIVO: instalação limpa (ou depois de restaurar um backup)
+    // já nasce com auto-backup ligado; quem desligou mantém a escolha.
+    return prefs.getBool(_autoBackupEnabledKey) ?? true;
   }
 
   Future<void> setAutoBackupEnabled(bool enabled) async {

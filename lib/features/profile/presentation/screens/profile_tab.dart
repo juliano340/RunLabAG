@@ -33,7 +33,7 @@ class _ProfileTabState extends State<ProfileTab> {
   final _backupService = BackupService();
   UserProfile? _profile;
   bool _isLoading = true;
-  bool _autoBackupEnabled = false;
+  bool _autoBackupEnabled = true;
   bool _autoPauseEnabled = false;
 
   @override
@@ -65,7 +65,8 @@ class _ProfileTabState extends State<ProfileTab> {
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
-        _autoPauseEnabled = prefs.getBool('auto_pause_enabled') ?? false;
+        // Padrão ATIVO (mesma regra do ActiveRunScreen).
+        _autoPauseEnabled = prefs.getBool('auto_pause_enabled') ?? true;
       });
     }
   }

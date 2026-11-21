@@ -203,7 +203,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   Future<void> _loadAutoPausePreference() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _autoPauseEnabled = prefs.getBool('auto_pause_enabled') ?? false;
+      // Padrão ATIVO: corrida nova já nasce com auto-pause ligado;
+      // quem desligou mantém a escolha salva.
+      _autoPauseEnabled = prefs.getBool('auto_pause_enabled') ?? true;
     });
   }
 
