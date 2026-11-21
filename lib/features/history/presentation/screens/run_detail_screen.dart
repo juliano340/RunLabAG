@@ -8,7 +8,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/services/theme_service.dart';
 import '../../../../core/services/backup_service.dart';
-import '../../../run/presentation/widgets/metric_card.dart';
+import '../../../../core/theme/app_colors.dart';
 import '../../../run/presentation/screens/run_share_screen.dart';
 import '../../../../core/utils/time_utils.dart';
 import '../../../../core/utils/map_marker_helper.dart';
@@ -89,14 +89,14 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     }
   }
 
-  /// Esquerda = treino mais recente · direita = mais antigo.
+  /// Esquerda = treinos mais antigos (voltando no tempo) · direita = mais recentes.
   void _onSwipe(DragEndDetails details) {
     if (_isNavigating || _runIds.isEmpty || _runIndex < 0) return;
     final velocity = details.primaryVelocity ?? 0;
     if (velocity.abs() < 350) return;
 
-    // Lista DESC: arrastar para a esquerda (-v) volta uma posição.
-    final target = _runIndex + (velocity < 0 ? -1 : 1);
+    // Lista DESC: arrastar para a esquerda (-v) avança para o passado.
+    final target = _runIndex + (velocity < 0 ? 1 : -1);
     if (target < 0 || target >= _runIds.length) return;
     _navigateTo(_runIds[target]);
   }
@@ -512,6 +512,8 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = isDark ? AppColors.primaryNeon : AppColors.lightPrimary;
+    final muted = isDark ? AppColors.textMuted : AppColors.textMutedDark;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -544,12 +546,14 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
         ),
         actions: [
           IconButton(
-            icon: Icon(LucideIcons.spline, color: cs.primary),
+            visualDensity: VisualDensity.compact,
+            icon: Icon(LucideIcons.spline, color: cs.primary, size: 20),
             tooltip: 'Editar rota',
             onPressed: _editRoute,
           ),
           IconButton(
-            icon: Icon(LucideIcons.share2, color: cs.primary),
+            visualDensity: VisualDensity.compact,
+            icon: Icon(LucideIcons.share2, color: cs.primary, size: 20),
             onPressed: () {
               Navigator.push(
                 context,
@@ -559,9 +563,33 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
               );
             },
           ),
-          IconButton(
-            icon: const Icon(LucideIcons.trash2, color: Colors.redAccent),
-            onPressed: () => _showDeleteConfirmation(context),
+          PopupMenuButton<String>(
+            icon: Icon(
+              LucideIcons.moreVertical,
+              color: cs.onSurfaceVariant,
+              size: 20,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            onSelected: (value) {
+              if (value == 'delete') _showDeleteConfirmation(context);
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(LucideIcons.trash2, color: Colors.redAccent, size: 18),
+                    SizedBox(width: 10),
+                    Text(
+                      'Excluir treino',
+                      style: TextStyle(color: Colors.redAccent),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -786,209 +814,155 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Drag handle visual indicator
-                        Container(
-                          width: 36,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: cs.onSurfaceVariant.withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: (_run.type == 'Caminhada'
-                                    ? Colors.blueAccent
-                                    : _run.type == 'Corrida/Caminhada'
-                                        ? Colors.orangeAccent
-                                        : cs.primary)
-                                .withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: (_run.type == 'Caminhada'
-                                      ? Colors.blueAccent
-                                      : _run.type == 'Corrida/Caminhada'
-                                          ? Colors.orangeAccent
-                                          : cs.primary)
-                                  .withValues(alpha: 0.4),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                _run.type == 'Caminhada'
-                                    ? LucideIcons.footprints
-                                    : _run.type == 'Corrida/Caminhada'
-                                        ? LucideIcons.timer
-                                        : LucideIcons.zap,
-                                color: _run.type == 'Caminhada'
-                                    ? Colors.blueAccent
-                                    : _run.type == 'Corrida/Caminhada'
-                                        ? Colors.orangeAccent
-                                        : cs.primary,
-                                size: 16,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _run.type.toUpperCase(),
-                                style: GoogleFonts.outfit(
-                                  color: _run.type == 'Caminhada'
-                                      ? Colors.blueAccent
-                                      : _run.type == 'Corrida/Caminhada'
-                                          ? Colors.orangeAccent
-                                          : cs.primary,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                  letterSpacing: 1.2,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        if (_run.mood.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 20),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(_run.mood, style: const TextStyle(fontSize: 32)),
-                                const SizedBox(width: 12),
-                                Text(
-                                  _run.mood == '😣' ? 'Ruim'
-                                      : _run.mood == '😐' ? 'Médio'
-                                      : _run.mood == '🙂' ? 'Bom'
-                                      : 'Excelente',
-                                  style: GoogleFonts.outfit(
-                                    color: cs.onSurface,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                        // Contexto: data + tipo à esquerda, humor à direita
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            Expanded(
-                              child: MetricCard(
-                                label: 'Distância',
-                                value: _run.distanceKm.toStringAsFixed(2),
-                                unit: 'km',
+                            Flexible(
+                              child: Text(
+                                _formatDate(_run.date),
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: cs.onSurfaceVariant,
+                                ),
                               ),
                             ),
-                            Expanded(
-                              child: MetricCard(
-                                label: 'Tempo',
-                                value: _formatDuration(_run.durationSeconds),
-                                unit: 'min',
+                            const SizedBox(width: 10),
+                            _buildTypeChip(cs),
+                            const Spacer(),
+                            if (_run.mood.isNotEmpty) _buildMoodChip(cs),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        // Herói: a distância conta a história primeiro
+                        Text(
+                          'DISTÂNCIA',
+                          style: GoogleFonts.outfit(
+                            fontSize: 10,
+                            letterSpacing: 1.2,
+                            color: muted,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Text(
+                              _run.distanceKm.toStringAsFixed(2),
+                              style: GoogleFonts.outfit(
+                                fontSize: 34,
+                                fontWeight: FontWeight.bold,
+                                color: cs.onSurface,
+                                height: 1.1,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'km',
+                              style: GoogleFonts.outfit(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: accent,
                               ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 16),
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            Expanded(
-                              child: MetricCard(
-                                label: 'Pace Médio',
-                                value: _run.pace,
-                                unit: '/km',
-                              ),
+                            _buildSecondaryMetric(
+                              'Tempo',
+                              _formatDuration(_run.durationSeconds),
+                              cs,
                             ),
-                            Expanded(
-                              child: MetricCard(
-                                label: 'Calorias',
-                                value: _run.calories.toString(),
-                                unit: 'kcal',
-                              ),
+                            _buildSecondaryMetric(
+                              'Pace',
+                              '${_run.pace}/km',
+                              cs,
+                            ),
+                            _buildSecondaryMetric(
+                              'Calorias',
+                              '${_run.calories} kcal',
+                              cs,
                             ),
                           ],
                         ),
                         if (_run.pausedDurationSeconds > 0) ...[
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              Expanded(
-                                child: MetricCard(
-                                  label: 'Tempo Total',
-                                  value: _formatDuration(
-                                    _run.durationSeconds +
-                                        _run.pausedDurationSeconds,
-                                  ),
-                                  unit: 'min',
-                                ),
-                              ),
-                              Expanded(
-                                child: MetricCard(
-                                  label: 'Tempo Pausado',
-                                  value: _formatDuration(_run.pausedDurationSeconds),
-                                  unit: 'min',
-                                ),
-                              ),
-                            ],
+                          const SizedBox(height: 10),
+                          Text(
+                            'Inclui ${_formatDuration(_run.pausedDurationSeconds)} em pausa',
+                            style: GoogleFonts.outfit(fontSize: 11, color: muted),
                           ),
                         ],
-                        const SizedBox(height: 24),
-                        
+                        const SizedBox(height: 20),
                         if (_run.splits.isNotEmpty || _run.autoPauses.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 16),
-                            child: Wrap(
-                              spacing: 12,
-                              runSpacing: 12,
-                              alignment: WrapAlignment.center,
-                              children: [
-                                if (_run.splits.isNotEmpty)
-                                  OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
-                                      side: BorderSide(color: cs.primary.withValues(alpha: 0.5)),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(30),
-                                      ),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: [
+                              if (_run.splits.isNotEmpty)
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 8,
+                                      horizontal: 14,
                                     ),
-                                    onPressed: _showSplitsModal,
-                                    icon: Icon(LucideIcons.list, color: cs.primary, size: 18),
-                                    label: Text(
-                                      'VER VOLTAS',
-                                      style: GoogleFonts.outfit(
-                                        color: cs.primary,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 1.1,
-                                      ),
+                                    side: BorderSide(
+                                      color: cs.primary.withValues(alpha: 0.5),
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(30),
                                     ),
                                   ),
-                                if (_run.autoPauses.isNotEmpty)
-                                  OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
-                                      side: BorderSide(color: Colors.amber.withValues(alpha: 0.6)),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(30),
-                                      ),
-                                    ),
-                                    onPressed: _showAutoPausesModal,
-                                    icon: const Icon(LucideIcons.pauseCircle, color: Colors.amberAccent, size: 18),
-                                    label: Text(
-                                      'AUTOPAUSAS (${_run.autoPauses.length})',
-                                      style: GoogleFonts.outfit(
-                                        color: Colors.amberAccent,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 1.1,
-                                      ),
+                                  onPressed: _showSplitsModal,
+                                  icon: Icon(
+                                    LucideIcons.list,
+                                    color: cs.primary,
+                                    size: 16,
+                                  ),
+                                  label: Text(
+                                    'Ver voltas',
+                                    style: GoogleFonts.outfit(
+                                      color: cs.primary,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
                                     ),
                                   ),
-                              ],
-                            ),
+                                ),
+                              if (_run.autoPauses.isNotEmpty)
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 8,
+                                      horizontal: 14,
+                                    ),
+                                    side: BorderSide(
+                                      color: Colors.amber.withValues(alpha: 0.6),
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(30),
+                                    ),
+                                  ),
+                                  onPressed: _showAutoPausesModal,
+                                  icon: const Icon(
+                                    LucideIcons.pauseCircle,
+                                    color: Colors.amberAccent,
+                                    size: 16,
+                                  ),
+                                  label: Text(
+                                    'Autopausas (${_run.autoPauses.length})',
+                                    style: GoogleFonts.outfit(
+                                      color: Colors.amberAccent,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-
+                        const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton.icon(
@@ -1003,7 +977,10 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                             icon: Icon(LucideIcons.check, color: cs.onPrimary),
                             label: Text(
                               'VOLTAR',
-                              style: TextStyle(color: cs.onPrimary, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                color: cs.onPrimary,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
@@ -1024,12 +1001,118 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     );
   }
 
-  /// Seta lateral do painel: indica (e permite, ao tocar) o lado com
-  /// treino vizinho. Some quando não há para onde ir.
+  /// Chip do tipo de treino — compacto, alinhado ao eixo esquerdo.
+  Widget _buildTypeChip(ColorScheme cs) {
+    final color = _run.type == 'Caminhada'
+        ? Colors.blueAccent
+        : _run.type == 'Corrida/Caminhada'
+            ? Colors.orangeAccent
+            : cs.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            _run.type == 'Caminhada'
+                ? LucideIcons.footprints
+                : _run.type == 'Corrida/Caminhada'
+                    ? LucideIcons.timer
+                    : LucideIcons.zap,
+            color: color,
+            size: 14,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            _run.type,
+            style: GoogleFonts.outfit(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 11,
+              letterSpacing: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Chip de humor — como a corrida foi sentida.
+  Widget _buildMoodChip(ColorScheme cs) {
+    final label = _run.mood == '😣'
+        ? 'Ruim'
+        : _run.mood == '😐'
+            ? 'Médio'
+            : _run.mood == '🙂'
+                ? 'Bom'
+                : 'Excelente';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: cs.outline.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(_run.mood, style: const TextStyle(fontSize: 13)),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: GoogleFonts.outfit(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Métrica secundária: label em cima, valor discreto, eixo à esquerda.
+  Widget _buildSecondaryMetric(String label, String value, ColorScheme cs) {
+    final muted = Theme.of(context).brightness == Brightness.dark
+        ? AppColors.textMuted
+        : AppColors.textMutedDark;
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: GoogleFonts.outfit(
+              fontSize: 9,
+              letterSpacing: 1.2,
+              color: muted,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            style: GoogleFonts.outfit(
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+              color: cs.onSurface,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Seta lateral do painel: esquerda volta no tempo (treinos mais antigos),
+  /// direita avança para o mais recente. Some quando não há para onde ir.
   Widget _buildSwipeArrow(ColorScheme cs, {required bool isLeft}) {
     final hasTarget = isLeft
-        ? _runIndex > 0
-        : _runIndex >= 0 && _runIndex < _runIds.length - 1;
+        ? _runIndex < _runIds.length - 1
+        : _runIndex > 0;
     if (!hasTarget) return const SizedBox.shrink();
 
     return Positioned(
@@ -1040,7 +1123,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       child: Center(
         child: GestureDetector(
           onTap: () {
-            final target = _runIndex + (isLeft ? -1 : 1);
+            final target = _runIndex + (isLeft ? 1 : -1);
             if (target >= 0 && target < _runIds.length) {
               _navigateTo(_runIds[target]);
             }
