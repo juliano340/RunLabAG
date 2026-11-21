@@ -314,7 +314,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                                   Expanded(flex: 1, child: Text('${index + 1}', style: GoogleFonts.outfit(color: cs.onSurface, fontWeight: FontWeight.bold))),
                                   Expanded(flex: 2, child: Text(_formatDuration(splitTime), style: GoogleFonts.outfit(color: cs.onSurface))),
                                   Expanded(flex: 2, child: Text('$paceStr/km', style: GoogleFonts.outfit(color: cs.primary, fontWeight: FontWeight.w600))),
-                                  Expanded(flex: 1, child: Text('${split.calories}', style: GoogleFonts.outfit(color: Colors.orangeAccent, fontSize: 13), textAlign: TextAlign.right)),
+                                  Expanded(flex: 1, child: Text('${split.calories}', style: GoogleFonts.outfit(color: _orange, fontSize: 13), textAlign: TextAlign.right)),
                                 ],
                               ),
                             );
@@ -343,7 +343,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                                   Expanded(flex: 1, child: Text('RESTO', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 10, fontWeight: FontWeight.bold))),
                                   Expanded(flex: 2, child: Text('${remainingDist.toStringAsFixed(2)} km', style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 13))),
                                   Expanded(flex: 2, child: Text('$partialPace/km', style: GoogleFonts.outfit(color: cs.primary.withValues(alpha: 0.8), fontSize: 13))),
-                                  Expanded(flex: 1, child: Text('$remainingCals', style: GoogleFonts.outfit(color: Colors.orangeAccent.withValues(alpha: 0.8), fontSize: 13), textAlign: TextAlign.right)),
+                                  Expanded(flex: 1, child: Text('$remainingCals', style: GoogleFonts.outfit(color: _orange.withValues(alpha: 0.8), fontSize: 13), textAlign: TextAlign.right)),
                                 ],
                               ),
                             );
@@ -407,7 +407,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(LucideIcons.pauseCircle, color: Colors.amberAccent, size: 22),
+                  Icon(LucideIcons.pauseCircle, color: _amber, size: 22),
                   const SizedBox(width: 8),
                   Text(
                     'AUTOPAUSAS (${_run.autoPauses.length})',
@@ -474,7 +474,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                                       child: Text(
                                         '${index + 1}',
                                         textAlign: TextAlign.center,
-                                        style: GoogleFonts.outfit(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                                        style: GoogleFonts.outfit(color: _amber, fontWeight: FontWeight.bold, fontSize: 12),
                                       ),
                                     ),
                                   ),
@@ -506,10 +506,10 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                                           CameraUpdate.newLatLngZoom(autoPause.location, 17),
                                         );
                                       },
-                                      icon: const Icon(LucideIcons.mapPin, size: 14, color: Colors.amberAccent),
+                                      icon: Icon(LucideIcons.mapPin, size: 14, color: _amber),
                                       label: Text(
                                         'IR AO MAPA',
-                                        style: GoogleFonts.outfit(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                                        style: GoogleFonts.outfit(color: _amber, fontSize: 11, fontWeight: FontWeight.bold),
                                       ),
                                     ),
                                   ),
@@ -559,6 +559,25 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       });
     }
   }
+
+  // ── Cores temáticas ───────────────────────────────────────────────────
+
+  /// Âmbar/laranja legíveis nos dois temas: os accents (amberAccent/
+  /// orangeAccent) só funcionam sobre fundo escuro.
+  Color get _amber =>
+      Theme.of(context).brightness == Brightness.dark
+          ? Colors.amberAccent
+          : Colors.amber.shade800;
+
+  Color get _orange =>
+      Theme.of(context).brightness == Brightness.dark
+          ? Colors.orangeAccent
+          : Colors.orange.shade800;
+
+  Color get _amberBorder =>
+      Theme.of(context).brightness == Brightness.dark
+          ? Colors.amber
+          : Colors.amber.shade700;
 
   @override
   Widget build(BuildContext context) {
@@ -1019,16 +1038,16 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                                   padding:
                                       const EdgeInsets.symmetric(vertical: 10),
                                   side: BorderSide(
-                                    color: Colors.amber.withValues(alpha: 0.6),
+                                    color: _amberBorder.withValues(alpha: 0.6),
                                   ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(30),
                                   ),
                                 ),
                                 onPressed: _showAutoPausesModal,
-                                icon: const Icon(
+                                icon: Icon(
                                   LucideIcons.pauseCircle,
-                                  color: Colors.amberAccent,
+                                  color: _amber,
                                   size: 16,
                                 ),
                                 label: Text(
@@ -1036,7 +1055,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                                       ? 'Autopausas'
                                       : 'Autopausas (${_run.autoPauses.length})',
                                   style: GoogleFonts.outfit(
-                                    color: Colors.amberAccent,
+                                    color: _amber,
                                     fontWeight: FontWeight.w600,
                                     fontSize: 13,
                                   ),
