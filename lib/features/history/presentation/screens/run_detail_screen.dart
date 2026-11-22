@@ -101,10 +101,10 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     // mesmo destino da seta esquerda. Arrastar para a esquerda avança.
     final target = _runIndex + (velocity < 0 ? -1 : 1);
     if (target < 0 || target >= _runIds.length) return;
-    _navigateTo(_runIds[target]);
+    _navigateTo(_runIds[target], goingOlder: target > _runIndex);
   }
 
-  Future<void> _navigateTo(String runId) async {
+  Future<void> _navigateTo(String runId, {required bool goingOlder}) async {
     setState(() => _isNavigating = true);
     try {
       final run = await DatabaseService().getRunById(runId);
@@ -115,7 +115,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       }
       await Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => RunDetailScreen(run: run)),
+        _RunSlideRoute(run: run, goingOlder: goingOlder),
       );
     } catch (e) {
       if (mounted) setState(() => _isNavigating = false);
@@ -1214,7 +1214,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       onTap: () {
         final target = _runIndex + (isLeft ? 1 : -1);
         if (target >= 0 && target < _runIds.length) {
-          _navigateTo(_runIds[target]);
+          _navigateTo(_runIds[target], goingOlder: target > _runIndex);
         }
       },
       child: Container(
@@ -1290,4 +1290,27 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       },
     );
   }
+}
+
+/// Transicao entre detalhes de treinos: o novo detalhe entra pelo lado do
+/// gesto (antigos pela esquerda, recentes pela direita) deslizando com fade.
+class _RunSlideRoute extends PageRouteBuilder<void> {
+  _RunSlideRoute({required RunModel run, required bool goingOlder})
+      : super(
+          transitionDuration: const Duration(milliseconds: 300),
+          reverseTransitionDuration: const Duration(milliseconds: 300),
+          pageBuilder: (_, _, _) => RunDetailScreen(run: run),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            final curved = CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            );
+            final begin = Offset(goingOlder ? -1.0 : 1.0, 0);
+            return SlideTransition(
+              position: Tween<Offset>(begin: begin, end: Offset.zero)
+                  .animate(curved),
+              child: FadeTransition(opacity: curved, child: child),
+            );
+          },
+        );
 }
