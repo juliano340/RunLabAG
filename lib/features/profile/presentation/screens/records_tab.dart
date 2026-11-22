@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:provider/provider.dart';
+import 'package:runlabag/core/providers/runs_provider.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/utils/time_utils.dart';
@@ -23,6 +25,26 @@ class _RecordsTabState extends State<RecordsTab> {
   void initState() {
     super.initState();
     _loadData();
+  }
+
+  // Recarrega quando o banco muda por fora (treino salvo, reset, backup).
+  RunsProvider? _runsProvider;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final runsProvider = Provider.of<RunsProvider>(context, listen: false);
+    if (_runsProvider != runsProvider) {
+      _runsProvider?.removeListener(_loadData);
+      _runsProvider = runsProvider;
+      _runsProvider!.addListener(_loadData);
+    }
+  }
+
+  @override
+  void dispose() {
+    _runsProvider?.removeListener(_loadData);
+    super.dispose();
   }
 
   Future<void> _loadData() async {

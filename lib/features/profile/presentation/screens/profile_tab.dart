@@ -45,6 +45,27 @@ class _ProfileTabState extends State<ProfileTab> {
     _loadAutoPausePreference();
   }
 
+  // Recarrega quando o banco muda por fora (reset de dados, restore de
+  // backup): o perfil exibido não pode ficar com os dados antigos.
+  RunsProvider? _runsProvider;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final runsProvider = Provider.of<RunsProvider>(context, listen: false);
+    if (_runsProvider != runsProvider) {
+      _runsProvider?.removeListener(_loadProfile);
+      _runsProvider = runsProvider;
+      _runsProvider!.addListener(_loadProfile);
+    }
+  }
+
+  @override
+  void dispose() {
+    _runsProvider?.removeListener(_loadProfile);
+    super.dispose();
+  }
+
   Future<void> _loadProfile() async {
     final profile = await _dbService.getUserProfile();
     if (mounted) {

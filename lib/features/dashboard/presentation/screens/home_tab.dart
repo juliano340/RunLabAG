@@ -8,6 +8,8 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../widgets/start_run_button.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:provider/provider.dart';
+import 'package:runlabag/core/providers/runs_provider.dart';
 import '../../../../features/run/presentation/screens/active_run_screen.dart';
 
 import 'package:runlabag/core/services/database_service.dart';
@@ -56,6 +58,28 @@ class _HomeTabState extends State<HomeTab> {
   void initState() {
     super.initState();
     _restoreStatsPeriod();
+  }
+
+  // Recarrega quando o banco muda por fora: treino salvo, reset de dados
+  // ou restauração de backup. Sem isso a aba ficava com os dados do
+  // usuário anterior até um refresh manual.
+  RunsProvider? _runsProvider;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final runsProvider = Provider.of<RunsProvider>(context, listen: false);
+    if (_runsProvider != runsProvider) {
+      _runsProvider?.removeListener(_loadData);
+      _runsProvider = runsProvider;
+      _runsProvider!.addListener(_loadData);
+    }
+  }
+
+  @override
+  void dispose() {
+    _runsProvider?.removeListener(_loadData);
+    super.dispose();
   }
 
   Future<void> _restoreStatsPeriod() async {
