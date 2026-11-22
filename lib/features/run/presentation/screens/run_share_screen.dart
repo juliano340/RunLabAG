@@ -8,9 +8,9 @@ import 'package:screenshot/screenshot.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/services/database_service.dart';
 import '../../../../core/services/analytics_service.dart';
 import '../../../../core/utils/time_utils.dart';
+import 'package:runlabag/core/domain/models/run_model.dart';
 
 enum ShareTemplate { boxed, center, bottomBar, minimalist, verticalModern }
 

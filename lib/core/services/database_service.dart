@@ -1,21 +1,16 @@
 import 'package:sqflite/sqflite.dart';
 import 'database_helper.dart';
-import '../../features/history/domain/services/pace_zone_service.dart';
+import 'package:runlabag/core/domain/services/pace_zone_service.dart';
 import '../../features/run/data/repositories/active_run_repository.dart';
 import '../../features/history/data/repositories/run_repository.dart';
 import '../../features/profile/data/repositories/user_repository.dart';
-import '../../features/training/data/models/training_plan.dart';
-import '../../features/strength_training/domain/models/strength_workout.dart';
-import '../../features/strength_training/domain/models/workout_block.dart';
-import '../../features/dashboard/domain/models/weekly_evolution_stats.dart';
-import '../../features/analytics/domain/models/monthly_evolution_stats.dart';
-import '../../features/history/domain/models/run_model.dart';
-import '../../features/profile/domain/models/user_profile.dart';
-
-export '../../features/history/domain/models/run_model.dart';
-export '../../features/history/domain/models/run_split.dart';
-export '../../features/history/domain/models/auto_pause_event.dart';
-export '../../features/profile/domain/models/user_profile.dart';
+import 'package:runlabag/core/domain/models/training_plan.dart';
+import 'package:runlabag/core/domain/models/strength_workout.dart';
+import 'package:runlabag/core/domain/models/workout_block.dart';
+import 'package:runlabag/core/domain/models/weekly_evolution_stats.dart';
+import 'package:runlabag/core/domain/models/monthly_evolution_stats.dart';
+import 'package:runlabag/core/domain/models/run_model.dart';
+import 'package:runlabag/core/domain/models/user_profile.dart';
 
 /// Totais agregados da carreira do usuário (calculados em SQL).
 class UserTotals {

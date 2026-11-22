@@ -1,5 +1,6 @@
 import 'package:lucide_icons/lucide_icons.dart';
 import 'database_service.dart';
+import 'package:runlabag/core/domain/models/run_model.dart';
 
 class AchievementService {
   final DatabaseService _dbService = DatabaseService();
@@ -8,16 +9,16 @@ class AchievementService {
   /// Retorna apenas conquistas REALMENTE novas (ainda não desbloqueadas).
   Future<List<Map<String, dynamic>>> checkAwards(RunModel latestRun) async {
     final List<Map<String, dynamic>> candidates = [];
-    final allRuns = await _dbService.getRuns();
-    final stats = await _dbService.getUserStats();
-    final double totalDist = double.tryParse(stats['totalDistance'] ?? '0') ?? 0;
+    // Totais agregados em SQL: não carrega nenhum treino do banco.
+    final totals = await _dbService.getTotals();
+    final double totalDist = totals.totalDistanceKm;
 
     // Conquistas já desbloqueadas — usadas para filtrar duplicatas
     final earned = await _dbService.getEarnedAchievements();
     final Set<String> earnedIds = earned.map((e) => e['id'] as String).toSet();
 
     // 1. Primeiro Passo: Complete sua primeira corrida
-    if (allRuns.length == 1) {
+    if (totals.runCount == 1) {
       candidates.add({
         'id': 'first_run',
         'title': 'Primeiro Passo',

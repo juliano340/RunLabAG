@@ -1,6 +1,6 @@
 import '../../../../core/services/database_service.dart';
-import '../../domain/models/strength_workout.dart';
-import '../../domain/models/workout_block.dart';
+import 'package:runlabag/core/domain/models/strength_workout.dart';
+import 'package:runlabag/core/domain/models/workout_block.dart';
 import '../../domain/repositories/strength_workout_repository.dart';
 
 class StrengthWorkoutRepositoryImpl implements StrengthWorkoutRepository {

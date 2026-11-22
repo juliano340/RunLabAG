@@ -11,8 +11,10 @@ import 'add_run_screen.dart';
 import 'run_detail_screen.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/providers/runs_provider.dart';
-import '../../domain/services/pace_zone_service.dart';
+import 'package:runlabag/core/domain/services/pace_zone_service.dart';
 import '../widgets/pace_distribution_card.dart';
+import 'package:runlabag/core/domain/models/run_model.dart';
+import 'package:runlabag/core/domain/models/user_profile.dart';
 
 class HistoryTab extends StatefulWidget {
   const HistoryTab({super.key});

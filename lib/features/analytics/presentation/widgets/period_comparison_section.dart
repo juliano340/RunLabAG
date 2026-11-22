@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/glass_container.dart';
-import '../../domain/models/monthly_evolution_stats.dart';
+import 'package:runlabag/core/domain/models/monthly_evolution_stats.dart';
 
 const _monthShort = [
   'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',

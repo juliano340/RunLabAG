@@ -9,8 +9,9 @@ import '../../../../core/services/backup_service.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../run/domain/services/run_metrics_service.dart';
-import '../../domain/services/pace_zone_service.dart';
+import 'package:runlabag/core/domain/services/pace_zone_service.dart';
 import '../widgets/route_drawing_map.dart';
+import 'package:runlabag/core/domain/models/run_model.dart';
 
 /// Tela para editar a rota de um treino já registrado.
 ///

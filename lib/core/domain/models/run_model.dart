@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'run_split.dart';
-import 'auto_pause_event.dart';
+import 'package:runlabag/core/domain/models/run_split.dart';
+import 'package:runlabag/core/domain/models/auto_pause_event.dart';
 
 class RunModel {
   final String id;

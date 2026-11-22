@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 
-import '../../../dashboard/domain/models/weekly_evolution_stats.dart';
-import '../../../history/domain/models/run_model.dart';
-import '../models/monthly_evolution_stats.dart';
+import 'package:runlabag/core/domain/models/weekly_evolution_stats.dart';
+import 'package:runlabag/core/domain/models/run_model.dart';
+import 'package:runlabag/core/domain/models/monthly_evolution_stats.dart';
 import '../models/pace_series_point.dart';
 
 /// Resumo numérico de uma série de treinos, usado no topo dos gráficos.

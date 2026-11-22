@@ -6,7 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/glass_container.dart';
-import '../../domain/models/workout_block.dart';
+import 'package:runlabag/core/domain/models/workout_block.dart';
 import '../providers/strength_workout_provider.dart';
 
 class EditTemplateScreen extends StatefulWidget {

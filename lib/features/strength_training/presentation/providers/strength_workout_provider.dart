@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
-import '../../domain/models/strength_workout.dart';
-import '../../domain/models/workout_block.dart';
+import 'package:runlabag/core/domain/models/strength_workout.dart';
+import 'package:runlabag/core/domain/models/workout_block.dart';
 import '../../domain/repositories/strength_workout_repository.dart';
 
 class StrengthWorkoutProvider with ChangeNotifier {

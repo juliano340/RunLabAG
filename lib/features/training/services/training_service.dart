@@ -1,5 +1,6 @@
 import '../../../core/services/database_service.dart';
-import '../data/models/training_plan.dart';
+import 'package:runlabag/core/domain/models/training_plan.dart';
+import 'package:runlabag/core/domain/models/run_model.dart';
 
 class TrainingService {
   final DatabaseService _dbService;

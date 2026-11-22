@@ -1,5 +1,5 @@
-import '../../../dashboard/domain/models/weekly_evolution_stats.dart';
-import 'monthly_evolution_stats.dart';
+import 'package:runlabag/core/domain/models/weekly_evolution_stats.dart';
+import 'package:runlabag/core/domain/models/monthly_evolution_stats.dart';
 
 /// Granularidade de agrupamento usada nos gráficos de análise.
 enum TrendPeriodType { day, week, month, quarter }

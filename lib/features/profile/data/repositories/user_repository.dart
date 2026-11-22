@@ -1,6 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import '../../../../core/services/database_helper.dart';
-import '../../../../features/profile/domain/models/user_profile.dart';
+import 'package:runlabag/core/domain/models/user_profile.dart';
 
 class UserRepository {
   Future<void> saveUserProfile(UserProfile profile) async {

@@ -20,6 +20,7 @@ import '../../../../core/providers/runs_provider.dart';
 import '../../../../core/services/notification_service.dart';
 import 'bmi_detail_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:runlabag/core/domain/models/user_profile.dart';
 
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});

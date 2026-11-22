@@ -1,4 +1,5 @@
-import 'database_service.dart';
+import 'package:runlabag/core/domain/models/run_model.dart';
+import 'package:runlabag/core/domain/models/user_profile.dart';
 
 class RecommendationResult {
   final double recommendedGoal;

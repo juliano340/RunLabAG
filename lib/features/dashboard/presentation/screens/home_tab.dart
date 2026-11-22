@@ -12,6 +12,8 @@ import '../../../../features/run/presentation/screens/active_run_screen.dart';
 
 import 'package:runlabag/core/services/database_service.dart';
 import '../../../history/presentation/screens/run_detail_screen.dart';
+import 'package:runlabag/core/domain/models/run_model.dart';
+import 'package:runlabag/core/domain/models/user_profile.dart';
 
 class HomeTab extends StatefulWidget {
   final VoidCallback? onNavigateToProfile;

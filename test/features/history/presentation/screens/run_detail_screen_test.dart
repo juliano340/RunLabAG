@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:runlabag/core/services/theme_service.dart';
-import 'package:runlabag/features/history/domain/models/run_model.dart';
+import 'package:runlabag/core/domain/models/run_model.dart';
 import 'package:runlabag/features/history/presentation/screens/run_detail_screen.dart';
 
 void main() {
@@ -70,6 +70,46 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('Treino de 16/11/2026 às 18:00'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'RunDetailScreen renderiza mapa colorido por pace sem crash',
+    (WidgetTester tester) async {
+      final run = RunModel(
+        id: 'test-run-pace',
+        date: DateTime(2026, 11, 16, 18, 0),
+        distanceKm: 0.33,
+        durationSeconds: 402,
+        pace: '20:10',
+        calories: 23,
+        route: const [
+          [
+            LatLng(-23.5505, -46.6333),
+            LatLng(-23.5515, -46.6333),
+            LatLng(-23.5525, -46.6333),
+            LatLng(-23.5535, -46.6333),
+          ],
+        ],
+        routeTimes: const [
+          [0, 134, 268, 402],
+        ],
+      );
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider(
+          create: (_) => ThemeService(),
+          child: MaterialApp(home: RunDetailScreen(run: run)),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Sem crash e com a legenda de faixas visível (rota 100% caminhada).
+      expect(tester.takeException(), isNull);
+      expect(find.text('Treino de 16/11/2026 às 18:00'), findsOneWidget);
+      expect(find.text('Caminhada 100%'), findsOneWidget);
     },
   );
 }

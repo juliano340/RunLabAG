@@ -4,8 +4,8 @@ import 'package:lucide_icons/lucide_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/widgets/glass_container.dart';
-import '../../../dashboard/domain/models/weekly_evolution_stats.dart';
-import '../../domain/models/monthly_evolution_stats.dart';
+import 'package:runlabag/core/domain/models/weekly_evolution_stats.dart';
+import 'package:runlabag/core/domain/models/monthly_evolution_stats.dart';
 import '../../domain/models/pace_series_point.dart';
 import '../../domain/models/performance_alert.dart';
 import '../../domain/services/pace_series_service.dart';
@@ -16,6 +16,7 @@ import '../widgets/pace_summary_strip.dart';
 import '../widgets/pace_trend_chart.dart';
 import '../widgets/period_comparison_section.dart';
 import '../widgets/volume_bar_chart.dart';
+import 'package:runlabag/core/domain/models/run_model.dart';
 
 class AnalyticsTab extends StatefulWidget {
   const AnalyticsTab({super.key});

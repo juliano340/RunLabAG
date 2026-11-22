@@ -9,8 +9,8 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/theme_service.dart';
 import '../../../../core/utils/time_utils.dart';
 import '../../../../core/utils/map_marker_helper.dart';
-import '../../domain/models/run_model.dart';
-import '../../domain/services/pace_zone_service.dart';
+import 'package:runlabag/core/domain/models/run_model.dart';
+import 'package:runlabag/core/domain/services/pace_zone_service.dart';
 import '../widgets/pace_zone_legend.dart';
 
 class FullMapScreen extends StatefulWidget {

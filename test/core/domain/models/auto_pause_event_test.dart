@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:runlabag/features/history/domain/models/auto_pause_event.dart';
-import 'package:runlabag/features/history/domain/models/run_model.dart';
+import 'package:runlabag/core/domain/models/auto_pause_event.dart';
+import 'package:runlabag/core/domain/models/run_model.dart';
 
 void main() {
   group('AutoPauseEvent & RunModel AutoPause Tests', () {

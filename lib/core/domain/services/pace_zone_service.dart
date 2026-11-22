@@ -1,8 +1,8 @@
 import 'dart:ui';
 import 'dart:math' as math;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import '../../../../core/theme/app_colors.dart';
-import '../models/run_split.dart';
+import '../../theme/app_colors.dart';
+import 'package:runlabag/core/domain/models/run_split.dart';
 
 /// Faixas de ritmo exibidas no mapa colorido do treino.
 enum PaceZone {

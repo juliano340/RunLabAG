@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../domain/models/user_profile.dart';
+import 'package:runlabag/core/domain/models/user_profile.dart';
 
 class BmiDetailScreen extends StatelessWidget {
   final UserProfile profile;

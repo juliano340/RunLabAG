@@ -1,5 +1,5 @@
-import '../models/strength_workout.dart';
-import '../models/workout_block.dart';
+import 'package:runlabag/core/domain/models/strength_workout.dart';
+import 'package:runlabag/core/domain/models/workout_block.dart';
 
 abstract class StrengthWorkoutRepository {
   Future<void> saveWorkout(StrengthWorkout workout);

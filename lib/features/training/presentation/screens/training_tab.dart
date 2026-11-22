@@ -4,7 +4,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/services/database_service.dart';
-import '../../data/models/training_plan.dart';
+import 'package:runlabag/core/domain/models/training_plan.dart';
 import '../../services/training_service.dart';
 
 class TrainingTab extends StatefulWidget {

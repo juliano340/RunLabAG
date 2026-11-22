@@ -1,5 +1,5 @@
 import '../models/performance_alert.dart';
-import '../../../dashboard/domain/models/weekly_evolution_stats.dart';
+import 'package:runlabag/core/domain/models/weekly_evolution_stats.dart';
 
 class PerformanceAlertService {
   static List<PerformanceAlert> analyze({

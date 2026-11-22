@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:runlabag/features/analytics/domain/models/monthly_evolution_stats.dart';
+import 'package:runlabag/core/domain/models/monthly_evolution_stats.dart';
 import 'package:runlabag/features/analytics/domain/models/pace_series_point.dart';
 import 'package:runlabag/features/analytics/domain/services/pace_series_service.dart';
-import 'package:runlabag/features/dashboard/domain/models/weekly_evolution_stats.dart';
+import 'package:runlabag/core/domain/models/weekly_evolution_stats.dart';
 
 WeeklyEvolutionStats _week({
   required DateTime start,

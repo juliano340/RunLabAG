@@ -15,8 +15,9 @@ import '../../../../core/utils/map_marker_helper.dart';
 import 'add_run_screen.dart';
 import 'full_map_screen.dart';
 import 'edit_run_route_screen.dart';
-import '../../domain/services/pace_zone_service.dart';
+import 'package:runlabag/core/domain/services/pace_zone_service.dart';
 import '../widgets/pace_zone_legend.dart';
+import 'package:runlabag/core/domain/models/run_model.dart';
 
 class RunDetailScreen extends StatefulWidget {
   final RunModel run;

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:runlabag/features/history/domain/models/run_split.dart';
-import 'package:runlabag/features/history/domain/services/pace_zone_service.dart';
+import 'package:runlabag/core/domain/models/run_split.dart';
+import 'package:runlabag/core/domain/services/pace_zone_service.dart';
 
 void main() {
   // 1 grau de latitude ≈ 111.19 km; 0.001° ≈ 111 m.

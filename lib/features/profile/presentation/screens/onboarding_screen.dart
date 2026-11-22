@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:runlabag/core/theme/app_colors.dart';
 import 'package:runlabag/core/services/database_service.dart';
+import 'package:runlabag/core/domain/models/user_profile.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});

@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import '../../../../core/utils/time_utils.dart';
+import '../../utils/time_utils.dart';
 
 class AutoPauseEvent {
   final double latitude;

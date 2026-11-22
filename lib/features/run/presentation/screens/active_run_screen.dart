@@ -31,7 +31,10 @@ import 'run_browse_screen.dart';
 import '../../domain/services/run_finalization_service.dart';
 import '../../domain/services/run_metrics_service.dart';
 import '../../domain/services/gps_filter_service.dart';
-import '../../../history/domain/services/pace_zone_service.dart';
+import 'package:runlabag/core/domain/services/pace_zone_service.dart';
+import 'package:runlabag/core/domain/models/auto_pause_event.dart';
+import 'package:runlabag/core/domain/models/run_split.dart';
+import 'package:runlabag/core/domain/models/user_profile.dart';
 
 class ActiveRunScreen extends StatefulWidget {
   final Map<String, dynamic>? restoredState;
