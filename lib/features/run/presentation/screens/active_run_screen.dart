@@ -113,6 +113,11 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   int _lastSplitTimeSeconds = 0;
   int _lastSplitCalories = 0;
   Timer? _timer;
+
+  /// Tick de display: incrementado a cada segundo pelo cronômetro. Só o
+  /// painel de métricas escuta este notifier — o mapa, os markers e a top
+  /// bar NÃO são reconstruídos a cada segundo (fim do setState global).
+  final ValueNotifier<int> _uiTick = ValueNotifier(0);
   UserProfile? _userProfile;
   // Smoothing fields
   List<Position> _paceBuffer = [];
@@ -689,33 +694,31 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_isPaused || _isAutoPaused) {
-        setState(() {
-          _pausedSecondsElapsed++;
-          if (_isAutoPaused) {
-            _currentAutoPauseDurationSeconds++;
-          }
-        });
+        _pausedSecondsElapsed++;
+        if (_isAutoPaused) {
+          _currentAutoPauseDurationSeconds++;
+        }
+        _uiTick.value++;
         if (_pausedSecondsElapsed % 5 == 0) {
           _persistState();
         }
         return;
       }
-      setState(() {
-        _secondsElapsed++;
-        if (_pacingService != null) {
-          final oldStatus = _pacingFeedback?.status;
-          _pacingFeedback = _pacingService!.getUpdate(
-            _distanceKm,
-            _secondsElapsed,
-          );
+      _secondsElapsed++;
+      if (_pacingService != null) {
+        final oldStatus = _pacingFeedback?.status;
+        _pacingFeedback = _pacingService!.getUpdate(
+          _distanceKm,
+          _secondsElapsed,
+        );
 
-          if (_pacingFeedback != null &&
-              _pacingFeedback!.status != oldStatus &&
-              _pacingFeedback!.status != PacingStatus.none) {
-            HapticFeedback.mediumImpact();
-          }
+        if (_pacingFeedback != null &&
+            _pacingFeedback!.status != oldStatus &&
+            _pacingFeedback!.status != PacingStatus.none) {
+          HapticFeedback.mediumImpact();
         }
-      });
+      }
+      _uiTick.value++;
       if (_secondsElapsed % 5 == 0) {
         _persistState();
       }
@@ -1438,28 +1441,34 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
               onLock: _lockScreen,
             ),
 
-            ActiveRunBottomPanel(
-              isDark: isDark,
-              isRunning: _isRunning,
-              isPaused: _isPaused,
-              isAutoPaused: _isAutoPaused,
-              isFinished: _isFinished,
-              isSaving: _isSaving,
-              distanceKm: _distanceKm,
-              distanceGoal: _distanceGoal,
-              formattedTime: _formatTime(),
-              pace: _calculatePace(),
-              calories: _calculateCalories().toString(),
-              eta: _calculateETA(),
-              pausedSeconds: _pausedSecondsElapsed,
-              pacingFeedback: _pacingFeedback,
-              onStart: () => _startRun(),
-              onPause: _pauseRun,
-              onResume: _resumeRun,
-              onStop: _stopRun,
-              onShowGoalDialog: _showGoalDialog,
-              onDiscard: _discardFinishedRun,
-              onSave: _saveRun,
+            // Painel de métricas: ÚNICO subtree que redesenha a cada segundo.
+            // O mapa, os markers e a top bar ficam fora do tick — o
+            // cronômetro só mexe no notifier.
+            ValueListenableBuilder<int>(
+              valueListenable: _uiTick,
+              builder: (context, _, _) => ActiveRunBottomPanel(
+                isDark: isDark,
+                isRunning: _isRunning,
+                isPaused: _isPaused,
+                isAutoPaused: _isAutoPaused,
+                isFinished: _isFinished,
+                isSaving: _isSaving,
+                distanceKm: _distanceKm,
+                distanceGoal: _distanceGoal,
+                formattedTime: _formatTime(),
+                pace: _calculatePace(),
+                calories: _calculateCalories().toString(),
+                eta: _calculateETA(),
+                pausedSeconds: _pausedSecondsElapsed,
+                pacingFeedback: _pacingFeedback,
+                onStart: () => _startRun(),
+                onPause: _pauseRun,
+                onResume: _resumeRun,
+                onStop: _stopRun,
+                onShowGoalDialog: _showGoalDialog,
+                onDiscard: _discardFinishedRun,
+                onSave: _saveRun,
+              ),
             ),
 
             if (_isScreenLocked)
@@ -1501,6 +1510,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _uiTick.dispose();
     _positionStream?.cancel();
     _themeService?.removeListener(_onThemeChanged);
     // Evita a tela ficar acesa para sempre se o usuário sair sem parar o treino.
