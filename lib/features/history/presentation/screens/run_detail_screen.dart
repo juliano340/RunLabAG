@@ -42,8 +42,16 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
 
   // Navegação por swipe: vizinhos na ordem do histórico (mais recente primeiro).
   List<String> _runIds = const [];
+  List<RunModel> _summaries = const [];
   int _runIndex = -1;
   bool _isNavigating = false;
+
+  // Arraste físico do painel: progresso como fração da largura (positivo =
+  // indo para treinos antigos, negativo = recentes) e o índice do vizinho
+  // em foco. Enquanto arrasta, o card desliza de verdade com o dedo e o
+  // vizinho espreita pela borda com o mínimo de informação.
+  double? _dragProgress;
+  int? _dragNeighborIndex;
 
   @override
   void initState() {
@@ -84,6 +92,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       // getRunSummaries já ordena do mais recente para o mais antigo.
       setState(() {
         _runIds = summaries.map((r) => r.id).toList();
+        _summaries = summaries;
         _runIndex = _runIds.indexOf(_run.id);
       });
     } catch (e) {
@@ -91,17 +100,53 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     }
   }
 
-  /// Esquerda = treinos mais antigos (voltando no tempo) · direita = mais recentes.
-  void _onSwipe(DragEndDetails details) {
-    if (_isNavigating || _runIds.isEmpty || _runIndex < 0) return;
-    final velocity = details.primaryVelocity ?? 0;
-    if (velocity.abs() < 350) return;
+  // ── Arraste físico do painel (estilo Apple) ───────────────────────────
 
-    // Coerente com as setas: arrastar para a direita (+v) volta no tempo —
-    // mesmo destino da seta esquerda. Arrastar para a esquerda avança.
-    final target = _runIndex + (velocity < 0 ? -1 : 1);
-    if (target < 0 || target >= _runIds.length) return;
-    _navigateTo(_runIds[target], goingOlder: target > _runIndex);
+  /// Esquerda = treinos mais antigos (voltando no tempo) · direita = recentes.
+  void _onSwipeStart(DragStartDetails details) {
+    if (_isNavigating || _runIds.isEmpty || _runIndex < 0) return;
+    setState(() => _dragProgress = 0);
+  }
+
+  void _onSwipeUpdate(DragUpdateDetails details) {
+    if (_isNavigating || _runIds.isEmpty || _runIndex < 0) return;
+    final width = MediaQuery.of(context).size.width;
+    if (width <= 0) return;
+    final next = (_dragProgress ?? 0) + (details.primaryDelta ?? 0) / width;
+    final targetIndex = _runIndex + (next > 0 ? 1 : -1);
+    // Sem vizinho desse lado: resistência elástica curta (rubber-band).
+    final hasNeighbor = targetIndex >= 0 && targetIndex < _summaries.length;
+    setState(() {
+      _dragProgress = hasNeighbor ? next : next.sign * 0.12;
+      _dragNeighborIndex = hasNeighbor ? targetIndex : null;
+    });
+  }
+
+  void _onSwipeEnd(DragEndDetails details) {
+    final progress = _dragProgress;
+    if (progress == null || _dragNeighborIndex == null) {
+      _onSwipeCancel();
+      return;
+    }
+    final velocity = details.primaryVelocity ?? 0;
+    // Passa do limiar de distância OU vem com força de fling: troca.
+    final commit = progress.abs() > 0.18 || velocity.abs() > 700;
+    if (commit) {
+      _navigateTo(
+        _summaries[_dragNeighborIndex!].id,
+        goingOlder: progress > 0,
+      );
+    } else {
+      _onSwipeCancel();
+    }
+  }
+
+  void _onSwipeCancel() {
+    if (!mounted) return;
+    setState(() {
+      _dragProgress = null; // volta animada ao lugar (AnimatedSlide 220ms)
+      _dragNeighborIndex = null;
+    });
   }
 
   Future<void> _navigateTo(String runId, {required bool goingOlder}) async {
@@ -870,8 +915,22 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
           Expanded(
             flex: 5,
             child: GestureDetector(
-              onHorizontalDragEnd: _onSwipe,
-              child: Container(
+              onHorizontalDragStart: _onSwipeStart,
+              onHorizontalDragUpdate: _onSwipeUpdate,
+              onHorizontalDragEnd: _onSwipeEnd,
+              onHorizontalDragCancel: _onSwipeCancel,
+              child: Stack(
+                children: [
+                  // Card de métricas: desliza FISICAMENTE com o dedo. Passando
+                  // do limiar, a troca completa o movimento com a rota
+                  // deslizante; abaixo do limiar, o card volta animado.
+                  AnimatedSlide(
+                    offset: Offset(_dragProgress ?? 0, 0),
+                    duration: _dragProgress == null
+                        ? const Duration(milliseconds: 220)
+                        : Duration.zero,
+                    curve: Curves.easeOutCubic,
+                    child: Container(
                 width: double.infinity,
               decoration: BoxDecoration(
                 color: cs.surface,
@@ -1093,6 +1152,72 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                 ),
               ),
             ),
+            ),
+          if (_dragNeighborIndex != null &&
+              (_dragProgress?.abs() ?? 0) > 0.04)
+            Positioned.fill(
+              child: Align(
+                alignment: (_dragProgress ?? 0) > 0
+                    ? Alignment.centerLeft
+                    : Alignment.centerRight,
+                child: Opacity(
+                  opacity: (_dragProgress?.abs() ?? 0).clamp(0.0, 1.0),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    child: _buildNeighborPeek(),
+                  ),
+                ),
+              ),
+            ),
+        ],
+            ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Peek de arquitetura da informacao: o minimo do treino que vem â€”
+  /// data e distancia â€” num cartao que desliza pela borda do gesto.
+  Widget _buildNeighborPeek() {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final neighbor = _summaries[_dragNeighborIndex!];
+    final goingOlder = (_dragProgress ?? 0) > 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: (isDark ? AppColors.cardBackground : AppColors.cardLight)
+            .withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cs.outline.withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 12),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            goingOlder ? 'â† Mais antigo' : 'Mais recente â†’',
+            style: GoogleFonts.outfit(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '${neighbor.date.day.toString().padLeft(2, '0')}/'
+            '${neighbor.date.month.toString().padLeft(2, '0')} Â· '
+            '${neighbor.distanceKm.toStringAsFixed(1)} km',
+            style: GoogleFonts.outfit(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: cs.onSurface,
             ),
           ),
         ],
