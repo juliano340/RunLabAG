@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'database_helper.dart';
 import 'package:runlabag/core/domain/services/pace_zone_service.dart';
@@ -89,9 +90,14 @@ class DatabaseService {
   Future<UserProfile?> getUserProfile() => _userRepo.getUserProfile();
 
   // --- Reset ---
-  /// Apaga todos os dados do usuário (perfil, treinos, conquistas, água,
+  /// Apaga todos os dados do usuário (perfil, foto, treinos, conquistas, água,
   /// planos e treinos de força). Preserva catálogos e restaura as
   /// distâncias monitoradas padrão.
+  ///
+  /// Cada tabela é apagada com tolerância individual: numa transação
+  /// tudo-ou-nada, UMA tabela ausente/corrompida desfazia o reset inteiro
+  /// (sintoma: "apaguei tudo e o perfil continuou lá"). Agora um problema
+  /// isolado não impede o resto de ser apagado.
   Future<void> resetAllData() async {
     final db = await database;
     await db.transaction((txn) async {
@@ -113,10 +119,18 @@ class DatabaseService {
         'strength_workout_templates',
         'template_items',
       ]) {
-        await txn.delete(table);
+        try {
+          await txn.delete(table);
+        } catch (e) {
+          debugPrint('Reset: falha ao apagar $table: $e');
+        }
       }
       // Restaura as distâncias monitoradas padrão
-      await txn.delete('monitored_distances');
+      try {
+        await txn.delete('monitored_distances');
+      } catch (e) {
+        debugPrint('Reset: falha ao limpar monitored_distances: $e');
+      }
       for (double dist in [1.0, 5.0, 10.0, 15.0]) {
         await txn.insert('monitored_distances', {'distanceKm': dist});
       }

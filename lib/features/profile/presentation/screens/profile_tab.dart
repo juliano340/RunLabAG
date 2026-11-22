@@ -870,7 +870,25 @@ class _ProfileTabState extends State<ProfileTab> {
       }
     }
 
-    await _dbService.resetAllData();
+    try {
+      await _dbService.resetAllData();
+    } catch (e) {
+      // Nada de falha silenciosa: se o banco recusar, o usuário precisa
+      // saber que os dados NÃO foram apagados.
+      if (mounted && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Falha ao apagar os dados. Tente novamente.',
+              style: const TextStyle(color: Colors.white),
+            ),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      debugPrint('Erro ao resetar dados: $e');
+      return;
+    }
     if (!mounted || !context.mounted) return;
 
     context.read<WaterProvider>().refresh();
