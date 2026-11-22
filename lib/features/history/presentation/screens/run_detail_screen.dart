@@ -728,7 +728,13 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
           // Map View showing the route with expanded height & action controls
           Expanded(
             flex: 5,
-            child: Stack(
+            child: AnimatedSlide(
+              offset: Offset(_dragProgress ?? 0, 0),
+              duration: _dragProgress == null
+                  ? const Duration(milliseconds: 220)
+                  : Duration.zero,
+              curve: Curves.easeOutCubic,
+              child: Stack(
               children: [
                 GoogleMap(
                   style: _mapStyle,
@@ -906,6 +912,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                     ),
                   ),
               ],
+            ),
             ),
           ),
           
