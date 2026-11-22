@@ -1,5 +1,5 @@
 import 'package:sqflite/sqflite.dart';
-import '../../../../core/services/database_helper.dart';
+import '../../services/database_helper.dart';
 import 'package:runlabag/core/domain/models/run_model.dart';
 
 /// Acesso à tabela `runs`.

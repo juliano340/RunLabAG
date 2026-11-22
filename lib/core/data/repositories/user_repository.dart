@@ -1,5 +1,5 @@
 import 'package:sqflite/sqflite.dart';
-import '../../../../core/services/database_helper.dart';
+import '../../services/database_helper.dart';
 import 'package:runlabag/core/domain/models/user_profile.dart';
 
 class UserRepository {
