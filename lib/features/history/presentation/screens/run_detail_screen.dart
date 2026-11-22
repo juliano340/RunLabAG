@@ -1160,22 +1160,6 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
               ),
             ),
             ),
-          if (_dragNeighborIndex != null &&
-              (_dragProgress?.abs() ?? 0) > 0.04)
-            Positioned.fill(
-              child: Align(
-                alignment: (_dragProgress ?? 0) > 0
-                    ? Alignment.centerLeft
-                    : Alignment.centerRight,
-                child: Opacity(
-                  opacity: (_dragProgress?.abs() ?? 0).clamp(0.0, 1.0),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    child: _buildNeighborPeek(),
-                  ),
-                ),
-              ),
-            ),
         ],
             ),
             ),
@@ -1185,52 +1169,6 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     );
   }
 
-  /// Peek de arquitetura da informacao: o minimo do treino que vem â€”
-  /// data e distancia â€” num cartao que desliza pela borda do gesto.
-  Widget _buildNeighborPeek() {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final neighbor = _summaries[_dragNeighborIndex!];
-    final goingOlder = (_dragProgress ?? 0) > 0;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: (isDark ? AppColors.cardBackground : AppColors.cardLight)
-            .withValues(alpha: 0.96),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: cs.outline.withValues(alpha: 0.35)),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 12),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            goingOlder ? 'â† Mais antigo' : 'Mais recente â†’',
-            style: GoogleFonts.outfit(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
-              color: cs.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            '${neighbor.date.day.toString().padLeft(2, '0')}/'
-            '${neighbor.date.month.toString().padLeft(2, '0')} Â· '
-            '${neighbor.distanceKm.toStringAsFixed(1)} km',
-            style: GoogleFonts.outfit(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: cs.onSurface,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   /// Chip do tipo de treino — compacto, alinhado ao eixo esquerdo.
   Widget _buildTypeChip(ColorScheme cs) {
