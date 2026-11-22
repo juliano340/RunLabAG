@@ -28,7 +28,8 @@ class RunDetailScreen extends StatefulWidget {
   State<RunDetailScreen> createState() => _RunDetailScreenState();
 }
 
-class _RunDetailScreenState extends State<RunDetailScreen> {
+class _RunDetailScreenState extends State<RunDetailScreen>
+    with SingleTickerProviderStateMixin {
   late RunModel _run;
   late PaceZoneResult _paceResult;
   GoogleMapController? _mapController;
@@ -46,16 +47,23 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
   int _runIndex = -1;
   bool _isNavigating = false;
 
-  // Arraste físico do painel: progresso como fração da largura (positivo =
-  // indo para treinos antigos, negativo = recentes) e o índice do vizinho
-  // em foco. Enquanto arrasta, o card desliza de verdade com o dedo e o
-  // vizinho espreita pela borda com o mínimo de informação.
+  // Giro de dado em 3D: o gesto inclina a página (rotateY com perspectiva)
+  // e, passando do limiar, a rotação completa até a borda, os dados trocam
+  // "por trás" e a face do novo treino chega de frente.
   double? _dragProgress;
   int? _dragNeighborIndex;
+  double _angleFraction = 0;
+  late final AnimationController _flipController;
+  int _flipDirection = 1;
+  RunModel? _flipIncoming;
+  bool _flipSwapped = false;
 
   @override
   void initState() {
     super.initState();
+    _flipController =
+        AnimationController(vsync: this, duration: const Duration(milliseconds: 480))
+          ..addListener(_onFlipTick);
     _run = widget.run;
     _paceResult = _analyzePace();
     _loadMapStyle();
@@ -119,6 +127,8 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
     setState(() {
       _dragProgress = hasNeighbor ? next : next.sign * 0.12;
       _dragNeighborIndex = hasNeighbor ? targetIndex : null;
+      // inclina a página como a face de um dado (arrasto total = 90 graus)
+      _angleFraction = _dragProgress! * 0.5;
     });
   }
 
@@ -143,9 +153,26 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
 
   void _onSwipeCancel() {
     if (!mounted) return;
-    setState(() {
-      _dragProgress = null; // volta animada ao lugar (AnimatedSlide 220ms)
-      _dragNeighborIndex = null;
+    final from = _angleFraction.abs();
+    if (from <= 0.001) {
+      setState(() {
+        _angleFraction = 0;
+        _dragProgress = null;
+        _dragNeighborIndex = null;
+      });
+      return;
+    }
+    // Devolve a face girando de volta, no sentido contrario.
+    _flipDirection = _angleFraction < 0 ? -1 : 1;
+    _flipSwapped = false;
+    _flipIncoming = null;
+    _flipController.reverse(from: from).whenComplete(() {
+      if (!mounted) return;
+      setState(() {
+        _angleFraction = 0;
+        _dragProgress = null;
+        _dragNeighborIndex = null;
+      });
     });
   }
 
@@ -158,13 +185,58 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
         setState(() => _isNavigating = false);
         return;
       }
-      await Navigator.pushReplacement(
-        context,
-        _RunSlideRoute(run: run, goingOlder: goingOlder),
-      );
+      // Giro de dado: a face atual gira até a borda, os dados trocam por
+      // trás (90 graus) e a face do novo treino completa o movimento.
+      _flipIncoming = run;
+      _flipDirection = goingOlder ? 1 : -1;
+      _flipSwapped = false;
+      _flipController.forward(from: _angleFraction.abs()).whenComplete(() {
+        if (!mounted) return;
+        setState(() {
+          _isNavigating = false;
+          _angleFraction = 0;
+          _dragProgress = null;
+          _dragNeighborIndex = null;
+          _flipIncoming = null;
+        });
+      });
     } catch (e) {
       if (mounted) setState(() => _isNavigating = false);
     }
+  }
+
+  /// Um tick do giro: avança o ângulo e, ao cruzar 90 graus (face de
+  /// perfil), troca os dados por trás e recentra o mapa no novo treino.
+  void _onFlipTick() {
+    final v = _flipController.value;
+    final crossed = !_flipSwapped && v >= 0.5 && _flipIncoming != null;
+    if (mounted) {
+      setState(() {
+        _angleFraction = _flipDirection * v;
+        if (crossed) {
+          _flipSwapped = true;
+          _run = _flipIncoming!;
+          _paceResult = _analyzePace();
+        }
+      });
+    }
+    if (crossed) _recenterMap();
+  }
+
+  /// Matriz do giro de dado: rotateY com perspectiva; na segunda metade
+  /// a rotação passa de 90 graus e a face aparece espelhada, então
+  /// des-espelhamos no eixo X para a face nova chegar correta.
+  Matrix4 _pageTransform() {
+    final fraction = _angleFraction;
+    if (fraction == 0) return Matrix4.identity();
+    final angle = fraction * 3.141592653589793;
+    final m = Matrix4.identity()
+      ..setEntry(3, 2, 0.0015)
+      ..rotateY(angle);
+    if (fraction.abs() > 0.5) {
+      m.scaleByDouble(-1.0, 1.0, 1.0, 1.0);
+    }
+    return m;
   }
 
   PaceZoneResult _analyzePace() {
@@ -213,6 +285,7 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
 
   @override
   void dispose() {
+    _flipController.dispose();
     _themeService?.removeListener(_onThemeChanged);
     _mapController?.dispose();
     super.dispose();
@@ -723,18 +796,15 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: Transform(
+        transform: _pageTransform(),
+        alignment: Alignment.center,
+        child: Column(
         children: [
           // Map View showing the route with expanded height & action controls
           Expanded(
             flex: 5,
-            child: AnimatedSlide(
-              offset: Offset(_dragProgress ?? 0, 0),
-              duration: _dragProgress == null
-                  ? const Duration(milliseconds: 220)
-                  : Duration.zero,
-              curve: Curves.easeOutCubic,
-              child: Stack(
+            child: Stack(
               children: [
                 GoogleMap(
                   style: _mapStyle,
@@ -913,9 +983,8 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
                   ),
               ],
             ),
-            ),
           ),
-          
+
           // Metrics Panel in Scrollable Sheet Container
           // Swipe horizontal no painel navega entre os treinos vizinhos;
           // as setas laterais indicam (e permitem) o caminho disponível.
@@ -926,18 +995,9 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
               onHorizontalDragUpdate: _onSwipeUpdate,
               onHorizontalDragEnd: _onSwipeEnd,
               onHorizontalDragCancel: _onSwipeCancel,
-              child: Stack(
-                children: [
-                  // Card de métricas: desliza FISICAMENTE com o dedo. Passando
-                  // do limiar, a troca completa o movimento com a rota
-                  // deslizante; abaixo do limiar, o card volta animado.
-                  AnimatedSlide(
-                    offset: Offset(_dragProgress ?? 0, 0),
-                    duration: _dragProgress == null
-                        ? const Duration(milliseconds: 220)
-                        : Duration.zero,
-                    curve: Curves.easeOutCubic,
-                    child: Container(
+              // O gesto ancera aqui, mas quem gira é a PÁGINA INTEIRA
+              // (mapa + dados) — o Transform do body aplica o giro de dado.
+              child: Container(
                 width: double.infinity,
               decoration: BoxDecoration(
                 color: cs.surface,
@@ -1160,11 +1220,9 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
               ),
             ),
             ),
-        ],
-            ),
-            ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -1360,27 +1418,4 @@ class _RunDetailScreenState extends State<RunDetailScreen> {
       },
     );
   }
-}
-
-/// Transicao entre detalhes de treinos: o novo detalhe entra pelo lado do
-/// gesto (antigos pela esquerda, recentes pela direita) deslizando com fade.
-class _RunSlideRoute extends PageRouteBuilder<void> {
-  _RunSlideRoute({required RunModel run, required bool goingOlder})
-      : super(
-          transitionDuration: const Duration(milliseconds: 300),
-          reverseTransitionDuration: const Duration(milliseconds: 300),
-          pageBuilder: (_, _, _) => RunDetailScreen(run: run),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            final curved = CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-            );
-            final begin = Offset(goingOlder ? -1.0 : 1.0, 0);
-            return SlideTransition(
-              position: Tween<Offset>(begin: begin, end: Offset.zero)
-                  .animate(curved),
-              child: FadeTransition(opacity: curved, child: child),
-            );
-          },
-        );
 }
