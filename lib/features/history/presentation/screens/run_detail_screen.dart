@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -53,6 +54,7 @@ class _RunDetailScreenState extends State<RunDetailScreen>
   double? _dragProgress;
   int? _dragNeighborIndex;
   double _angleFraction = 0;
+  double _slideFraction = 0;
   late final AnimationController _flipController;
   int _flipDirection = 1;
   RunModel? _flipIncoming;
@@ -129,6 +131,7 @@ class _RunDetailScreenState extends State<RunDetailScreen>
       _dragNeighborIndex = hasNeighbor ? targetIndex : null;
       // inclina a página como a face de um dado (arrasto total = 90 graus)
       _angleFraction = _dragProgress! * 0.5;
+      _slideFraction = _dragProgress! * 0.25;
     });
   }
 
@@ -157,6 +160,7 @@ class _RunDetailScreenState extends State<RunDetailScreen>
     if (from <= 0.001) {
       setState(() {
         _angleFraction = 0;
+        _slideFraction = 0;
         _dragProgress = null;
         _dragNeighborIndex = null;
       });
@@ -170,6 +174,7 @@ class _RunDetailScreenState extends State<RunDetailScreen>
       if (!mounted) return;
       setState(() {
         _angleFraction = 0;
+        _slideFraction = 0;
         _dragProgress = null;
         _dragNeighborIndex = null;
       });
@@ -195,6 +200,7 @@ class _RunDetailScreenState extends State<RunDetailScreen>
         setState(() {
           _isNavigating = false;
           _angleFraction = 0;
+          _slideFraction = 0;
           _dragProgress = null;
           _dragNeighborIndex = null;
           _flipIncoming = null;
@@ -213,10 +219,15 @@ class _RunDetailScreenState extends State<RunDetailScreen>
     if (mounted) {
       setState(() {
         _angleFraction = _flipDirection * v;
+        _slideFraction =
+            _flipDirection * math.sin(v * 3.141592653589793) * 0.35;
         if (crossed) {
           _flipSwapped = true;
           _run = _flipIncoming!;
           _paceResult = _analyzePace();
+          // ESSENCIAL: sem atualizar o indice, o proximo giro navegava
+          // sempre a partir do treino ORIGINAL — "o treino nunca mudava".
+          _runIndex = _runIds.indexOf(_run.id);
         }
       });
     }
@@ -228,15 +239,20 @@ class _RunDetailScreenState extends State<RunDetailScreen>
   /// des-espelhamos no eixo X para a face nova chegar correta.
   Matrix4 _pageTransform() {
     final fraction = _angleFraction;
-    if (fraction == 0) return Matrix4.identity();
+    final slide = _slideFraction;
+    if (fraction == 0 && slide == 0) return Matrix4.identity();
     final angle = fraction * 3.141592653589793;
+    final width = MediaQuery.of(context).size.width;
     final m = Matrix4.identity()
       ..setEntry(3, 2, 0.0015)
+      ..translateByDouble(slide * width, 0.0, 0.0, 1.0)
       ..rotateY(angle);
     if (fraction.abs() > 0.5) {
       m.scaleByDouble(-1.0, 1.0, 1.0, 1.0);
     }
-    return m;
+    // O dado "rola": mergulha um pouco no meio do giro.
+    final dip = 1.0 - 0.15 * math.sin(fraction.abs() * 3.141592653589793);
+    return m..scaleByDouble(dip, dip, dip, 1.0);
   }
 
   PaceZoneResult _analyzePace() {
