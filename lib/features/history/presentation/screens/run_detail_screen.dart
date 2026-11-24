@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -64,7 +63,7 @@ class _RunDetailScreenState extends State<RunDetailScreen>
   void initState() {
     super.initState();
     _flipController =
-        AnimationController(vsync: this, duration: const Duration(milliseconds: 480))
+        AnimationController(vsync: this, duration: const Duration(milliseconds: 320))
           ..addListener(_onFlipTick);
     _run = widget.run;
     _paceResult = _analyzePace();
@@ -129,9 +128,9 @@ class _RunDetailScreenState extends State<RunDetailScreen>
     setState(() {
       _dragProgress = hasNeighbor ? next : next.sign * 0.12;
       _dragNeighborIndex = hasNeighbor ? targetIndex : null;
-      // inclina a página como a face de um dado (arrasto total = 90 graus)
-      _angleFraction = _dragProgress! * 0.5;
-      _slideFraction = _dragProgress! * 0.25;
+      // inclina a pagina como a face de um dado (max ~18 graus)
+      _angleFraction = _dragProgress! * 0.1;
+      _slideFraction = _dragProgress! * 0.08;
     });
   }
 
@@ -211,22 +210,22 @@ class _RunDetailScreenState extends State<RunDetailScreen>
     }
   }
 
-  /// Um tick do giro: avança o ângulo e, ao cruzar 90 graus (face de
-  /// perfil), troca os dados por trás e recentra o mapa no novo treino.
+  /// Um tick da transicao: primeira metade o treino atual inclina e sai
+  /// desvanecendo; no meio (invisivel) os dados trocam; a segunda metade o
+  /// novo treino entra do lado oposto e assenta.
   void _onFlipTick() {
     final v = _flipController.value;
     final crossed = !_flipSwapped && v >= 0.5 && _flipIncoming != null;
     if (mounted) {
       setState(() {
-        _angleFraction = _flipDirection * v;
-        _slideFraction =
-            _flipDirection * math.sin(v * 3.141592653589793) * 0.35;
+        final half = v < 0.5 ? v * 2 : (1 - v) * 2;
+        final exiting = v < 0.5;
+        _angleFraction = _flipDirection * (exiting ? half : -half) * 0.1;
+        _slideFraction = _flipDirection * (exiting ? half : -half) * 0.15;
         if (crossed) {
           _flipSwapped = true;
           _run = _flipIncoming!;
           _paceResult = _analyzePace();
-          // ESSENCIAL: sem atualizar o indice, o proximo giro navegava
-          // sempre a partir do treino ORIGINAL — "o treino nunca mudava".
           _runIndex = _runIds.indexOf(_run.id);
         }
       });
@@ -234,25 +233,24 @@ class _RunDetailScreenState extends State<RunDetailScreen>
     if (crossed) _recenterMap();
   }
 
-  /// Matriz do giro de dado: rotateY com perspectiva; na segunda metade
-  /// a rotação passa de 90 graus e a face aparece espelhada, então
-  /// des-espelhamos no eixo X para a face nova chegar correta.
+  /// Inclinacao maxima ~18 graus: mostra o movimento sem pirotecnia.
   Matrix4 _pageTransform() {
     final fraction = _angleFraction;
     final slide = _slideFraction;
     if (fraction == 0 && slide == 0) return Matrix4.identity();
     final angle = fraction * 3.141592653589793;
     final width = MediaQuery.of(context).size.width;
-    final m = Matrix4.identity()
-      ..setEntry(3, 2, 0.0015)
+    return Matrix4.identity()
+      ..setEntry(3, 2, 0.0018)
       ..translateByDouble(slide * width, 0.0, 0.0, 1.0)
       ..rotateY(angle);
-    if (fraction.abs() > 0.5) {
-      m.scaleByDouble(-1.0, 1.0, 1.0, 1.0);
-    }
-    // O dado "rola": mergulha um pouco no meio do giro.
-    final dip = 1.0 - 0.15 * math.sin(fraction.abs() * 3.141592653589793);
-    return m..scaleByDouble(dip, dip, dip, 1.0);
+  }
+
+  /// Crossfade: a face atual some ate o meio, a nova nasce depois.
+  double _pageOpacity() {
+    if (_flipIncoming == null) return 1.0;
+    final v = _flipController.value;
+    return (v < 0.5 ? 1 - 2 * v : 2 * v - 1).clamp(0.0, 1.0);
   }
 
   PaceZoneResult _analyzePace() {
@@ -815,7 +813,9 @@ class _RunDetailScreenState extends State<RunDetailScreen>
       body: Transform(
         transform: _pageTransform(),
         alignment: Alignment.center,
-        child: Column(
+        child: Opacity(
+          opacity: _pageOpacity(),
+          child: Column(
         children: [
           // Map View showing the route with expanded height & action controls
           Expanded(
@@ -1238,6 +1238,7 @@ class _RunDetailScreenState extends State<RunDetailScreen>
             ),
           ),
         ],
+      ),
       ),
       ),
     );
