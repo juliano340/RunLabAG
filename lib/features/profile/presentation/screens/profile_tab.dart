@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -11,6 +12,7 @@ import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 import '../../../../core/services/theme_service.dart';
 import '../../../../core/services/backup_service.dart';
+import '../../../../core/domain/models/backup_status.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart';
@@ -34,6 +36,7 @@ class _ProfileTabState extends State<ProfileTab> {
   UserProfile? _profile;
   bool _isLoading = true;
   bool _autoBackupEnabled = true;
+  BackupStatus? _backupStatus;
   bool _autoPauseEnabled = false;
 
   @override
@@ -53,16 +56,20 @@ class _ProfileTabState extends State<ProfileTab> {
     super.didChangeDependencies();
     final runsProvider = Provider.of<RunsProvider>(context, listen: false);
     if (_runsProvider != runsProvider) {
-      _runsProvider?.removeListener(_loadProfile);
+      _runsProvider?.removeListener(_loadProfileAndBackupStatus);
       _runsProvider = runsProvider;
-      _runsProvider!.addListener(_loadProfile);
+      _runsProvider!.addListener(_loadProfileAndBackupStatus);
     }
   }
 
   @override
   void dispose() {
-    _runsProvider?.removeListener(_loadProfile);
+    _runsProvider?.removeListener(_loadProfileAndBackupStatus);
     super.dispose();
+  }
+
+  Future<void> _loadProfileAndBackupStatus() async {
+    await Future.wait([_loadProfile(), _loadAutoBackupPreference()]);
   }
 
   Future<void> _loadProfile() async {
@@ -77,8 +84,12 @@ class _ProfileTabState extends State<ProfileTab> {
 
   Future<void> _loadAutoBackupPreference() async {
     final enabled = await _backupService.isAutoBackupEnabled();
+    final status = await _backupService.getBackupStatus();
     if (mounted) {
-      setState(() => _autoBackupEnabled = enabled);
+      setState(() {
+        _autoBackupEnabled = enabled;
+        _backupStatus = status;
+      });
     }
   }
 
@@ -103,25 +114,30 @@ class _ProfileTabState extends State<ProfileTab> {
   Future<void> _toggleAutoBackup(bool enabled) async {
     if (enabled) {
       final granted = await _backupService.requestStoragePermission();
-      if (!granted) {
-        if (mounted && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Permissão negada. Libere "Acesso a todos os arquivos" nas configurações.',
-                style: TextStyle(color: Colors.white),
-              ),
-              backgroundColor: Colors.red,
+      if (mounted && !granted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Backup interno ativado. Sem acesso aos arquivos, a cópia em /Download fica indisponível.',
+              style: TextStyle(color: Colors.white),
             ),
-          );
-        }
-        return;
+            backgroundColor: Color(0xFF8A5A00),
+          ),
+        );
       }
     }
     await _backupService.setAutoBackupEnabled(enabled);
     if (mounted) {
       setState(() => _autoBackupEnabled = enabled);
     }
+    if (enabled) {
+      unawaited(_runBackupAndRefreshStatus());
+    }
+  }
+
+  Future<void> _runBackupAndRefreshStatus() async {
+    await _backupService.runAutoBackupIfEnabled();
+    await _loadAutoBackupPreference();
   }
 
   Future<void> _pickImage(ImageSource source) async {
@@ -665,6 +681,8 @@ class _ProfileTabState extends State<ProfileTab> {
                   Divider(color: Theme.of(context).colorScheme.outline, height: 1),
                   _buildAutoBackupToggle(context),
                   Divider(color: Theme.of(context).colorScheme.outline, height: 1),
+                  _buildBackupStatusTile(context),
+                  Divider(color: Theme.of(context).colorScheme.outline, height: 1),
                   _buildBackupTile(
                     context,
                     LucideIcons.trash2,
@@ -775,11 +793,79 @@ class _ProfileTabState extends State<ProfileTab> {
         ),
       ),
       subtitle: Text(
-        'Salva em ${_backupService.autoBackupFolderPath} após treinos > 5min',
+        'Após treinos, mantém cópias no app e em ${_backupService.autoBackupFolderPath} quando permitido',
         style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
       ),
     );
   }
+
+  Widget _buildBackupStatusTile(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final status = _backupStatus;
+    final isStale =
+        _autoBackupEnabled &&
+        status != null &&
+        (status.lastSuccessfulBackupAt == null
+            ? status.lastAttemptAt != null &&
+                DateTime.now().difference(status.lastAttemptAt!) >
+                    const Duration(days: 7)
+            : status.isStaleAt(DateTime.now()));
+    final hasProblem = status?.hasError ?? false;
+    final color = hasProblem || isStale ? const Color(0xFF8A5A00) : cs.primary;
+
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          hasProblem || isStale
+              ? LucideIcons.alertTriangle
+              : LucideIcons.checkCircle2,
+          color: color,
+          size: 20,
+        ),
+      ),
+      title: Text(
+        'Status do backup',
+        style: GoogleFonts.outfit(
+          color: cs.onSurface,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      subtitle: Text(
+        _backupStatusDescription(),
+        style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
+      ),
+    );
+  }
+
+  String _backupStatusDescription() {
+    if (!_autoBackupEnabled) return 'Backup automático desativado';
+
+    final status = _backupStatus;
+    if (status == null) return 'Verificando o último backup…';
+
+    final lastBackup = status.lastSuccessfulBackupAt;
+    if (lastBackup == null) {
+      if (status.hasError) return 'Falhou: ${status.lastError}';
+      return 'Nenhum backup concluído ainda';
+    }
+
+    final date =
+        '${_padDate(lastBackup.day)}/${_padDate(lastBackup.month)}/${lastBackup.year} '
+        'às ${_padDate(lastBackup.hour)}:${_padDate(lastBackup.minute)}';
+    final copies = status.successfulCopies == 1
+        ? '1 cópia validada'
+        : '${status.successfulCopies} cópias validadas';
+    final warning = status.hasError ? ' · ${status.lastError}' : '';
+    final stale = status.isStaleAt(DateTime.now()) ? ' · backup antigo' : '';
+    return '$date · $copies$warning$stale';
+  }
+
+  String _padDate(int value) => value.toString().padLeft(2, '0');
 
   Widget _buildBackupTile(BuildContext context, IconData icon, String title, String subtitle, {required VoidCallback onTap, Color? color}) {
     final cs = Theme.of(context).colorScheme;
@@ -820,7 +906,7 @@ class _ProfileTabState extends State<ProfileTab> {
           ),
           content: Text(
             'Isso remove permanentemente seu perfil, foto, treinos, conquistas, '
-            'histórico de água e treinos de força.\n\n'
+            'histórico de metas e treinos de força.\n\n'
             'Exporte um backup antes se quiser guardar seus dados.',
             style: GoogleFonts.outfit(fontSize: 14),
           ),

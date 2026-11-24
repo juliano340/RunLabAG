@@ -42,7 +42,47 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(_requestStartupPermissionsOnce());
+    unawaited(_runStartupChecks());
+  }
+
+  Future<void> _runStartupChecks() async {
+    await _requestStartupPermissionsOnce();
+    if (!mounted) return;
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    await _warnStaleBackupIfNeeded();
+  }
+
+  Future<void> _warnStaleBackupIfNeeded() async {
+    try {
+      final backupService = BackupService();
+      if (!await backupService.shouldWarnStaleBackup()) return;
+      if (!mounted) return;
+
+      final status = await backupService.getBackupStatus();
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            status.hasBackup
+                ? 'Seu backup automático está há mais de 7 dias sem ser atualizado. Abra o Perfil para verificar.'
+                : 'Nenhum backup automático foi concluído nos últimos 7 dias. Abra o Perfil para verificar.',
+            style: GoogleFonts.outfit(color: Colors.white),
+          ),
+          backgroundColor: const Color(0xFF8A5A00),
+          duration: const Duration(seconds: 5),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: 'Perfil',
+            textColor: Colors.white,
+            onPressed: () => _onTabChanged(4),
+          ),
+        ),
+      );
+      await backupService.markStaleBackupWarningShown();
+    } catch (e) {
+      debugPrint('[Backup] Não foi possível verificar a saúde do backup: $e');
+    }
   }
 
   /// Primeiro acesso ao app de verdade (logo após o onboarding no primeiro
@@ -65,9 +105,9 @@ class _MainScreenState extends State<MainScreen> {
       //    inclui a permissão de notificação do foreground service.
       await LocationService().requestPermission();
 
-      // 2. "Acesso a todos os arquivos" — o auto-backup (ligado por padrão)
-      //    escreve em /Download/RunLab. Abre a tela especial do sistema;
-      //    sem conceder, o backup simplesmente não escreve (silencioso).
+      // 2. "Acesso a todos os arquivos" — adiciona a cópia externa em
+      //    /Download/RunLab. Sem conceder, a cópia interna do app continua
+      //    funcionando e o Perfil mostra o status do backup.
       await BackupService().requestStoragePermission();
     } catch (e) {
       debugPrint('[Permissões] Fluxo de inicialização falhou: $e');

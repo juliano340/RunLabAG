@@ -6,15 +6,52 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
+import '../domain/models/backup_status.dart';
 import 'database_service.dart';
 
 class BackupService {
   static const String _autoBackupEnabledKey = 'auto_backup_enabled';
-  static const int _maxTimestampedBackups = 5;
+  static const int _maxExternalBackups = 5;
+  static const int _maxInternalBackups = 3;
   static const String _autoBackupFolderName = 'RunLab';
   static const String _autoBackupLatestFile = 'runlab_auto_backup.json';
+  static const String _internalBackupFolderName = 'backups';
+  static const Duration _staleBackupAge = Duration(days: 7);
 
-  final DatabaseService _dbService = DatabaseService();
+  static const String _lastBackupSuccessKey = 'auto_backup_last_success_at';
+  static const String _lastBackupAttemptKey = 'auto_backup_last_attempt_at';
+  static const String _lastBackupErrorKey = 'auto_backup_last_error';
+  static const String _lastBackupCopiesKey = 'auto_backup_successful_copies';
+  static const String _lastBackupAttemptCopiesKey =
+      'auto_backup_attempted_copies';
+  static const String _backupMonitoringSinceKey =
+      'auto_backup_monitoring_since';
+  static const String _lastStaleWarningKey = 'auto_backup_last_stale_warning';
+
+  final DatabaseService _dbService;
+  final Future<Directory> Function() _documentsDirectory;
+  final Directory? _externalBackupDirectoryOverride;
+  final bool Function() _isAndroid;
+  final Future<bool> Function() _hasStoragePermission;
+  final DateTime Function() _now;
+  static Future<bool>? _backupInFlight;
+
+  BackupService({
+    DatabaseService? databaseService,
+    Future<Directory> Function()? documentsDirectory,
+    Directory? externalBackupDirectory,
+    bool Function()? isAndroid,
+    Future<bool> Function()? hasStoragePermission,
+    DateTime Function()? now,
+  }) : _dbService = databaseService ?? DatabaseService(),
+       _documentsDirectory =
+           documentsDirectory ?? getApplicationDocumentsDirectory,
+       _externalBackupDirectoryOverride = externalBackupDirectory,
+       _isAndroid = isAndroid ?? (() => Platform.isAndroid),
+       _hasStoragePermission =
+           hasStoragePermission ??
+           (() async => Permission.manageExternalStorage.isGranted),
+       _now = now ?? DateTime.now;
 
   /// Retorna (json, incluiuFoto).
   Future<(String, bool)> _buildBackupJson() async {
@@ -22,8 +59,9 @@ class BackupService {
     final profileData = await db.query('user_profile');
     final runsData = await db.query('runs');
 
-    Map<String, dynamic>? profile =
-        profileData.isNotEmpty ? Map<String, dynamic>.from(profileData.first) : null;
+    Map<String, dynamic>? profile = profileData.isNotEmpty
+        ? Map<String, dynamic>.from(profileData.first)
+        : null;
 
     bool includedPhoto = false;
     final photoPath = profile?['profilePicturePath'] as String?;
@@ -68,8 +106,7 @@ class BackupService {
 
     await Share.shareXFiles(
       [XFile(file.path)],
-      subject:
-          'Backup RunLab - ${DateTime.now().day}/${DateTime.now().month}',
+      subject: 'Backup RunLab - ${DateTime.now().day}/${DateTime.now().month}',
     );
 
     return (true, includedPhoto);
@@ -124,10 +161,18 @@ class BackupService {
         }
         if (backup['monitoredDistances'] != null) {
           await txn.delete('monitored_distances');
-          await _upsertRows(txn, 'monitored_distances', backup['monitoredDistances']);
+          await _upsertRows(
+            txn,
+            'monitored_distances',
+            backup['monitoredDistances'],
+          );
         }
         if (backup['strengthWorkouts'] != null) {
-          await _upsertRows(txn, 'strength_workouts', backup['strengthWorkouts']);
+          await _upsertRows(
+            txn,
+            'strength_workouts',
+            backup['strengthWorkouts'],
+          );
         }
         if (backup['workoutBlocks'] != null) {
           await _upsertRows(txn, 'workout_blocks', backup['workoutBlocks']);
@@ -136,7 +181,11 @@ class BackupService {
           await _upsertRows(txn, 'block_exercises', backup['blockExercises']);
         }
         if (backup['strengthTemplates'] != null) {
-          await _upsertRows(txn, 'strength_workout_templates', backup['strengthTemplates']);
+          await _upsertRows(
+            txn,
+            'strength_workout_templates',
+            backup['strengthTemplates'],
+          );
         }
         if (backup['templateItems'] != null) {
           await _upsertRows(txn, 'template_items', backup['templateItems']);
@@ -144,7 +193,11 @@ class BackupService {
         if (backup['trainingEnrollments'] != null) {
           // Sem PK — replace não deduplica; limpa antes de inserir
           await txn.delete('user_training_enrollments');
-          await _upsertRows(txn, 'user_training_enrollments', backup['trainingEnrollments']);
+          await _upsertRows(
+            txn,
+            'user_training_enrollments',
+            backup['trainingEnrollments'],
+          );
         }
       });
 
@@ -169,7 +222,11 @@ class BackupService {
     }
   }
 
-  Future<void> _upsertRows(Transaction txn, String table, List<dynamic> rows) async {
+  Future<void> _upsertRows(
+    Transaction txn,
+    String table,
+    List<dynamic> rows,
+  ) async {
     for (final row in rows) {
       await txn.insert(
         table,
@@ -221,77 +278,348 @@ class BackupService {
     return result.isGranted;
   }
 
-  /// Diretório alvo para backup automático: /storage/emulated/0/Download/RunLab
+  /// Diretório alvo para a cópia externa em Android.
   Directory _autoBackupDirectory() {
-    return Directory('/storage/emulated/0/Download/$_autoBackupFolderName');
+    return _externalBackupDirectoryOverride ??
+        Directory('/storage/emulated/0/Download/$_autoBackupFolderName');
   }
 
-  String get autoBackupFolderPath =>
-      '/Download/$_autoBackupFolderName';
+  String get autoBackupFolderPath => '/Download/$_autoBackupFolderName';
 
-  /// Executa backup automático se toggle ativo + permissão concedida.
-  /// Retorna true se salvou; false se pulou ou falhou silenciosamente.
-  Future<bool> runAutoBackupIfEnabled() async {
+  Future<Directory> _internalBackupDirectory() async {
+    final documents = await _documentsDirectory();
+    return Directory('${documents.path}/$_internalBackupFolderName');
+  }
+
+  /// Executa o backup automático quando o toggle está ativo.
+  ///
+  /// A cópia interna é independente de permissões e sempre tentada. No Android,
+  /// a cópia externa é adicional quando "Acesso a todos os arquivos" foi
+  /// concedido. Falha em um local não impede o outro; o retorno indica se ao
+  /// menos uma cópia validada foi concluída.
+  ///
+  /// Chamadas concorrentes compartilham a mesma operação para evitar duas
+  /// gravações disputando os mesmos arquivos.
+  Future<bool> runAutoBackupIfEnabled() {
+    return _backupInFlight ??= _runAutoBackup().whenComplete(() {
+      _backupInFlight = null;
+    });
+  }
+
+  Future<bool> _runAutoBackup() async {
     if (!await isAutoBackupEnabled()) return false;
-    if (!Platform.isAndroid) return false;
 
-    if (!await Permission.manageExternalStorage.isGranted) {
-      debugPrint('Auto backup: sem permissão de storage, pulando.');
+    final now = _now();
+    final prefs = await SharedPreferences.getInstance();
+    await _ensureMonitoringStarted(prefs, now);
+
+    final String jsonString;
+    try {
+      final backup = await _withRetry(_buildBackupJson);
+      jsonString = backup.$1;
+    } catch (error) {
+      await _recordBackupOutcomeSafe(
+        prefs: prefs,
+        now: now,
+        successful: false,
+        successfulCopies: 0,
+        attemptedCopies: 0,
+        error: _cleanError(error),
+      );
       return false;
     }
 
-    try {
-      final dir = _autoBackupDirectory();
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
+    final errors = <String>[];
+    var attemptedCopies = 1;
+    var successfulCopies = 0;
+
+    final internalError = await _tryWriteLocation(
+      name: 'cópia interna',
+      directory: _internalBackupDirectory,
+      jsonString: jsonString,
+      now: now,
+      maxSnapshots: _maxInternalBackups,
+    );
+    if (internalError == null) {
+      successfulCopies++;
+    } else {
+      errors.add(internalError);
+    }
+
+    if (_isAndroid()) {
+      var hasPermission = false;
+      try {
+        hasPermission = await _hasStoragePermission();
+      } catch (error) {
+        errors.add('permissão externa: ${_cleanError(error)}');
       }
 
-      final (jsonString, _) = await _buildBackupJson();
+      if (hasPermission) {
+        attemptedCopies++;
+        final externalError = await _tryWriteLocation(
+          name: 'cópia externa',
+          directory: () async => _autoBackupDirectory(),
+          jsonString: jsonString,
+          now: now,
+          maxSnapshots: _maxExternalBackups,
+        );
+        if (externalError == null) {
+          successfulCopies++;
+        } else {
+          errors.add(externalError);
+        }
+      }
+    }
 
-      // 1) Arquivo "latest" sempre sobrescrito — ponto de restauração rápida.
-      final latestFile = File('${dir.path}/$_autoBackupLatestFile');
-      await latestFile.writeAsString(jsonString);
+    final successful = successfulCopies > 0;
+    await _recordBackupOutcomeSafe(
+      prefs: prefs,
+      now: now,
+      successful: successful,
+      successfulCopies: successfulCopies,
+      attemptedCopies: attemptedCopies,
+      error: errors.isEmpty ? null : errors.join(' | '),
+    );
+    return successful;
+  }
 
-      // 2) Snapshot timestamped — margem contra corrupção do latest.
-      final now = DateTime.now();
-      final timestamp =
-          '${now.year}${_pad(now.month)}${_pad(now.day)}_'
-          '${_pad(now.hour)}${_pad(now.minute)}${_pad(now.second)}';
-      final snapshotFile = File('${dir.path}/runlab_backup_$timestamp.json');
-      await snapshotFile.writeAsString(jsonString);
-
-      // 3) Rolling buffer: mantém só os N mais recentes timestamped.
-      await _pruneOldBackups(dir);
-
-      return true;
-    } catch (e) {
-      debugPrint('Auto backup falhou: $e');
-      return false;
+  Future<String?> _tryWriteLocation({
+    required String name,
+    required Future<Directory> Function() directory,
+    required String jsonString,
+    required DateTime now,
+    required int maxSnapshots,
+  }) async {
+    try {
+      await _withRetry(() async {
+        final dir = await directory();
+        await _writeBackupSet(
+          dir,
+          jsonString: jsonString,
+          now: now,
+          maxSnapshots: maxSnapshots,
+        );
+      });
+      return null;
+    } catch (error) {
+      return '$name: ${_cleanError(error)}';
     }
   }
 
-  Future<void> _pruneOldBackups(Directory dir) async {
+  /// Grava `latest` + um snapshot, relendo e validando cada arquivo antes de
+  /// considerá-lo pronto. Um arquivo temporário evita publicar JSON truncado.
+  Future<void> _writeBackupSet(
+    Directory dir, {
+    required String jsonString,
+    required DateTime now,
+    required int maxSnapshots,
+  }) async {
+    await dir.create(recursive: true);
+
+    final latestFile = File('${dir.path}/$_autoBackupLatestFile');
+    final latestTemp = File('${latestFile.path}.tmp');
+    await _writeValidatedFile(latestTemp, jsonString);
+    await _replaceFile(latestTemp, latestFile);
+    await _validateBackupFile(latestFile, jsonString);
+
+    final timestamp =
+        '${now.year}${_pad(now.month)}${_pad(now.day)}_'
+        '${_pad(now.hour)}${_pad(now.minute)}${_pad(now.second)}_'
+        '${now.millisecond.toString().padLeft(3, '0')}';
+    final snapshotFile = File('${dir.path}/runlab_backup_$timestamp.json');
+    final snapshotTemp = File('${snapshotFile.path}.tmp');
+    await _writeValidatedFile(snapshotTemp, jsonString);
+    await _replaceFile(snapshotTemp, snapshotFile);
+    await _validateBackupFile(snapshotFile, jsonString);
+
+    await _pruneOldBackups(dir, maxSnapshots);
+  }
+
+  Future<void> _writeValidatedFile(File file, String jsonString) async {
+    try {
+      await file.writeAsString(jsonString, flush: true);
+      await _validateBackupFile(file, jsonString);
+    } catch (_) {
+      try {
+        if (await file.exists()) await file.delete();
+      } catch (_) {
+        // A próxima tentativa sobrescreve o temporário.
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _validateBackupFile(File file, String expected) async {
+    final content = await file.readAsString();
+    if (content != expected) {
+      throw const FormatException('Backup gravado difere do conteúdo original');
+    }
+    final decoded = jsonDecode(content);
+    if (decoded is! Map<String, dynamic> || decoded['version'] is! int) {
+      throw const FormatException('Backup gravado é inválido');
+    }
+  }
+
+  Future<void> _replaceFile(File source, File target) async {
+    // No Windows, rename não substitui um destino existente de forma
+    // consistente. O app roda em Android/iOS, mas os testes rodam no Windows.
+    if (Platform.isWindows && await target.exists()) {
+      await target.delete();
+    }
+    try {
+      await source.rename(target.path);
+    } on FileSystemException {
+      // Fallback para plataformas que não substituem o destino no rename.
+      if (!await target.exists()) rethrow;
+      await target.delete();
+      await source.rename(target.path);
+    }
+  }
+
+  Future<void> _pruneOldBackups(Directory dir, int maxSnapshots) async {
     final files = await dir
         .list()
-        .where(
-          (e) =>
-              e is File &&
-              e.path.contains('runlab_backup_') &&
-              e.path.endsWith('.json'),
-        )
+        .where((e) {
+          if (e is! File) return false;
+          final name = e.uri.pathSegments.last;
+          return name.startsWith('runlab_backup_') && name.endsWith('.json');
+        })
         .cast<File>()
         .toList();
 
-    if (files.length <= _maxTimestampedBackups) return;
+    if (files.length <= maxSnapshots) return;
 
-    files.sort((a, b) => b.path.compareTo(a.path)); // mais recente primeiro
-    for (var i = _maxTimestampedBackups; i < files.length; i++) {
+    files.sort((a, b) => b.path.compareTo(a.path));
+    for (var i = maxSnapshots; i < files.length; i++) {
       try {
         await files[i].delete();
       } catch (_) {
-        // arquivo pode ter sumido entre listar e deletar; tudo bem.
+        // Um backup a mais é preferível a falhar a operação por limpeza.
       }
     }
+  }
+
+  Future<T> _withRetry<T>(Future<T> Function() operation) async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        return await operation();
+      } catch (_) {
+        if (attempt >= 1) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+    }
+  }
+
+  /// Status tipado do último backup, usado pelo Perfil.
+  Future<BackupStatus> getBackupStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final now = _now();
+    await _ensureMonitoringStarted(prefs, now);
+    return _statusFromPrefs(prefs);
+  }
+
+  BackupStatus _statusFromPrefs(SharedPreferences prefs) {
+    return BackupStatus(
+      lastSuccessfulBackupAt: _readTimestamp(prefs, _lastBackupSuccessKey),
+      lastAttemptAt: _readTimestamp(prefs, _lastBackupAttemptKey),
+      lastError: prefs.getString(_lastBackupErrorKey),
+      successfulCopies: prefs.getInt(_lastBackupCopiesKey) ?? 0,
+      attemptedCopies: prefs.getInt(_lastBackupAttemptCopiesKey) ?? 0,
+    );
+  }
+
+  /// Aviso único por dia quando não há backup concluído há mais de 7 dias.
+  /// Sem sucesso anterior, a janela começa no primeiro monitoramento para não
+  /// avisar um usuário novo antes mesmo da primeira corrida.
+  Future<bool> shouldWarnStaleBackup({DateTime? now}) async {
+    if (!await isAutoBackupEnabled()) return false;
+
+    final effectiveNow = now ?? _now();
+    final prefs = await SharedPreferences.getInstance();
+    await _ensureMonitoringStarted(prefs, effectiveNow);
+
+    final lastSuccess = _readTimestamp(prefs, _lastBackupSuccessKey);
+    final monitoringSince = _readTimestamp(prefs, _backupMonitoringSinceKey)!;
+    final reference = lastSuccess ?? monitoringSince;
+    if (effectiveNow.difference(reference) < _staleBackupAge) return false;
+
+    final lastWarning = _readTimestamp(prefs, _lastStaleWarningKey);
+    return lastWarning == null || !_isSameDay(lastWarning, effectiveNow);
+  }
+
+  Future<void> markStaleBackupWarningShown([DateTime? now]) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+      _lastStaleWarningKey,
+      (now ?? _now()).millisecondsSinceEpoch,
+    );
+  }
+
+  Future<void> _ensureMonitoringStarted(
+    SharedPreferences prefs,
+    DateTime now,
+  ) async {
+    if (prefs.getInt(_backupMonitoringSinceKey) != null) return;
+    await prefs.setInt(_backupMonitoringSinceKey, now.millisecondsSinceEpoch);
+  }
+
+  Future<void> _recordBackupOutcome({
+    required SharedPreferences prefs,
+    required DateTime now,
+    required bool successful,
+    required int successfulCopies,
+    required int attemptedCopies,
+    required Object? error,
+  }) async {
+    await prefs.setInt(_lastBackupAttemptKey, now.millisecondsSinceEpoch);
+    await prefs.setInt(_lastBackupAttemptCopiesKey, attemptedCopies);
+    await prefs.setInt(_lastBackupCopiesKey, successfulCopies);
+    if (successful) {
+      await prefs.setInt(_lastBackupSuccessKey, now.millisecondsSinceEpoch);
+    }
+    if (error == null) {
+      await prefs.remove(_lastBackupErrorKey);
+    } else {
+      await prefs.setString(_lastBackupErrorKey, _cleanError(error));
+    }
+  }
+
+  Future<void> _recordBackupOutcomeSafe({
+    required SharedPreferences prefs,
+    required DateTime now,
+    required bool successful,
+    required int successfulCopies,
+    required int attemptedCopies,
+    required String? error,
+  }) async {
+    try {
+      await _recordBackupOutcome(
+        prefs: prefs,
+        now: now,
+        successful: successful,
+        successfulCopies: successfulCopies,
+        attemptedCopies: attemptedCopies,
+        error: error,
+      );
+    } catch (e) {
+      // O arquivo já foi salvo; falha ao registrar metadados não deve virar
+      // falsa falha de backup para quem dispara a operação.
+      debugPrint('Auto backup: falha ao registrar status: $e');
+    }
+  }
+
+  DateTime? _readTimestamp(SharedPreferences prefs, String key) {
+    final milliseconds = prefs.getInt(key);
+    if (milliseconds == null || milliseconds <= 0) return null;
+    return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  String _cleanError(Object error) {
+    final message = error.toString().replaceAll('\n', ' ').trim();
+    return message.length <= 400 ? message : '${message.substring(0, 397)}...';
   }
 
   String _pad(int n) => n.toString().padLeft(2, '0');
