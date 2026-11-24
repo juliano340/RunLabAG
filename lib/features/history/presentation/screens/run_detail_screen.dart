@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show rootBundle, HapticFeedback;
 import 'package:provider/provider.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/services/theme_service.dart';
@@ -61,9 +61,11 @@ class _RunDetailScreenState extends State<RunDetailScreen>
   @override
   void initState() {
     super.initState();
-    _flipController =
-        AnimationController(vsync: this, duration: const Duration(milliseconds: 320))
-          ..addListener(_onFlipTick);
+    _flipController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+      reverseDuration: const Duration(milliseconds: 200),
+    )..addListener(_onFlipTick);
     _flipCurved = CurvedAnimation(parent: _flipController, curve: Curves.easeOutCubic);
     _run = widget.run;
     _paceResult = _analyzePace();
@@ -126,10 +128,11 @@ class _RunDetailScreenState extends State<RunDetailScreen>
     // Sem vizinho desse lado: resistência elástica curta (rubber-band).
     final hasNeighbor = targetIndex >= 0 && targetIndex < _summaries.length;
     setState(() {
-      _dragProgress = hasNeighbor ? next : next.sign * 0.12;
+      _dragProgress = hasNeighbor ? next.clamp(-1.0, 1.0).toDouble() : next.sign * 0.12;
       _dragNeighborIndex = hasNeighbor ? targetIndex : null;
-      // a pagina desliza com o dedo (~24dp, mesma linguagem da transicao)
-      _slideFraction = _dragProgress! * 0.06;
+      // a pagina desliza com o dedo ate 12% da largura (offset da spec),
+      // esmaecendo junto — o limite do arraste e o ponto de commit
+      _slideFraction = _dragProgress! * 0.12;
     });
   }
 
@@ -140,8 +143,8 @@ class _RunDetailScreenState extends State<RunDetailScreen>
       return;
     }
     final velocity = details.primaryVelocity ?? 0;
-    // Passa do limiar de distância OU vem com força de fling: troca.
-    final commit = progress.abs() > 0.18 || velocity.abs() > 700;
+    // Commit: o deslize passou de um terco do offset OU veio com fling.
+    final commit = progress.abs() > 0.33 || velocity.abs() > 500;
     if (commit) {
       _navigateTo(
         _summaries[_dragNeighborIndex!].id,
@@ -177,7 +180,13 @@ class _RunDetailScreenState extends State<RunDetailScreen>
     });
   }
 
+  /// Navega para um treino vizinho. RASTREIO DE DIRECAO: [goingOlder]
+  /// define o sinal — voltar (+1) desliza tudo para a direita, avancar
+  /// (-1) para a esquerda, como paginas de um carrossel. O guard de
+  /// _isNavigating absorve toques rapidos repetidos sem quebrar a
+  /// direcao da animacao em curso.
   Future<void> _navigateTo(String runId, {required bool goingOlder}) async {
+    if (_isNavigating) return;
     setState(() => _isNavigating = true);
     try {
       final run = await DatabaseService().getRunById(runId);
@@ -186,12 +195,17 @@ class _RunDetailScreenState extends State<RunDetailScreen>
         setState(() => _isNavigating = false);
         return;
       }
-      // Giro de dado: a face atual gira até a borda, os dados trocam por
-      // trás (90 graus) e a face do novo treino completa o movimento.
+      // Slide direcional com fade: a face atual desliza na direcao do
+      // gesto e desvanece; o novo entra pelo lado oposto assentando no
+      // centro (offset de 12% da largura, conforme padrao de carrossel).
       _flipIncoming = run;
       _flipDirection = goingOlder ? 1 : -1;
       _flipSwapped = false;
-      _flipController.forward(from: _slideFraction.abs()).whenComplete(() {
+      // Continuidade: se o dedo ja arrastou (slide != 0), a animacao comeca
+      // do ponto onde o arraste parou, dentro da fase de saida (v <= 0.4).
+      final v0 =
+          (0.4 * (_slideFraction.abs() / 0.12)).clamp(0.0, 0.4).toDouble();
+      _flipController.forward(from: v0).whenComplete(() {
         if (!mounted) return;
         setState(() {
           _isNavigating = false;
@@ -214,21 +228,21 @@ class _RunDetailScreenState extends State<RunDetailScreen>
     final crossed = !_flipSwapped && v >= 0.5 && _flipIncoming != null;
     if (mounted) {
       setState(() {
-        // Padrao Material "shared axis": saida rapida, pausa curta de
-        // respiro, entrada devagar — as faces nunca se cruzam
-        // semi-transparentes.
+        // Slide direcional com fade: saida na direcao do gesto (ate 12% da
+        // largura), pausa curta, entrada do lado oposto assentando no centro.
         if (v < 0.4) {
-          _slideFraction = _flipDirection * 0.06 * (v / 0.4);
+          _slideFraction = _flipDirection * 0.12 * (v / 0.4);
         } else if (v > 0.6) {
-          _slideFraction = -_flipDirection * 0.06 * (1 - (v - 0.6) / 0.4);
+          _slideFraction = -_flipDirection * 0.12 * (1 - (v - 0.6) / 0.4);
         } else {
-          _slideFraction = _flipDirection * 0.06;
+          _slideFraction = _flipDirection * 0.12;
         }
         if (crossed) {
           _flipSwapped = true;
           _run = _flipIncoming!;
           _paceResult = _analyzePace();
           _runIndex = _runIds.indexOf(_run.id);
+          HapticFeedback.selectionClick();
         }
       });
     }
@@ -245,15 +259,18 @@ class _RunDetailScreenState extends State<RunDetailScreen>
       ..translateByDouble(slide * width, 0.0, 0.0, 1.0);
   }
 
-  /// Fade sequenciado (Material shared axis): o treino atual some rapido
-  /// (ate 40% do tempo), ha uma pausa curta de respiro e o novo surge
-  /// devagar — as duas faces nunca aparecem juntas.
+  /// Fade sequenciado com piso: durante o arraste o conteudo esmaece ate
+  /// 25%; na transicao, saida ate 40% do tempo, pausa curta e entrada
+  /// devagar — o conteudo nunca desaparece por completo (sem flash).
   double _pageOpacity() {
-    if (_flipIncoming == null) return 1.0;
+    if (_flipIncoming == null) {
+      return (1 - 0.75 * (_slideFraction.abs() / 0.12)).clamp(0.25, 1.0)
+          .toDouble();
+    }
     final v = _flipCurved.value;
-    if (v < 0.4) return 1 - v / 0.4;
-    if (v > 0.6) return (v - 0.6) / 0.4;
-    return 0.0;
+    if (v < 0.4) return 1 - 0.75 * (v / 0.4);
+    if (v > 0.6) return 0.25 + 0.75 * ((v - 0.6) / 0.4);
+    return 0.25;
   }
 
   PaceZoneResult _analyzePace() {
@@ -1083,11 +1100,8 @@ class _RunDetailScreenState extends State<RunDetailScreen>
                         Row(
                           children: [
                             // Seta esquerda flanqueia o herói — volta no tempo
-                            if (_runIndex >= 0 &&
-                                _runIndex < _runIds.length - 1) ...[
-                              _buildSwipeArrow(cs, isLeft: true),
-                              const SizedBox(width: 12),
-                            ],
+                            _buildSwipeArrow(cs, isLeft: true),
+                            const SizedBox(width: 12),
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.baseline,
                               textBaseline: TextBaseline.alphabetic,
@@ -1113,8 +1127,7 @@ class _RunDetailScreenState extends State<RunDetailScreen>
                               ],
                             ),
                             const Spacer(),
-                            if (_runIndex > 0)
-                              _buildSwipeArrow(cs, isLeft: false),
+                            _buildSwipeArrow(cs, isLeft: false),
                           ],
                         ),
                         const SizedBox(height: 16),
@@ -1357,25 +1370,36 @@ class _RunDetailScreenState extends State<RunDetailScreen>
   /// Seta que flanqueia o herói: esquerda volta no tempo (treinos mais
   /// antigos), direita avança para o mais recente. A visibilidade é
   /// controlada por quem chama.
+  /// Seta que flanqueia o heroi: esquerda volta no tempo (treinos mais
+  /// antigos), direita avanca para o mais recente. Sempre visivel; na
+  /// borda fica desabilitada com opacidade 0.35 (padrao de carrossel).
+  /// Alvo de toque de 48dp.
   Widget _buildSwipeArrow(ColorScheme cs, {required bool isLeft}) {
+    final target = _runIndex + (isLeft ? 1 : -1);
+    final enabled = target >= 0 && target < _runIds.length && !_isNavigating;
     return GestureDetector(
-      onTap: () {
-        final target = _runIndex + (isLeft ? 1 : -1);
-        if (target >= 0 && target < _runIds.length) {
-          _navigateTo(_runIds[target], goingOlder: target > _runIndex);
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.all(7),
-        decoration: BoxDecoration(
-          color: cs.surface.withValues(alpha: 0.9),
-          shape: BoxShape.circle,
-          border: Border.all(color: cs.outline.withValues(alpha: 0.3)),
-        ),
-        child: Icon(
-          isLeft ? LucideIcons.chevronLeft : LucideIcons.chevronRight,
-          size: 15,
-          color: cs.onSurfaceVariant,
+      onTap: enabled
+          ? () {
+              HapticFeedback.selectionClick();
+              _navigateTo(_runIds[target], goingOlder: target > _runIndex);
+            }
+          : null,
+      child: Opacity(
+        opacity: enabled ? 1.0 : 0.35,
+        child: Container(
+          width: 48,
+          height: 48,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: cs.surface.withValues(alpha: 0.9),
+            shape: BoxShape.circle,
+            border: Border.all(color: cs.outline.withValues(alpha: 0.3)),
+          ),
+          child: Icon(
+            isLeft ? LucideIcons.chevronLeft : LucideIcons.chevronRight,
+            size: 18,
+            color: cs.onSurfaceVariant,
+          ),
         ),
       ),
     );
