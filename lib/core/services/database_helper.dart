@@ -4,7 +4,12 @@ import 'package:path/path.dart';
 
 class DatabaseHelper {
   static Database? _database;
-  static const databaseVersion = 21;
+  static const databaseVersion = 22;
+
+  /// Nome do arquivo do banco. Testes usam nomes distintos para rodar em
+  /// paralelo sem disputar o mesmo arquivo.
+  @visibleForTesting
+  static String databaseFileName = 'runlab_database.db';
 
   /// Apenas para testes: descarta a instância em memória do banco.
   @visibleForTesting
@@ -19,7 +24,7 @@ class DatabaseHelper {
   }
 
   static Future<Database> _initDatabase() async {
-    String dbPath = join(await getDatabasesPath(), 'runlab_database.db');
+    String dbPath = join(await getDatabasesPath(), databaseFileName);
     return await openDatabase(
       dbPath,
       version: databaseVersion,
@@ -39,8 +44,18 @@ class DatabaseHelper {
       'CREATE TABLE achievements(id TEXT PRIMARY KEY, title TEXT, description TEXT, iconCode INTEGER, earnedDate TEXT)',
     );
     await db.execute(
-      'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, pausedDurationSeconds INTEGER DEFAULT 0, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER, splits TEXT, targetTimeSeconds INTEGER, autoPauses TEXT)',
+      'CREATE TABLE active_run(id INTEGER PRIMARY KEY, startTime TEXT, distanceKm REAL, secondsElapsed INTEGER, pausedDurationSeconds INTEGER DEFAULT 0, lastKmNotified INTEGER, route TEXT, distanceGoal REAL, isPaused INTEGER, splits TEXT, targetTimeSeconds INTEGER, autoPauses TEXT, finished INTEGER DEFAULT 0)',
     );
+    // Rota do treino em andamento fica em tabela separada: a linha de
+    // metadados (pequena) é gravada com frequência, a rota (grande) só de
+    // vez em quando. Ler metadados no boot nunca carrega a rota inteira.
+    await db.execute(
+      'CREATE TABLE active_run_route(id INTEGER PRIMARY KEY, route TEXT)',
+    );
+    await db.execute(
+      'CREATE TABLE run_pace_zones(runId TEXT, zone TEXT, distanceKm REAL, PRIMARY KEY(runId, zone))',
+    );
+    await db.execute('CREATE INDEX idx_runs_date ON runs(date)');
     await db.execute(
       'CREATE TABLE monitored_distances(distanceKm REAL PRIMARY KEY)',
     );
@@ -186,6 +201,57 @@ class DatabaseHelper {
     if (oldVersion < 21) {
       await db.execute('ALTER TABLE runs ADD COLUMN autoPauses TEXT');
       await db.execute('ALTER TABLE active_run ADD COLUMN autoPauses TEXT');
+    }
+    if (oldVersion < 22) {
+      await db.execute(
+        'CREATE TABLE IF NOT EXISTS active_run_route(id INTEGER PRIMARY KEY, route TEXT)',
+      );
+      await db.execute(
+        'CREATE TABLE IF NOT EXISTS run_pace_zones(runId TEXT, zone TEXT, distanceKm REAL, PRIMARY KEY(runId, zone))',
+      );
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_runs_date ON runs(date)');
+    }
+
+    // Rede de segurança: instalações antigas criaram `active_run` pelo caminho
+    // de upgrade (v5) sem `secondsElapsed`, e a gravação do treino ativo falhava
+    // silenciosamente. Garante a coluna em qualquer banco.
+    await _ensureColumn(
+      db,
+      table: 'active_run',
+      column: 'secondsElapsed',
+      definition: 'INTEGER DEFAULT 0',
+    );
+    for (final column in [
+      ['pausedDurationSeconds', 'INTEGER DEFAULT 0'],
+      ['targetTimeSeconds', 'INTEGER'],
+      ['autoPauses', 'TEXT'],
+      ['splits', 'TEXT'],
+      ['finished', 'INTEGER DEFAULT 0'],
+    ]) {
+      await _ensureColumn(
+        db,
+        table: 'active_run',
+        column: column[0],
+        definition: column[1],
+      );
+    }
+  }
+
+  /// Adiciona a coluna apenas quando ela ainda não existe (idempotente).
+  static Future<void> _ensureColumn(
+    Database db, {
+    required String table,
+    required String column,
+    required String definition,
+  }) async {
+    try {
+      final columns = await db.rawQuery('PRAGMA table_info($table)');
+      final exists = columns.any((c) => c['name'] == column);
+      if (!exists) {
+        await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+      }
+    } catch (e) {
+      debugPrint('Migração: falha ao garantir $table.$column: $e');
     }
   }
 }

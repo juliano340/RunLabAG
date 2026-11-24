@@ -62,6 +62,13 @@ android {
         release {
             // Updated to use the new production signing config
             signingConfig = signingConfigs.getByName("release")
+            // R8: reduz tamanho do APK e remove código não usado.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }
