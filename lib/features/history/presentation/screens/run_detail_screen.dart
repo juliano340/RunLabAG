@@ -53,6 +53,7 @@ class _RunDetailScreenState extends State<RunDetailScreen>
   int? _dragNeighborIndex;
   double _slideFraction = 0;
   late final AnimationController _flipController;
+  late final Animation<double> _flipCurved;
   int _flipDirection = 1;
   RunModel? _flipIncoming;
   bool _flipSwapped = false;
@@ -63,6 +64,7 @@ class _RunDetailScreenState extends State<RunDetailScreen>
     _flipController =
         AnimationController(vsync: this, duration: const Duration(milliseconds: 320))
           ..addListener(_onFlipTick);
+    _flipCurved = CurvedAnimation(parent: _flipController, curve: Curves.easeOutCubic);
     _run = widget.run;
     _paceResult = _analyzePace();
     _loadMapStyle();
@@ -127,7 +129,7 @@ class _RunDetailScreenState extends State<RunDetailScreen>
       _dragProgress = hasNeighbor ? next : next.sign * 0.12;
       _dragNeighborIndex = hasNeighbor ? targetIndex : null;
       // a pagina desliza com o dedo (max ~8% da largura)
-      _slideFraction = _dragProgress! * 0.08;
+      _slideFraction = _dragProgress! * 0.12;
     });
   }
 
@@ -208,13 +210,13 @@ class _RunDetailScreenState extends State<RunDetailScreen>
   /// e desvanecendo; no meio (invisivel) os dados trocam; a segunda metade
   /// o novo treino entra do lado oposto e assenta.
   void _onFlipTick() {
-    final v = _flipController.value;
+    final v = _flipCurved.value;
     final crossed = !_flipSwapped && v >= 0.5 && _flipIncoming != null;
     if (mounted) {
       setState(() {
         final half = v < 0.5 ? v * 2 : (1 - v) * 2;
         final exiting = v < 0.5;
-        _slideFraction = _flipDirection * (exiting ? half : -half) * 0.15;
+        _slideFraction = _flipDirection * (exiting ? half : -half) * 0.35;
         if (crossed) {
           _flipSwapped = true;
           _run = _flipIncoming!;
@@ -236,11 +238,13 @@ class _RunDetailScreenState extends State<RunDetailScreen>
       ..translateByDouble(slide * width, 0.0, 0.0, 1.0);
   }
 
-  /// Crossfade: a face atual some ate o meio, a nova nasce depois.
+  /// Crossfade com piso: a face esmaece ate 25% (nunca some de todo) —
+  /// a troca de dados acontece esmaecida, sem piscar para o fundo.
   double _pageOpacity() {
     if (_flipIncoming == null) return 1.0;
-    final v = _flipController.value;
-    return (v < 0.5 ? 1 - 2 * v : 2 * v - 1).clamp(0.0, 1.0);
+    final v = _flipCurved.value;
+    final k = v < 0.5 ? 1 - v * 2 : (v - 0.5) * 2;
+    return (0.25 + 0.75 * k).clamp(0.0, 1.0);
   }
 
   PaceZoneResult _analyzePace() {
