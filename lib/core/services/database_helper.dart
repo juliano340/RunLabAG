@@ -3,7 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
 class DatabaseHelper {
-  static Database? _database;
+  static Future<Database>? _databaseFuture;
   static const databaseVersion = 23;
 
   /// Nome do arquivo do banco. Testes usam nomes distintos para rodar em
@@ -14,13 +14,20 @@ class DatabaseHelper {
   /// Apenas para testes: descarta a instância em memória do banco.
   @visibleForTesting
   static void resetForTest() {
-    _database = null;
+    _databaseFuture = null;
   }
-  
-  static Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDatabase();
-    return _database!;
+
+  static Future<Database> get database {
+    final existing = _databaseFuture;
+    if (existing != null) return existing;
+
+    late final Future<Database> future;
+    future = _initDatabase().catchError((Object error, StackTrace stack) {
+      if (identical(_databaseFuture, future)) _databaseFuture = null;
+      Error.throwWithStackTrace(error, stack);
+    });
+    _databaseFuture = future;
+    return future;
   }
 
   static Future<Database> _initDatabase() async {
