@@ -5,6 +5,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/services/database_service.dart';
+import '../../../../core/data/data_change_hub.dart';
 
 class AchievementsTab extends StatefulWidget {
   const AchievementsTab({super.key});
@@ -17,6 +18,25 @@ class _AchievementsTabState extends State<AchievementsTab> {
   DatabaseService get _dbService => context.read<DatabaseService>();
   List<String> _earnedIds = [];
   bool _isLoading = true;
+  Listenable? _dataListenable;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final changes = context.read<DataChangeHub>();
+    final listenable = changes.listenableFor({DataScope.achievements});
+    if (_dataListenable != listenable) {
+      _dataListenable?.removeListener(_loadAchievements);
+      _dataListenable = listenable;
+      _dataListenable!.addListener(_loadAchievements);
+    }
+  }
+
+  @override
+  void dispose() {
+    _dataListenable?.removeListener(_loadAchievements);
+    super.dispose();
+  }
 
   @override
   void initState() {

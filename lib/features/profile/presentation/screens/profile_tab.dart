@@ -12,6 +12,7 @@ import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 import '../../../../core/services/theme_service.dart';
 import '../../../../core/services/backup_service.dart';
+import '../../../../core/data/data_change_hub.dart';
 import '../../../../core/domain/models/backup_status.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -47,24 +48,23 @@ class _ProfileTabState extends State<ProfileTab> {
     _loadAutoPausePreference();
   }
 
-  // Recarrega quando o banco muda por fora (reset de dados, restore de
-  // backup): o perfil exibido não pode ficar com os dados antigos.
-  RunsProvider? _runsProvider;
+  Listenable? _dataListenable;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final runsProvider = Provider.of<RunsProvider>(context, listen: false);
-    if (_runsProvider != runsProvider) {
-      _runsProvider?.removeListener(_loadProfileAndBackupStatus);
-      _runsProvider = runsProvider;
-      _runsProvider!.addListener(_loadProfileAndBackupStatus);
+    final changes = context.read<DataChangeHub>();
+    final listenable = changes.listenableFor({DataScope.profile});
+    if (_dataListenable != listenable) {
+      _dataListenable?.removeListener(_loadProfileAndBackupStatus);
+      _dataListenable = listenable;
+      _dataListenable!.addListener(_loadProfileAndBackupStatus);
     }
   }
 
   @override
   void dispose() {
-    _runsProvider?.removeListener(_loadProfileAndBackupStatus);
+    _dataListenable?.removeListener(_loadProfileAndBackupStatus);
     super.dispose();
   }
 
@@ -168,7 +168,6 @@ class _ProfileTabState extends State<ProfileTab> {
       );
 
       await _dbService.saveUserProfile(updatedProfile);
-      if (mounted) context.read<RunsProvider>().notifyDataChanged();
 
       // Remove a foto antiga para não acumular arquivos órfãos
       if (oldPhotoPath != null && oldPhotoPath != savedImage.path) {
@@ -213,7 +212,6 @@ class _ProfileTabState extends State<ProfileTab> {
     );
 
     await _dbService.saveUserProfile(updatedProfile);
-    if (mounted) context.read<RunsProvider>().notifyDataChanged();
     _loadProfile();
   }
 
@@ -279,7 +277,6 @@ class _ProfileTabState extends State<ProfileTab> {
                 );
                 await _dbService.saveUserProfile(updatedProfile);
                 if (context.mounted) {
-                  context.read<RunsProvider>().notifyDataChanged();
                   Navigator.pop(context);
                   _loadProfile();
                 }
@@ -534,7 +531,6 @@ class _ProfileTabState extends State<ProfileTab> {
                       key: const ValueKey('notifications_switch'),
                       value: _profile?.kmNotificationsEnabled ?? true,
                       onChanged: _profile == null ? null : (value) async {
-                        final runsProvider = context.read<RunsProvider>();
                         final updated = UserProfile(
                           name: _profile!.name,
                           age: _profile!.age,
@@ -548,7 +544,6 @@ class _ProfileTabState extends State<ProfileTab> {
                         );
                         await _dbService.saveUserProfile(updated);
                         if (mounted) {
-                          runsProvider.notifyDataChanged();
                           setState(() => _profile = updated);
                         }
                       },
@@ -678,7 +673,7 @@ class _ProfileTabState extends State<ProfileTab> {
                             ),
                           );
                           if (success) {
-                            context.read<RunsProvider>().notifyRunSaved();
+                            context.read<RunsProvider>().notifyDataChanged();
                             _loadProfile();
                           }
                         }
@@ -967,7 +962,7 @@ class _ProfileTabState extends State<ProfileTab> {
     }
     if (!mounted || !context.mounted) return;
 
-    context.read<RunsProvider>().notifyRunSaved();
+    context.read<RunsProvider>().notifyDataChanged();
     _loadProfile();
 
     ScaffoldMessenger.of(context).showSnackBar(

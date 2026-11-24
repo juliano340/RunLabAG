@@ -6,7 +6,6 @@ import 'package:flutter/services.dart'
     show FilteringTextInputFormatter, LengthLimitingTextInputFormatter;
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
-import '../../../../core/providers/runs_provider.dart';
 import '../../../../core/services/backup_service.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -123,7 +122,6 @@ class _EditRunRouteScreenState extends State<EditRunRouteScreen> {
       unawaited(_backupService.runAutoBackupIfEnabled());
 
       if (!mounted) return;
-      context.read<RunsProvider>().notifyRunSaved();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(

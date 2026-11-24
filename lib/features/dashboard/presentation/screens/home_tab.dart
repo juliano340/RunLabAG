@@ -9,10 +9,11 @@ import '../../../../core/widgets/glass_container.dart';
 import '../widgets/start_run_button.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
-import 'package:runlabag/core/providers/runs_provider.dart';
 import '../../../../features/run/presentation/screens/active_run_screen.dart';
 
 import 'package:runlabag/core/services/database_service.dart';
+import 'package:runlabag/core/data/data_change_hub.dart';
+import 'package:runlabag/core/utils/latest_request.dart';
 import '../../../history/presentation/screens/run_detail_screen.dart';
 import 'package:runlabag/core/domain/models/run_model.dart';
 import 'package:runlabag/core/domain/models/user_profile.dart';
@@ -56,25 +57,29 @@ class _HomeTabState extends State<HomeTab> {
     _restoreStatsPeriod();
   }
 
-  // Recarrega quando o banco muda por fora: treino salvo, reset de dados
-  // ou restauração de backup. Sem isso a aba ficava com os dados do
-  // usuário anterior até um refresh manual.
-  RunsProvider? _runsProvider;
+  // Recarrega apenas quando dados usados pela Home mudam.
+  Listenable? _dataListenable;
+  final LatestRequest _latestLoad = LatestRequest();
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final runsProvider = Provider.of<RunsProvider>(context, listen: false);
-    if (_runsProvider != runsProvider) {
-      _runsProvider?.removeListener(_loadData);
-      _runsProvider = runsProvider;
-      _runsProvider!.addListener(_loadData);
+    final changes = context.read<DataChangeHub>();
+    final listenable = changes.listenableFor({
+      DataScope.runs,
+      DataScope.profile,
+      DataScope.goals,
+    });
+    if (_dataListenable != listenable) {
+      _dataListenable?.removeListener(_loadData);
+      _dataListenable = listenable;
+      _dataListenable!.addListener(_loadData);
     }
   }
 
   @override
   void dispose() {
-    _runsProvider?.removeListener(_loadData);
+    _dataListenable?.removeListener(_loadData);
     super.dispose();
   }
 
@@ -88,6 +93,7 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Future<void> _loadData() async {
+    final requestId = _latestLoad.begin();
     // Dispara em paralelo: o boot não deve esperar uma consulta por vez.
     final statsFuture = _dbService.getUserStats(since: _statsSince);
     final progressFuture = _dbService.getWeeklyProgress();
@@ -99,7 +105,7 @@ class _HomeTabState extends State<HomeTab> {
     final profile = await profileFuture;
     final lastRun = await lastRunFuture;
 
-    if (mounted) {
+    if (mounted && _latestLoad.isCurrent(requestId)) {
       setState(() {
         _stats = stats;
         _weeklyProgress = progress;
@@ -109,15 +115,17 @@ class _HomeTabState extends State<HomeTab> {
       });
       // No modo embutido há um treino vivo por definição: o sheet de
       // recuperação seria absurdo (o pill do modo navegação cobre).
-      if (!widget.embedded) _checkForActiveRun();
+      if (!widget.embedded) _checkForActiveRun(requestId);
     }
   }
 
-  Future<void> _checkForActiveRun() async {
+  Future<void> _checkForActiveRun(int requestId) async {
     // Só metadados aqui: a rota (centenas de KB) só é lida se o usuário
     // decidir retomar/salvar.
     final activeRun = await _dbService.getActiveRunMeta();
-    if (activeRun != null && mounted) {
+    if (activeRun != null &&
+        mounted &&
+        _latestLoad.isCurrent(requestId)) {
       _showRecoveryBottomSheet(activeRun);
     }
   }
@@ -277,11 +285,14 @@ class _HomeTabState extends State<HomeTab> {
 
   Future<void> _changeStatsPeriod(int index) async {
     if (index == _statsPeriod) return;
+    final requestId = _latestLoad.begin();
     setState(() => _statsPeriod = index);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_statsPeriodKey, index);
     final stats = await _dbService.getUserStats(since: _statsSince);
-    if (mounted) setState(() => _stats = stats);
+    if (mounted && _latestLoad.isCurrent(requestId)) {
+      setState(() => _stats = stats);
+    }
   }
 
   @override

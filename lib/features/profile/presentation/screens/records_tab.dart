@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
-import 'package:runlabag/core/providers/runs_provider.dart';
+import '../../../../core/data/data_change_hub.dart';
+import '../../../../core/utils/latest_request.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/domain/models/personal_records.dart';
@@ -28,31 +29,37 @@ class _RecordsTabState extends State<RecordsTab> {
     _loadData();
   }
 
-  // Recarrega quando o banco muda por fora (treino salvo, reset, backup).
-  RunsProvider? _runsProvider;
+  Listenable? _dataListenable;
+  final LatestRequest _latestLoad = LatestRequest();
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final runsProvider = Provider.of<RunsProvider>(context, listen: false);
-    if (_runsProvider != runsProvider) {
-      _runsProvider?.removeListener(_loadData);
-      _runsProvider = runsProvider;
-      _runsProvider!.addListener(_loadData);
+    final changes = context.read<DataChangeHub>();
+    final listenable = changes.listenableFor({
+      DataScope.runs,
+      DataScope.monitoredDistances,
+      DataScope.achievements,
+    });
+    if (_dataListenable != listenable) {
+      _dataListenable?.removeListener(_loadData);
+      _dataListenable = listenable;
+      _dataListenable!.addListener(_loadData);
     }
   }
 
   @override
   void dispose() {
-    _runsProvider?.removeListener(_loadData);
+    _dataListenable?.removeListener(_loadData);
     super.dispose();
   }
 
   Future<void> _loadData() async {
+    final requestId = _latestLoad.begin();
     final records = await _dbService.getPersonalRecords();
     final earned = await _dbService.getEarnedAchievements();
 
-    if (mounted) {
+    if (mounted && _latestLoad.isCurrent(requestId)) {
       setState(() {
         _monitoredDistances = records.bests
             .map((record) => record.targetDistanceKm)
@@ -342,11 +349,7 @@ class _RecordsTabState extends State<RecordsTab> {
                             style: TextStyle(color: cs.onPrimaryContainer, fontWeight: FontWeight.bold),
                           ),
                           onDeleted: () async {
-                            final runsProvider = context.read<RunsProvider>();
                             await _dbService.removeMonitoredDistance(dist);
-                            if (mounted) {
-                              runsProvider.notifyDataChanged();
-                            }
                             final updated = await _dbService.getMonitoredDistances();
                             setDialogState(() => _monitoredDistances = updated);
                             setState(() {});
@@ -369,13 +372,9 @@ class _RecordsTabState extends State<RecordsTab> {
                   foregroundColor: cs.onPrimary,
                 ),
                 onPressed: () async {
-                  final runsProvider = context.read<RunsProvider>();
                   final dist = double.tryParse(controller.text);
                   if (dist != null && dist > 0) {
                     await _dbService.addMonitoredDistance(dist);
-                    if (mounted) {
-                      runsProvider.notifyDataChanged();
-                    }
                     final updated = await _dbService.getMonitoredDistances();
                     setDialogState(() {
                       _monitoredDistances = updated;

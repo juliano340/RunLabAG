@@ -8,6 +8,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../../core/data/data_change_hub.dart';
 import '../../../../core/domain/services/pace_zone_service.dart';
 import '../../../../core/providers/runs_provider.dart';
 import '../../../../core/services/analytics_service.dart';
@@ -690,7 +691,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen>
       );
       if (!mounted) return;
 
-      context.read<RunsProvider>().notifyRunSaved();
+      context.read<RunsProvider>().notifyDataChanged(
+        scopes: {DataScope.achievements},
+      );
 
       String snackMessage = '';
       if (result.isPlanSuccessful) {

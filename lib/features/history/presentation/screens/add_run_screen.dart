@@ -7,7 +7,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
-import '../../../../core/providers/runs_provider.dart';
 import '../../../../core/services/backup_service.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -251,8 +250,7 @@ class _AddRunScreenState extends State<AddRunScreen> {
       await _dbService.saveRun(run);
       unawaited(_backupService.runAutoBackupIfEnabled());
       if (!mounted) return;
-      // Histórico (e outras telas) recarregam ao receber o sinal.
-      context.read<RunsProvider>().notifyRunSaved();
+      // O repositório emite a mudança e as abas dependentes recarregam.
       Navigator.pop(context, run);
     } catch (e) {
       if (!mounted) return;

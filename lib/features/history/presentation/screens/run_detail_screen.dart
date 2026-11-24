@@ -5,7 +5,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter/services.dart' show rootBundle, HapticFeedback;
 import 'package:provider/provider.dart';
-import '../../../../core/providers/runs_provider.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/services/theme_service.dart';
 import '../../../../core/services/backup_service.dart';
@@ -1443,9 +1442,6 @@ class _RunDetailScreenState extends State<RunDetailScreen>
 
                 // Atualiza backup automático após exclusão. Falha silencioso.
                 unawaited(_backupService.runAutoBackupIfEnabled());
-                if (context.mounted) {
-                  context.read<RunsProvider>().notifyRunSaved();
-                }
 
                 if (context.mounted) {
                   Navigator.of(context).pop(); // Close dialog

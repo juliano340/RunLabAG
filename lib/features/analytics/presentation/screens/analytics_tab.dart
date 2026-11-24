@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
-import 'package:runlabag/core/providers/runs_provider.dart';
+import '../../../../core/data/data_change_hub.dart';
+import '../../../../core/utils/latest_request.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/widgets/glass_container.dart';
@@ -45,27 +46,33 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     _loadData();
   }
 
-  // Recarrega quando o banco muda por fora (treino salvo, reset, backup).
-  RunsProvider? _runsProvider;
+  Listenable? _dataListenable;
+  final LatestRequest _latestLoad = LatestRequest();
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final runsProvider = Provider.of<RunsProvider>(context, listen: false);
-    if (_runsProvider != runsProvider) {
-      _runsProvider?.removeListener(_loadData);
-      _runsProvider = runsProvider;
-      _runsProvider!.addListener(_loadData);
+    final changes = context.read<DataChangeHub>();
+    final listenable = changes.listenableFor({
+      DataScope.runs,
+      DataScope.profile,
+      DataScope.goals,
+    });
+    if (_dataListenable != listenable) {
+      _dataListenable?.removeListener(_loadData);
+      _dataListenable = listenable;
+      _dataListenable!.addListener(_loadData);
     }
   }
 
   @override
   void dispose() {
-    _runsProvider?.removeListener(_loadData);
+    _dataListenable?.removeListener(_loadData);
     super.dispose();
   }
 
   Future<void> _loadData() async {
+    final requestId = _latestLoad.begin();
     final now = DateTime.now();
     // "Semana" = dias da semana corrente: começa no domingo.
     final startOfWeek = DateTime(now.year, now.month, now.day)
@@ -90,7 +97,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     // Alertas seguem na granularidade semanal — só semanas completas.
     final alerts = PerformanceAlertService.analyze(evolution: weekly);
 
-    if (mounted) {
+    if (mounted && _latestLoad.isCurrent(requestId)) {
       setState(() {
         _weeklyData = weekly;
         _monthlyData = monthly;

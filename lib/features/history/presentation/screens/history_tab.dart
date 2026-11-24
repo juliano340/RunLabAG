@@ -10,7 +10,8 @@ import '../../../../core/services/recommendation_service.dart';
 import 'add_run_screen.dart';
 import 'run_detail_screen.dart';
 import 'package:provider/provider.dart';
-import '../../../../core/providers/runs_provider.dart';
+import '../../../../core/data/data_change_hub.dart';
+import '../../../../core/utils/latest_request.dart';
 import 'package:runlabag/core/domain/services/pace_zone_service.dart';
 import '../widgets/pace_distribution_card.dart';
 import 'package:runlabag/core/domain/models/run_model.dart';
@@ -47,7 +48,8 @@ class _HistoryTabState extends State<HistoryTab> {
   DateTime? _maxDate;
   RecommendationResult? _recommendation;
 
-  RunsProvider? _runsProvider;
+  Listenable? _dataListenable;
+  final LatestRequest _latestLoad = LatestRequest();
 
   @override
   void initState() {
@@ -58,25 +60,32 @@ class _HistoryTabState extends State<HistoryTab> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final runsProvider = Provider.of<RunsProvider>(context, listen: false);
-    if (_runsProvider != runsProvider) {
-      _runsProvider?.removeListener(_loadData);
-      _runsProvider = runsProvider;
-      _runsProvider!.addListener(_loadData);
+    final changes = context.read<DataChangeHub>();
+    final listenable = changes.listenableFor({
+      DataScope.runs,
+      DataScope.profile,
+      DataScope.goals,
+      DataScope.paceZones,
+    });
+    if (_dataListenable != listenable) {
+      _dataListenable?.removeListener(_loadData);
+      _dataListenable = listenable;
+      _dataListenable!.addListener(_loadData);
     }
   }
 
   @override
   void dispose() {
-    _runsProvider?.removeListener(_loadData);
+    _dataListenable?.removeListener(_loadData);
     super.dispose();
   }
 
   Future<void> _loadData() async {
+    final requestId = _latestLoad.begin();
     final runs = await _dbService.getRunSummaries();
     final profile = await _dbService.getUserProfile();
 
-    if (mounted) {
+    if (mounted && _latestLoad.isCurrent(requestId)) {
       DateTime? min;
       DateTime? max;
       if (runs.isNotEmpty) {
@@ -90,8 +99,10 @@ class _HistoryTabState extends State<HistoryTab> {
         _minDate = min;
         _maxDate = max;
       });
-      await _filterData();
-      if (mounted) setState(() => _isLoading = false);
+      await _filterData(requestId);
+      if (mounted && _latestLoad.isCurrent(requestId)) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -121,7 +132,8 @@ class _HistoryTabState extends State<HistoryTab> {
     }
   }
 
-  Future<void> _filterData() async {
+  Future<void> _filterData([int? requestId]) async {
+    requestId ??= _latestLoad.begin();
     final periodId = _getPeriodId();
     final goalType = _selectedPeriodIndex == 0 ? 'weekly' : 'monthly';
     DateTime? rangeStart;
@@ -131,15 +143,17 @@ class _HistoryTabState extends State<HistoryTab> {
         : (_userProfile?.monthlyGoal ?? 80.0);
 
     // Try to load an existing historical snapshot for this period
-    double? historicalGoal = await _dbService.getGoalHistory(
+    var historicalGoal = await _dbService.getGoalHistory(
       periodId,
       goalType,
     );
+    if (!mounted || !_latestLoad.isCurrent(requestId)) return;
 
     if (historicalGoal == null) {
       // No snapshot yet — create one now to "freeze" the current goal to this period
       historicalGoal = defaultGoal;
       await _dbService.saveGoalHistory(periodId, goalType, defaultGoal);
+      if (!mounted || !_latestLoad.isCurrent(requestId)) return;
     }
 
     if (_selectedPeriodIndex == 0) {
@@ -214,6 +228,7 @@ class _HistoryTabState extends State<HistoryTab> {
     // Faixas de ritmo do período: números já calculados no salvamento do
     // treino (tabela run_pace_zones). Nenhuma rota é decodificada aqui.
     final totals = await _dbService.getPaceZoneTotals(rangeStart, rangeEnd);
+    if (!mounted || !_latestLoad.isCurrent(requestId)) return;
     final zoneTotals = <PaceZone, double>{};
     for (final entry in totals.entries) {
       final zone = _zoneForName(entry.key);
@@ -222,7 +237,7 @@ class _HistoryTabState extends State<HistoryTab> {
     }
     _paceZoneTotals = zoneTotals;
 
-    if (mounted) {
+    if (mounted && _latestLoad.isCurrent(requestId)) {
       setState(() {
         _currentPeriodGoal = historicalGoal!;
         _runsExpanded = false;
@@ -479,7 +494,6 @@ class _HistoryTabState extends State<HistoryTab> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: cs.primary),
               onPressed: () async {
-                final runsProvider = context.read<RunsProvider>();
                 final newPeriodGoal =
                     double.tryParse(periodController.text) ??
                     _currentPeriodGoal;
@@ -516,7 +530,6 @@ class _HistoryTabState extends State<HistoryTab> {
                 }
 
                 if (mounted) {
-                  runsProvider.notifyDataChanged();
                   setState(() => _currentPeriodGoal = newPeriodGoal);
                   navigator.pop();
                 }
@@ -536,7 +549,7 @@ class _HistoryTabState extends State<HistoryTab> {
   }
 
   Future<void> _openAddRun() async {
-    // Ao salvar, o RunsProvider notifica e o histórico recarrega sozinho.
+    // Os repositórios emitem mudanças de perfil/meta e o histórico recarrega sozinho.
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const AddRunScreen()),
@@ -1208,7 +1221,6 @@ class _HistoryTabState extends State<HistoryTab> {
                       );
                       await _dbService.saveUserProfile(newProfile);
                       if (mounted) {
-                        context.read<RunsProvider>().notifyDataChanged();
                         setState(() {
                           _userProfile = newProfile;
                           _recommendation = null;
