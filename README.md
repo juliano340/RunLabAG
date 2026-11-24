@@ -63,7 +63,11 @@ lib/
   sqflite e decorators de cache na camada de dados;
 - `ReadModelCache` compartilha resumos, perfil, recordes e estatísticas entre as
   abas, com single-flight e invalidação após escritas;
-- Atualizações de corrida são separadas em tick de 1 s, estado estrutural e rota.
+- Atualizações de corrida são separadas em tick de 1 s, estado estrutural e rota;
+- `LivePaceTrace` acumula o traçado colorido por ritmo de forma incremental,
+  reconciliando com a análise completa em km, pausas e finalização;
+- A confirmação do treino grava corrida, faixas de ritmo e limpeza do rascunho
+  em uma única transação.
 
 ## Pré-requisitos
 
