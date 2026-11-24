@@ -14,9 +14,6 @@ class AdService {
   InterstitialAd? _interstitialAd;
   bool _isInterstitialReady = false;
 
-  RewardedAd? _rewardedAd;
-  bool _isRewardedReady = false;
-
   bool get adsEnabled => _adsEnabled;
 
   Future<void> init() async {
@@ -30,7 +27,6 @@ class AdService {
       await MobileAds.instance.initialize();
       _isInitialized = true;
       loadInterstitialAd();
-      loadRewardedAd();
     } catch (e) {
       debugPrint('AdService initialization failed: $e');
     }
@@ -46,7 +42,6 @@ class AdService {
         await MobileAds.instance.initialize();
         _isInitialized = true;
         loadInterstitialAd();
-        loadRewardedAd();
       } catch (e) {
         debugPrint('AdService initialization failed: $e');
       }
@@ -68,13 +63,6 @@ class AdService {
     if (!_adsEnabled) return '';
     if (Platform.isAndroid) return 'ca-app-pub-8578901708699710/4763822846'; // produção
     if (Platform.isIOS) return 'ca-app-pub-3940256099942544/4411468910'; // teste iOS
-    return '';
-  }
-
-  String get rewardedAdUnitId {
-    if (!_adsEnabled) return '';
-    if (Platform.isAndroid) return 'ca-app-pub-8578901708699710/8729719095'; // produção
-    if (Platform.isIOS) return 'ca-app-pub-3940256099942544/1712485313'; // teste iOS
     return '';
   }
 
@@ -132,67 +120,4 @@ class AdService {
     _isInterstitialReady = false;
   }
 
-  // ──────────────────────────────────────────────
-  // Rewarded
-  // ──────────────────────────────────────────────
-
-  void loadRewardedAd() {
-    if (!_adsEnabled || !_isInitialized) return;
-
-    RewardedAd.load(
-      adUnitId: rewardedAdUnitId,
-      request: const AdRequest(),
-      rewardedAdLoadCallback: RewardedAdLoadCallback(
-        onAdLoaded: (ad) {
-          _rewardedAd = ad;
-          _isRewardedReady = true;
-        },
-        onAdFailedToLoad: (error) {
-          _isRewardedReady = false;
-          debugPrint('Rewarded ad failed to load: $error');
-        },
-      ),
-    );
-  }
-
-  /// Exibe o rewarded ad.
-  /// [onRewarded]: chamado quando o usuário assiste e ganha a recompensa.
-  /// [onDismissed]: chamado sempre que o ad fecha (com ou sem recompensa).
-  void showRewardedAd({
-    required VoidCallback onRewarded,
-    required VoidCallback onDismissed,
-  }) {
-    if (!_adsEnabled || !_isRewardedReady || _rewardedAd == null) {
-      // Sem ad disponível: não concede recompensa
-      onDismissed();
-      return;
-    }
-
-    _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
-      onAdDismissedFullScreenContent: (ad) {
-        ad.dispose();
-        _rewardedAd = null;
-        _isRewardedReady = false;
-        loadRewardedAd(); // Pré-carrega o próximo
-        onDismissed();
-      },
-      onAdFailedToShowFullScreenContent: (ad, error) {
-        ad.dispose();
-        _rewardedAd = null;
-        _isRewardedReady = false;
-        loadRewardedAd();
-        onDismissed();
-      },
-    );
-
-    _rewardedAd!.show(
-      onUserEarnedReward: (ad, reward) {
-        onRewarded();
-      },
-    );
-    _rewardedAd = null;
-    _isRewardedReady = false;
-  }
-
-  bool get isRewardedAdReady => _isRewardedReady && _adsEnabled;
 }

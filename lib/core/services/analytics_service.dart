@@ -113,18 +113,6 @@ class AnalyticsService {
     }
   }
 
-  Future<void> logPremiumTemplateUnlocked({required String template}) async {
-    if (!_isInitialized) return;
-    try {
-      await FirebaseAnalytics.instance.logEvent(
-        name: 'premium_template_unlocked',
-        parameters: {'template': template},
-      );
-    } catch (e) {
-      debugPrint('[Analytics] logPremiumTemplateUnlocked error: $e');
-    }
-  }
-
   // ──────────────────────────────────────────────
   // Conquistas
   // ──────────────────────────────────────────────
@@ -148,18 +136,6 @@ class AnalyticsService {
       await FirebaseAnalytics.instance.logEvent(name: 'ad_interstitial_shown');
     } catch (e) {
       debugPrint('[Analytics] logInterstitialShown error: $e');
-    }
-  }
-
-  Future<void> logRewardedAdShown({required String placement}) async {
-    if (!_isInitialized) return;
-    try {
-      await FirebaseAnalytics.instance.logEvent(
-        name: 'ad_rewarded_shown',
-        parameters: {'placement': placement},
-      );
-    } catch (e) {
-      debugPrint('[Analytics] logRewardedAdShown error: $e');
     }
   }
 
