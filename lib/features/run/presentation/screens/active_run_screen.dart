@@ -17,6 +17,7 @@ import '../../../../core/services/theme_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/clock.dart';
 import '../../../../core/utils/map_marker_helper.dart';
+import '../../application/live_pace_trace.dart';
 import '../../application/run_persistence_coordinator.dart';
 import '../../application/run_session_controller.dart';
 import '../../data/repositories/database_active_run_store.dart';
@@ -56,6 +57,14 @@ class _ActiveRunScreenState extends State<ActiveRunScreen>
 
   Set<Polyline> _cachedRoutePolylines = const {};
   String _routeCacheKey = '';
+  final LivePaceTrace _livePaceTrace = LivePaceTrace();
+  List<int> _liveTracePointCounts = [];
+  bool _liveTraceInitialized = false;
+  int _reconciledSplitCount = 0;
+  int _reconciledSegmentCount = 0;
+  DateTime? _lastLiveReconciliationAt;
+  DateTime? _lastLegacyRouteAnalysisAt;
+  int _lastLegacyRoutePointCount = -1;
   Set<Marker>? _cachedMarkers;
   String _markerCacheKey = '';
 
@@ -261,23 +270,65 @@ class _ActiveRunScreenState extends State<ActiveRunScreen>
     return markers;
   }
 
-  /// Rota ao vivo colorida por ritmo. A análise só roda quando a rota ou os
-  /// splits mudam; o tick de 1 s continua fora desta reconstrução.
+  /// Rota ao vivo colorida por ritmo. O acumulador incremental só processa o
+  /// ponto novo; a análise completa é reservada para checkpoints de integridade.
   Set<Polyline> _buildRoutePolylines() {
-    final total = _session.routePoints.fold<int>(
-      0,
-      (sum, segment) => sum + segment.length,
-    );
+    final route = _session.routePoints;
+    final routeTimes = _session.routePointTimes;
+    final total = route.fold<int>(0, (sum, segment) => sum + segment.length);
     final key = '$total:${_session.splits.length}:${_session.isFinished}';
     if (key == _routeCacheKey) return _cachedRoutePolylines;
 
-    final result = PaceZoneService.analyze(
-      route: _session.routePoints,
-      routeTimes: _session.routePointTimes,
-      distanceKm: _session.distanceKm,
-      durationSeconds: _session.elapsedSeconds,
-      splits: _session.splits,
-    );
+    final now = DateTime.now();
+    final canUseLiveTrace = _hasUsablePointTimes(route, routeTimes);
+    final lastReconciliation = _lastLiveReconciliationAt;
+    final liveReconciliationDue =
+        lastReconciliation == null ||
+        now.difference(lastReconciliation) >= const Duration(seconds: 30);
+    final shouldReconcile =
+        _session.isFinished ||
+        _session.splits.length != _reconciledSplitCount ||
+        route.length != _reconciledSegmentCount ||
+        liveReconciliationDue;
+    final PaceZoneResult result;
+
+    if (canUseLiveTrace) {
+      _syncLiveTrace(route, routeTimes);
+      if (shouldReconcile) {
+        result = _analyzeFullRoute();
+        _reconciledSplitCount = _session.splits.length;
+        _reconciledSegmentCount = route.length;
+        _lastLiveReconciliationAt = now;
+        _resetLiveTrace();
+        _syncLiveTrace(route, routeTimes);
+      } else {
+        final runAvg = _session.distanceKm > 0 && _session.elapsedSeconds > 0
+            ? _session.elapsedSeconds / _session.distanceKm
+            : null;
+        result = _livePaceTrace.build(
+          centerSecPerKm: PaceZoneService.centerSecPerKm(
+            runAvgSecPerKm: runAvg,
+          ),
+        );
+      }
+    } else {
+      // Formato antigo sem tempos por ponto: mantém o fallback, mas limita
+      // a reanálise para não repetir o custo antigo a cada fix.
+      final last = _lastLegacyRouteAnalysisAt;
+      final enoughPoints = total - _lastLegacyRoutePointCount >= 5;
+      final enoughTime =
+          last == null || now.difference(last) >= const Duration(seconds: 5);
+      if (!shouldReconcile && !enoughPoints && !enoughTime) {
+        _routeCacheKey = key;
+        return _cachedRoutePolylines;
+      }
+      result = _analyzeFullRoute();
+      _reconciledSplitCount = _session.splits.length;
+      _reconciledSegmentCount = route.length;
+      _lastLiveReconciliationAt = now;
+      _lastLegacyRouteAnalysisAt = now;
+      _lastLegacyRoutePointCount = total;
+    }
 
     final polylines = <Polyline>{};
     for (var si = 0; si < result.segments.length; si++) {
@@ -306,6 +357,72 @@ class _ActiveRunScreenState extends State<ActiveRunScreen>
     _cachedRoutePolylines = polylines;
     _routeCacheKey = key;
     return polylines;
+  }
+
+  PaceZoneResult _analyzeFullRoute() {
+    return PaceZoneService.analyze(
+      route: _session.routePoints,
+      routeTimes: _session.routePointTimes,
+      distanceKm: _session.distanceKm,
+      durationSeconds: _session.elapsedSeconds,
+      splits: _session.splits,
+    );
+  }
+
+  bool _hasUsablePointTimes(
+    List<List<LatLng>> route,
+    List<List<int>> routeTimes,
+  ) {
+    if (routeTimes.length != route.length) return false;
+    for (var i = 0; i < route.length; i++) {
+      if (routeTimes[i].length != route[i].length) return false;
+      if (route[i].length >= 2 &&
+          routeTimes[i].every((time) => time == routeTimes[i].first)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void _syncLiveTrace(List<List<LatLng>> route, List<List<int>> routeTimes) {
+    final counts = [for (final segment in route) segment.length];
+    var restart = !_liveTraceInitialized;
+    if (!restart && counts.length < _liveTracePointCounts.length) {
+      restart = true;
+    }
+    if (!restart) {
+      for (var i = 0; i < counts.length; i++) {
+        final previous = i < _liveTracePointCounts.length
+            ? _liveTracePointCounts[i]
+            : 0;
+        if (counts[i] < previous) {
+          restart = true;
+          break;
+        }
+      }
+    }
+    if (restart) _resetLiveTrace();
+
+    for (var si = 0; si < route.length; si++) {
+      final previous = si < _liveTracePointCounts.length
+          ? _liveTracePointCounts[si]
+          : 0;
+      for (var pi = previous; pi < route[si].length; pi++) {
+        _livePaceTrace.addPoint(
+          route[si][pi],
+          routeTimes[si][pi],
+          startsNewSegment: pi == 0,
+        );
+      }
+    }
+    _liveTracePointCounts = counts;
+    _liveTraceInitialized = true;
+  }
+
+  void _resetLiveTrace() {
+    _livePaceTrace.reset();
+    _liveTracePointCounts = [];
+    _liveTraceInitialized = false;
   }
 
   void _onRunSessionEvent(RunSessionEvent event) {

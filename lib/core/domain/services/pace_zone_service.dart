@@ -463,6 +463,8 @@ class PaceZoneService {
   }
 
   /// Distância haversine entre dois pontos, em metros.
+  static double distanceMeters(LatLng a, LatLng b) => _distanceMeters(a, b);
+
   static double _distanceMeters(LatLng a, LatLng b) {
     const earthRadius = 6371000.0;
     final dLat = _rad(b.latitude - a.latitude);
