@@ -62,7 +62,9 @@ lib/
 - Repositórios são consumidos por interfaces no domínio, com implementações
   sqflite e decorators de cache na camada de dados;
 - `ReadModelCache` compartilha resumos, perfil, recordes e estatísticas entre as
-  abas, com single-flight e invalidação após escritas;
+  abas, com single-flight e invalidação por escopo;
+- `DataChangeHub` notifica apenas as abas que dependem do dado alterado;
+- `LatestRequest` impede que carregamentos antigos sobrescrevam resultados novos.
 - Atualizações de corrida são separadas em tick de 1 s, estado estrutural e rota;
 - `LivePaceTrace` acumula o traçado colorido por ritmo de forma incremental,
   reconciliando com a análise completa em km, pausas e finalização;

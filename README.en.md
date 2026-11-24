@@ -62,7 +62,9 @@ lib/
 - Repositories are consumed through domain interfaces, with sqflite
   implementations and cache decorators in the data layer;
 - `ReadModelCache` shares summaries, profile, records, and statistics across
-  tabs, with single-flight behavior and invalidation after writes;
+  tabs, with single-flight behavior and scope-based invalidation;
+- `DataChangeHub` notifies only the tabs that depend on the changed data;
+- `LatestRequest` prevents stale loads from overwriting newer results.
 - Run updates are split into a 1-second tick, structural state, and route changes;
 - `LivePaceTrace` accumulates the pace-colored route incrementally and
   reconciles with the full analysis at kilometer marks, pauses, and finish;
