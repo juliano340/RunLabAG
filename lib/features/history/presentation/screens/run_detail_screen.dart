@@ -47,12 +47,10 @@ class _RunDetailScreenState extends State<RunDetailScreen>
   int _runIndex = -1;
   bool _isNavigating = false;
 
-  // Giro de dado em 3D: o gesto inclina a página (rotateY com perspectiva)
-  // e, passando do limiar, a rotação completa até a borda, os dados trocam
-  // "por trás" e a face do novo treino chega de frente.
+  // Transicao de troca de treino: deslize direcional com crossfade. O
+  // gesto ancora no painel; a pagina inteira desliza na direcao do gesto.
   double? _dragProgress;
   int? _dragNeighborIndex;
-  double _angleFraction = 0;
   double _slideFraction = 0;
   late final AnimationController _flipController;
   int _flipDirection = 1;
@@ -128,8 +126,7 @@ class _RunDetailScreenState extends State<RunDetailScreen>
     setState(() {
       _dragProgress = hasNeighbor ? next : next.sign * 0.12;
       _dragNeighborIndex = hasNeighbor ? targetIndex : null;
-      // inclina a pagina como a face de um dado (max ~18 graus)
-      _angleFraction = _dragProgress! * 0.1;
+      // a pagina desliza com o dedo (max ~8% da largura)
       _slideFraction = _dragProgress! * 0.08;
     });
   }
@@ -155,24 +152,22 @@ class _RunDetailScreenState extends State<RunDetailScreen>
 
   void _onSwipeCancel() {
     if (!mounted) return;
-    final from = _angleFraction.abs();
+    final from = _slideFraction.abs();
     if (from <= 0.001) {
       setState(() {
-        _angleFraction = 0;
         _slideFraction = 0;
         _dragProgress = null;
         _dragNeighborIndex = null;
       });
       return;
     }
-    // Devolve a face girando de volta, no sentido contrario.
-    _flipDirection = _angleFraction < 0 ? -1 : 1;
+    // Devolve a pagina deslizando de volta, no sentido contrario.
+    _flipDirection = _slideFraction < 0 ? -1 : 1;
     _flipSwapped = false;
     _flipIncoming = null;
     _flipController.reverse(from: from).whenComplete(() {
       if (!mounted) return;
       setState(() {
-        _angleFraction = 0;
         _slideFraction = 0;
         _dragProgress = null;
         _dragNeighborIndex = null;
@@ -194,11 +189,10 @@ class _RunDetailScreenState extends State<RunDetailScreen>
       _flipIncoming = run;
       _flipDirection = goingOlder ? 1 : -1;
       _flipSwapped = false;
-      _flipController.forward(from: _angleFraction.abs()).whenComplete(() {
+      _flipController.forward(from: _slideFraction.abs()).whenComplete(() {
         if (!mounted) return;
         setState(() {
           _isNavigating = false;
-          _angleFraction = 0;
           _slideFraction = 0;
           _dragProgress = null;
           _dragNeighborIndex = null;
@@ -210,9 +204,9 @@ class _RunDetailScreenState extends State<RunDetailScreen>
     }
   }
 
-  /// Um tick da transicao: primeira metade o treino atual inclina e sai
-  /// desvanecendo; no meio (invisivel) os dados trocam; a segunda metade o
-  /// novo treino entra do lado oposto e assenta.
+  /// Um tick da transicao: primeira metade o treino atual sai deslizando
+  /// e desvanecendo; no meio (invisivel) os dados trocam; a segunda metade
+  /// o novo treino entra do lado oposto e assenta.
   void _onFlipTick() {
     final v = _flipController.value;
     final crossed = !_flipSwapped && v >= 0.5 && _flipIncoming != null;
@@ -220,7 +214,6 @@ class _RunDetailScreenState extends State<RunDetailScreen>
       setState(() {
         final half = v < 0.5 ? v * 2 : (1 - v) * 2;
         final exiting = v < 0.5;
-        _angleFraction = _flipDirection * (exiting ? half : -half) * 0.1;
         _slideFraction = _flipDirection * (exiting ? half : -half) * 0.15;
         if (crossed) {
           _flipSwapped = true;
@@ -233,17 +226,14 @@ class _RunDetailScreenState extends State<RunDetailScreen>
     if (crossed) _recenterMap();
   }
 
-  /// Inclinacao maxima ~18 graus: mostra o movimento sem pirotecnia.
+  /// Deslize puro: a pagina sai na direcao do gesto e a nova entra da
+  /// lado oposto — sem rotacao.
   Matrix4 _pageTransform() {
-    final fraction = _angleFraction;
     final slide = _slideFraction;
-    if (fraction == 0 && slide == 0) return Matrix4.identity();
-    final angle = fraction * 3.141592653589793;
+    if (slide == 0) return Matrix4.identity();
     final width = MediaQuery.of(context).size.width;
     return Matrix4.identity()
-      ..setEntry(3, 2, 0.0018)
-      ..translateByDouble(slide * width, 0.0, 0.0, 1.0)
-      ..rotateY(angle);
+      ..translateByDouble(slide * width, 0.0, 0.0, 1.0);
   }
 
   /// Crossfade: a face atual some ate o meio, a nova nasce depois.
