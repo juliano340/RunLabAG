@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-class LocationService {
+import '../../features/run/domain/repositories/location_source.dart';
+
+class LocationService implements LocationSource {
+  @override
   Future<bool> requestPermission() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -33,14 +36,14 @@ class LocationService {
     return true;
   }
 
+  @override
   Future<Position> getCurrentLocation() async {
     return await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-      ),
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
     );
   }
 
+  @override
   Stream<Position> getLocationStream() {
     late LocationSettings locationSettings;
 
@@ -49,9 +52,13 @@ class LocationService {
         accuracy: LocationAccuracy.best,
         intervalDuration: const Duration(seconds: 1),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationText: "O RunLabAG está rastreando a sua rota em segundo plano.",
+          notificationText:
+              "O RunLabAG está rastreando a sua rota em segundo plano.",
           notificationTitle: "Corrida em Andamento",
-          notificationIcon: AndroidResource(name: 'ic_stat_runlab', defType: 'drawable'),
+          notificationIcon: AndroidResource(
+            name: 'ic_stat_runlab',
+            defType: 'drawable',
+          ),
           color: Color(0xFFC0FF00),
           enableWakeLock: true,
         ),
@@ -62,8 +69,6 @@ class LocationService {
       );
     }
 
-    return Geolocator.getPositionStream(
-      locationSettings: locationSettings,
-    );
+    return Geolocator.getPositionStream(locationSettings: locationSettings);
   }
 }

@@ -1,40 +1,29 @@
 import 'dart:async';
-import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:lucide_icons/lucide_icons.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:vibration/vibration.dart';
-import '../../../../core/theme/app_colors.dart';
-import '../../../../core/services/location_service.dart';
-import '../../../../core/services/database_service.dart';
-import '../../../../core/services/theme_service.dart';
-import '../../../../core/services/pacing_service.dart';
-import '../widgets/active_run/active_run_lock_overlay.dart';
-import '../widgets/active_run/active_run_bottom_panel.dart';
-import '../widgets/active_run/active_run_top_bar.dart';
-import '../widgets/active_run/active_run_dialogs.dart';
-import '../widgets/active_run/active_run_map_view.dart';
-import '../../../../core/utils/time_utils.dart';
-import '../../../../core/utils/map_marker_helper.dart';
-import '../../../../core/services/achievement_service.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../../../../core/services/notification_service.dart';
-import '../../../../core/services/analytics_service.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../../../core/domain/services/pace_zone_service.dart';
 import '../../../../core/providers/runs_provider.dart';
-import '../../application/run_persistence_coordinator.dart';
+import '../../../../core/services/analytics_service.dart';
+import '../../../../core/services/location_service.dart';
+import '../../../../core/services/theme_service.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/clock.dart';
+import '../../../../core/utils/map_marker_helper.dart';
+import '../../application/run_session_controller.dart';
+import '../../domain/models/run_session_event.dart';
+import '../widgets/active_run/active_run_bottom_panel.dart';
+import '../widgets/active_run/active_run_dialogs.dart';
+import '../widgets/active_run/active_run_lock_overlay.dart';
+import '../widgets/active_run/active_run_map_view.dart';
+import '../widgets/active_run/active_run_top_bar.dart';
 import 'run_browse_screen.dart';
-import '../../domain/services/run_finalization_service.dart';
-import '../../domain/services/run_metrics_service.dart';
-import '../../domain/services/gps_filter_service.dart';
-import 'package:runlabag/core/domain/services/pace_zone_service.dart';
-import 'package:runlabag/core/domain/models/auto_pause_event.dart';
-import 'package:runlabag/core/domain/models/run_split.dart';
-import 'package:runlabag/core/domain/models/user_profile.dart';
 
 class ActiveRunScreen extends StatefulWidget {
   final Map<String, dynamic>? restoredState;
@@ -53,115 +42,62 @@ class ActiveRunScreen extends StatefulWidget {
   State<ActiveRunScreen> createState() => _ActiveRunScreenState();
 }
 
-class _ActiveRunScreenState extends State<ActiveRunScreen> {
+class _ActiveRunScreenState extends State<ActiveRunScreen>
+    with WidgetsBindingObserver {
   final Completer<GoogleMapController> _controller = Completer();
-  final LocationService _locationService = LocationService();
+  late final RunSessionController _session;
+  late final Listenable _mapListenable;
+  late final Listenable _panelListenable;
+  StreamSubscription<RunSessionEvent>? _eventSubscription;
 
-  StreamSubscription<Position>? _positionStream;
-  List<List<LatLng>> _routePoints = []; // Lista de segmentos
-  /// Tempo ativo (segundos) de cada ponto da rota — paralelo a [_routePoints].
-  /// Usado para colorir o mapa por faixa de ritmo no histórico.
-  List<List<int>> _routePointTimes = [];
-
-  /// Polylines da rota ao vivo (cache por contagem de pontos): a análise
-  /// de cores do degradê só roda quando um ponto novo entra na rota, não a
-  /// cada segundo do cronômetro.
   Set<Polyline> _cachedRoutePolylines = const {};
-  int _cachedRoutePointsCount = -1;
-  bool _isRunning = false;
-  bool _isPaused = false;
-  bool _isFinished = false;
-  bool _hasPermissions = false;
-  bool _showMinimalMap = false;
-  bool _autoPauseEnabled = false;
-  bool _isAutoPaused = false;
-  LatLng? _autoPauseAnchor;
-  int _currentAutoPauseDurationSeconds = 0;
-  DateTime? _autoPauseStartTime;
-  List<AutoPauseEvent> _autoPauses = [];
+  String _routeCacheKey = '';
+  Set<Marker>? _cachedMarkers;
+  String _markerCacheKey = '';
+
   BitmapDescriptor? _pauseMarkerIcon;
   BitmapDescriptor? _resumeMarkerIcon;
-  int _lowSpeedTicks = 0;
   String? _minimalMapStyle;
   String? _darkMapStyle;
   String? _darkMinimalMapStyle;
-  // ignore: unused_field
-  bool _isMapStylesLoaded = false;
+  bool _showMinimalMap = false;
   bool _isMapReady = false;
-
-  /// Completa assim que a permissão de localização (incluindo a de
-  /// notificação do foreground service no Android 13+) está resolvida —
-  /// ANTES do primeiro fix. Quem abre a stream espera por ela; o fix
-  /// não pode estar no caminho, senão o início trava por segundos.
-  final Completer<void> _permissionsReady = Completer<void>();
-
-  /// Guard contra start duplo (botão INICIAR tocado durante o início
-  /// expresso: o segundo chamador vira no-op e nada é zerado).
-  bool _isStartingRun = false;
-
-  // Metrics
-  double _distanceKm = 0.0;
-  double? _distanceGoal;
-  int? _targetTimeSeconds;
-  PacingService? _pacingService;
-  PacingFeedback? _pacingFeedback;
-  int _secondsElapsed = 0;
-  int _pausedSecondsElapsed = 0;
-  int _lastResumeSeconds = 0;
-  int _lastKmNotified = 0;
-  List<RunSplit> _splits = [];
-  int _lastSplitTimeSeconds = 0;
-  int _lastSplitCalories = 0;
-  Timer? _timer;
-
-  /// Tick de display: incrementado a cada segundo pelo cronômetro. Só o
-  /// painel de métricas escuta este notifier — o mapa, os markers e a top
-  /// bar NÃO são reconstruídos a cada segundo (fim do setState global).
-  final ValueNotifier<int> _uiTick = ValueNotifier(0);
-  UserProfile? _userProfile;
-  // Smoothing fields
-  List<Position> _paceBuffer = [];
-  String _currentSmoothedPace = '0:00';
-  bool _isFirstPointAfterResume = false;
-
-  final bool _isExiting = false;
   bool _isScreenLocked = false;
-  bool _isSaving = false; // Guard contra double-save
-  DateTime? _lastAutoResumeSnackAt;
-  DateTime? _runStartTime;
-
-  // Persistência do treino ativo: metadados são baratos (5 s), a rota é
-  // grande e só é reescrita a cada 30 s / na virada de km / em pausa.
-  bool _metaPersistInFlight = false;
-  bool _routePersistInFlight = false;
-  DateTime? _lastRoutePersistAt;
+  bool _isSaving = false;
   DateTime? _lastCameraUpdateAt;
-  static const Duration _routePersistInterval = Duration(seconds: 30);
-  static const Duration _cameraUpdateInterval = Duration(seconds: 3);
-
+  DateTime? _lastAutoResumeSnackAt;
   ThemeService? _themeService;
+
+  static const Duration _cameraUpdateInterval = Duration(seconds: 3);
+  static const int _pointsPerPolyline = 250;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _session = RunSessionController(
+      locations: LocationService(),
+      clock: const SystemClock(),
+    );
+    _mapListenable = Listenable.merge([
+      _session.stateChanges,
+      _session.routeChanges,
+    ]);
+    _panelListenable = Listenable.merge([
+      _session.uiTick,
+      _session.stateChanges,
+      _session.routeChanges,
+    ]);
+    _eventSubscription = _session.events.listen(_onRunSessionEvent);
     _loadMapPreference();
-    _loadAutoPausePreference();
     _loadMapStyle();
     _loadMarkerIcons();
-    _initLocation();
-    _loadUserProfile();
-    if (widget.restoredState != null) {
-      _restoreState(widget.restoredState!);
-    } else if (widget.autoStart) {
-      // Início expresso: espera só a PERMISSÃO (praticamente instantâneo),
-      // nunca o primeiro fix. O relógio arranca no toque e o GPS esquenta em
-      // paralelo — sem a permissão resolvida a stream morria em silêncio
-      // (era isso que zerava a rota no Expresso).
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        await _permissionsReady.future;
-        if (mounted) _startRun(warmUpGps: false);
-      });
-    }
+    unawaited(
+      _session.initialize(
+        restoredState: widget.restoredState,
+        autoStart: widget.autoStart,
+      ),
+    );
   }
 
   @override
@@ -175,9 +111,19 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     }
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      // O foreground service mantém o GPS, mas não podemos depender dele para
+      // garantir que a última rota chegou ao banco antes de ir para background.
+      unawaited(_session.flushPersistence());
+    }
+  }
+
   void _onThemeChanged() {
-    if (!mounted) return;
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadMarkerIcons() async {
@@ -190,17 +136,23 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       setState(() {
         _pauseMarkerIcon = results[0];
         _resumeMarkerIcon = results[1];
+        _markerCacheKey = '';
       });
     } catch (e) {
-      debugPrint("Erro ao gerar marcadores premium: $e");
+      debugPrint('Erro ao gerar marcadores premium: $e');
     }
   }
 
   Future<void> _loadMapPreference() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _showMinimalMap = prefs.getBool('show_minimal_map') ?? false;
-    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      setState(() {
+        _showMinimalMap = prefs.getBool('show_minimal_map') ?? false;
+      });
+    } catch (e) {
+      debugPrint('Não foi possível ler a preferência do mapa: $e');
+    }
   }
 
   Future<void> _saveMapPreference(bool value) async {
@@ -208,40 +160,15 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     await prefs.setBool('show_minimal_map', value);
   }
 
-  Future<void> _loadAutoPausePreference() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      // Padrão ATIVO: corrida nova já nasce com auto-pause ligado;
-      // quem desligou mantém a escolha salva.
-      _autoPauseEnabled = prefs.getBool('auto_pause_enabled') ?? true;
-    });
-  }
-
-  Future<void> _saveAutoPausePreference(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('auto_pause_enabled', value);
-  }
-
   void _toggleAutoPause() {
-    setState(() {
-      _autoPauseEnabled = !_autoPauseEnabled;
-      if (!_autoPauseEnabled) {
-        if (_isAutoPaused) {
-          _isAutoPaused = false;
-          _autoPauseAnchor = null;
-          _lowSpeedTicks = 0;
-          if (_isRunning && !_isPaused) {
-            _resumeRun();
-          }
-        }
-      }
-    });
-    _saveAutoPausePreference(_autoPauseEnabled);
+    unawaited(_session.setAutoPauseEnabled(!_session.autoPauseEnabled));
     HapticFeedback.selectionClick();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          _autoPauseEnabled ? 'Auto Pause Ativado' : 'Auto Pause Desativado',
+          _session.autoPauseEnabled
+              ? 'Auto Pause Ativado'
+              : 'Auto Pause Desativado',
         ),
         duration: const Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
@@ -249,254 +176,49 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     );
   }
 
-  void _restoreState(Map<String, dynamic> state) {
-    setState(() {
-      _distanceKm = state['distanceKm'] ?? 0.0;
-      _secondsElapsed = state['secondsElapsed'] ?? 0;
-      _pausedSecondsElapsed = state['pausedDurationSeconds'] ?? 0;
-      _lastResumeSeconds = _secondsElapsed;
-      _lastKmNotified = state['lastKmNotified'] ?? 0;
-      _distanceGoal = state['distanceGoal'];
-      _targetTimeSeconds = state['targetTimeSeconds'];
-
-      if (state['startTime'] != null) {
-        _runStartTime = DateTime.tryParse(state['startTime']);
-      }
-
-      if (_distanceGoal != null && _targetTimeSeconds != null) {
-        _pacingService = PacingService(
-          targetDistanceKm: _distanceGoal,
-          targetTimeSeconds: _targetTimeSeconds,
-        );
-      }
-
-      final splitsJson = state['splits'];
-      if (splitsJson != null) {
-        final List<dynamic> decoded = jsonDecode(splitsJson);
-        _splits = decoded.map((s) {
-          if (s is Map) return RunSplit.fromMap(s.cast<String, dynamic>());
-          if (s is int) return RunSplit(timeSeconds: s, calories: 0);
-          return RunSplit(timeSeconds: 0, calories: 0);
-        }).toList();
-        _lastSplitTimeSeconds = _splits.fold(
-          0,
-          (sum, s) => sum + s.timeSeconds,
-        );
-        _lastSplitCalories = _splits.fold(0, (sum, s) => sum + s.calories);
-      } else {
-        _splits = [];
-        _lastSplitTimeSeconds = 0;
-        _lastSplitCalories = 0;
-      }
-
-      _isPaused = (state['isPaused'] ?? 0) == 1;
-
-      final routeJson = state['route'];
-      if (routeJson != null) {
-        final List<dynamic> decoded = jsonDecode(routeJson);
-        if (decoded.isNotEmpty && decoded.first is List) {
-          _routePoints = decoded
-              .map(
-                (segment) => (segment as List)
-                    .map((p) => LatLng(p['lat'], p['lng']))
-                    .toList(),
-              )
-              .toList();
-          _routePointTimes = _decodePersistedTimes(decoded, _routePoints);
-        } else {
-          _routePoints = [
-            decoded.map((p) => LatLng(p['lat'], p['lng'])).toList(),
-          ];
-          _routePointTimes = [];
-        }
-      }
-
-      final autoPausesJson = state['autoPauses'];
-      if (autoPausesJson != null) {
-        final List<dynamic> decoded = jsonDecode(autoPausesJson);
-        _autoPauses = decoded
-            .map((ap) => AutoPauseEvent.fromMap((ap as Map).cast<String, dynamic>()))
-            .toList();
-      } else {
-        _autoPauses = [];
-      }
-
-      _isFinished = (state['finished'] ?? 0) == 1;
-      _isRunning = !_isFinished;
-    });
-
-    if (!_isFinished && !_isPaused) {
-      // Retomada a frio: espera só a permissão — numa retomada ela já foi
-      // concedida antes, então é praticamente instantâneo e o cronômetro
-      // não congela esperando fix de GPS.
-      _permissionsReady.future.then((_) {
-        if (mounted) _startTimersAndStreams(isNew: false);
-      });
-    }
-  }
-
-  void _persistState({bool forceRoute = false}) {
-    if (!_isRunning || _isFinished) return;
-    _persistMeta();
-    _persistRoute(force: forceRoute);
-  }
-
-  /// Linha pequena de metadados — pode rodar com frequência.
-  Future<void> _persistMeta() async {
-    if (!_isRunning || _isFinished || _metaPersistInFlight) return;
-    _metaPersistInFlight = true;
-    try {
-      await DatabaseService().saveActiveRunMeta({
-        'startTime': (_runStartTime ?? DateTime.now()).toIso8601String(),
-        'distanceKm': _distanceKm,
-        'secondsElapsed': _secondsElapsed,
-        'pausedDurationSeconds': _pausedSecondsElapsed,
-        'lastKmNotified': _lastKmNotified,
-        'distanceGoal': _distanceGoal,
-        'targetTimeSeconds': _targetTimeSeconds,
-        'isPaused': _isPaused ? 1 : 0,
-        'finished': 0,
-        'splits': jsonEncode(_splits.map((s) => s.toMap()).toList()),
-        'autoPauses': jsonEncode(_autoPauses.map((ap) => ap.toMap()).toList()),
-      });
-    } catch (e) {
-      debugPrint('Falha ao persistir metadados do treino: $e');
-    } finally {
-      _metaPersistInFlight = false;
-    }
-  }
-
-  /// Rota completa — payload grande, com throttle e sem escritas concorrentes.
-  Future<void> _persistRoute({bool force = false}) async {
-    if (!_isRunning || _isFinished || _routePersistInFlight) return;
-
-    final now = DateTime.now();
-    final last = _lastRoutePersistAt;
-    if (!force && last != null && now.difference(last) < _routePersistInterval) {
-      return;
-    }
-
-    _routePersistInFlight = true;
-    _lastRoutePersistAt = now;
-    try {
-      await DatabaseService().saveActiveRunRoute(_encodeRouteJson());
-    } catch (e) {
-      debugPrint('Falha ao persistir rota do treino: $e');
-      _lastRoutePersistAt = null; // tenta de novo na próxima chamada
-    } finally {
-      _routePersistInFlight = false;
-    }
-  }
-
-  /// Serializa a rota em uma única passada (uma consulta de tempo por ponto).
-  String _encodeRouteJson() {
-    final segments = <List<Map<String, dynamic>>>[];
-    for (var si = 0; si < _routePoints.length; si++) {
-      final segment = _routePoints[si];
-      final times = si < _routePointTimes.length ? _routePointTimes[si] : null;
-      final encoded = <Map<String, dynamic>>[];
-      for (var pi = 0; pi < segment.length; pi++) {
-        final point = segment[pi];
-        final time = (times != null && pi < times.length) ? times[pi] : null;
-        encoded.add(
-          time == null
-              ? {'lat': point.latitude, 'lng': point.longitude}
-              : {'lat': point.latitude, 'lng': point.longitude, 't': time},
-        );
-      }
-      segments.add(encoded);
-    }
-    return jsonEncode(segments);
-  }
-
-  /// Snapshot final: permite recuperar o treino mesmo se o app morrer antes
-  /// do usuário confirmar o salvamento.
-  Future<void> _persistFinished() async {
-    final meta = <String, dynamic>{
-      'startTime': (_runStartTime ?? DateTime.now()).toIso8601String(),
-      'distanceKm': _distanceKm,
-      'secondsElapsed': _secondsElapsed,
-      'pausedDurationSeconds': _pausedSecondsElapsed,
-      'lastKmNotified': _lastKmNotified,
-      'distanceGoal': _distanceGoal,
-      'targetTimeSeconds': _targetTimeSeconds,
-      'isPaused': 1,
-      'finished': 1,
-      'splits': jsonEncode(_splits.map((s) => s.toMap()).toList()),
-      'autoPauses': jsonEncode(_autoPauses.map((ap) => ap.toMap()).toList()),
-    };
-    try {
-      await DatabaseService().saveActiveRunMeta(meta);
-      await DatabaseService().saveActiveRunRoute(_encodeRouteJson());
-    } catch (e) {
-      debugPrint('Falha ao persistir treino finalizado: $e');
-    }
-  }
-
-  /// Decodifica os tempos por ponto do JSON persistido.
-  /// Retorna [] se algum ponto estiver sem 't' (formato antigo).
-  List<List<int>> _decodePersistedTimes(List<dynamic> decoded, List<List<LatLng>> points) {
-    if (decoded.length != points.length) return [];
-    var allHaveTime = true;
-    final times = decoded.asMap().entries.map((entry) {
-      final segment = entry.value as List;
-      return segment.asMap().entries.map((p) {
-        final t = p.value is Map ? p.value['t'] : null;
-        if (t is int) return t;
-        if (t is num) return t.toInt();
-        allHaveTime = false;
-        return 0;
-      }).toList();
-    }).toList();
-    return allHaveTime ? times : [];
-  }
-
-  Future<void> _loadUserProfile() async {
-    final profile = await DatabaseService().getUserProfile();
-    setState(() {
-      _userProfile = profile;
-    });
-  }
-
   Future<void> _loadMapStyle() async {
     try {
       _minimalMapStyle = await rootBundle.loadString(
         'assets/map_style_minimal.json',
       );
-      _darkMapStyle = await rootBundle.loadString(
-        'assets/map_style_dark.json',
-      );
+      _darkMapStyle = await rootBundle.loadString('assets/map_style_dark.json');
       _darkMinimalMapStyle = await rootBundle.loadString(
         'assets/map_style_dark_minimal.json',
       );
-      if (mounted) {
-        setState(() {
-          _isMapStylesLoaded = true;
-        });
-      }
+      if (mounted) setState(() {});
     } catch (e) {
-      debugPrint("Error loading map style: $e");
+      debugPrint('Error loading map style: $e');
     }
   }
 
   String? _getMapStyle() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
     if (isDark) {
       return _showMinimalMap ? _darkMinimalMapStyle : _darkMapStyle;
     }
-
     return _showMinimalMap ? _minimalMapStyle : null;
   }
 
   Set<Marker> _buildMapMarkers() {
-    final pauseIcon = _pauseMarkerIcon ??
+    final anchor = _session.autoPauseAnchor;
+    final key =
+        '${_session.autoPauses.length}:${_session.isAutoPaused}:'
+        '${anchor?.latitude}:${anchor?.longitude}:'
+        '${identityHashCode(_pauseMarkerIcon)}:'
+        '${identityHashCode(_resumeMarkerIcon)}';
+    if (key == _markerCacheKey && _cachedMarkers != null) {
+      return _cachedMarkers!;
+    }
+
+    final pauseIcon =
+        _pauseMarkerIcon ??
         BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
-    final resumeIcon = _resumeMarkerIcon ??
+    final resumeIcon =
+        _resumeMarkerIcon ??
         BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
 
-    return {
-      ..._autoPauses.asMap().entries.expand((entry) {
+    final markers = <Marker>{
+      ..._session.autoPauses.asMap().entries.expand((entry) {
         final index = entry.key;
         final autoPause = entry.value;
         return [
@@ -518,56 +240,51 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
             ),
         ];
       }),
-      if (_isAutoPaused && _autoPauseAnchor != null)
+      if (_session.isAutoPaused && anchor != null)
         Marker(
           markerId: const MarkerId('current_autopause'),
-          position: _autoPauseAnchor!,
+          position: anchor,
           icon: pauseIcon,
           infoWindow: const InfoWindow(title: 'Pausando...'),
         ),
     };
+    _cachedMarkers = markers;
+    _markerCacheKey = key;
+    return markers;
   }
 
-
-  /// Máximo de pontos por polyline ao vivo: o plugin reenvia a polyline
-  /// inteira quando ela muda, então só o bloco da ponta trafega a cada
-  /// atualização — mesmo padrão que existia antes do degradê.
-  static const int _pointsPerPolyline = 250;
-
-  /// Rota ao vivo colorida por ritmo: reutiliza a mesma análise do
-  /// histórico (degradê quantizado + suavização de desenho), com fallback
-  /// em cascata idêntico — tempos por ponto → voltas → média.
+  /// Rota ao vivo colorida por ritmo. A análise só roda quando a rota ou os
+  /// splits mudam; o tick de 1 s continua fora desta reconstrução.
   Set<Polyline> _buildRoutePolylines() {
-    var total = 0;
-    for (final s in _routePoints) {
-      total += s.length;
-    }
-    // Rebuild de 1s do cronômetro: nada mudou na rota, cache resolve.
-    if (total == _cachedRoutePointsCount) return _cachedRoutePolylines;
+    final total = _session.routePoints.fold<int>(
+      0,
+      (sum, segment) => sum + segment.length,
+    );
+    final key = '$total:${_session.splits.length}:${_session.isFinished}';
+    if (key == _routeCacheKey) return _cachedRoutePolylines;
 
     final result = PaceZoneService.analyze(
-      route: _routePoints,
-      routeTimes: _routePointTimes,
-      distanceKm: _distanceKm,
-      durationSeconds: _secondsElapsed,
-      splits: _splits,
+      route: _session.routePoints,
+      routeTimes: _session.routePointTimes,
+      distanceKm: _session.distanceKm,
+      durationSeconds: _session.elapsedSeconds,
+      splits: _session.splits,
     );
 
     final polylines = <Polyline>{};
     for (var si = 0; si < result.segments.length; si++) {
       final segment = result.segments[si];
-      final pts = segment.points;
-      if (pts.isEmpty) continue;
+      final points = segment.points;
+      if (points.isEmpty) continue;
 
       var block = 0;
-      for (var start = 0; start < pts.length; start += _pointsPerPolyline) {
-        final end = (start + _pointsPerPolyline).clamp(0, pts.length);
-        // Repete o último ponto do bloco anterior para a linha não quebrar.
+      for (var start = 0; start < points.length; start += _pointsPerPolyline) {
+        final end = (start + _pointsPerPolyline).clamp(0, points.length);
         final from = start == 0 ? 0 : start - 1;
         polylines.add(
           Polyline(
             polylineId: PolylineId('route_${si}_$block'),
-            points: pts.sublist(from, end),
+            points: points.sublist(from, end),
             color: segment.color,
             width: 5,
             startCap: Cap.roundCap,
@@ -579,466 +296,105 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     }
 
     _cachedRoutePolylines = polylines;
-    _cachedRoutePointsCount = total;
+    _routeCacheKey = key;
     return polylines;
   }
 
-  Future<void> _initLocation() async {
-    try {
-      final hasPermission = await _locationService.requestPermission();
-      if (!hasPermission || !mounted) {
-        _completePermissionsReady();
-        return;
-      }
-
-      setState(() {
-        _hasPermissions = true;
-      });
-      // A partir daqui a stream do GPS já pode nascer com vida — é este o
-      // ponto exato que o início expresso e a retomada esperam.
-      _completePermissionsReady();
-
-      final pos = await _locationService.getCurrentLocation();
-      if (!mounted) return;
-      final latLng = LatLng(pos.latitude, pos.longitude);
-
-      // Nunca sobrescreve a rota de um treino retomado: o GPS inicial
-      // chegando depois do restore apagava o trajeto já percorrido.
-      if (!_isRunning) {
-        setState(() {
-          _routePoints = [
-            [latLng],
-          ];
-          _routePointTimes = [
-            [_secondsElapsed],
-          ];
-        });
-      }
-
-      // Centralizar o mapa NÃO pode bloquear o início expresso: a permissão
-      // e o primeiro fix já estão prontos aqui; a câmera acompanha quando
-      // o platform view do Google Maps terminar de nascer.
-      _centerMapOn(pos);
-    } catch (e) {
-      debugPrint("Error initializing location: $e");
-      _completePermissionsReady();
-    }
-  }
-
-  void _completePermissionsReady() {
-    if (!_permissionsReady.isCompleted) _permissionsReady.complete();
-  }
-
-  void _centerMapOn(Position pos) {
-    _controller.future.then((controller) {
-      final cameraTarget = LatLng(pos.latitude - 0.002, pos.longitude);
-      controller.animateCamera(CameraUpdate.newLatLngZoom(cameraTarget, 16));
-    }, onError: (Object e) {
-      debugPrint("Error centering map: $e");
-    });
-  }
-
-  Future<void> _startRun({bool warmUpGps = true}) async {
-    // Expresso + botão INICIAR podem disputar a mesma janela: só um vence.
-    // Sem este guard, o segundo start zerava métricas do primeiro.
-    if (_isStartingRun || _isRunning) return;
-    _isStartingRun = true;
-
-    _stopRunInternals();
-
-    _runStartTime = DateTime.now();
-
-    if (warmUpGps) {
-      // Fluxo do botão INICIAR (já passou pela tela pré-início): espera um
-      // fix para o GPS estar quente. O Expresso pula esta espera — o
-      // relógio arranca no toque e a stream esquenta em paralelo.
-      try {
-        await _locationService.getCurrentLocation();
-      } catch (e) {
-        debugPrint("Could not get initial position for run: $e");
-      }
-    }
-
-    setState(() {
-      _distanceKm = 0.0;
-      _secondsElapsed = 0;
-      _pausedSecondsElapsed = 0;
-      _lastResumeSeconds = 0;
-      _lastKmNotified = 0;
-      _splits = [];
-      _lastSplitTimeSeconds = 0;
-      _lastSplitCalories = 0;
-      _autoPauses = [];
-      _currentAutoPauseDurationSeconds = 0;
-      _autoPauseStartTime = null;
-      _routePoints = [[]];
-      _routePointTimes = [[]];
-      _isRunning = true;
-      _isPaused = false;
-      _isFinished = false;
-      _isFirstPointAfterResume = true;
-      _isAutoPaused = false;
-      _autoPauseAnchor = null;
-      _lowSpeedTicks = 0;
-    });
-    _isStartingRun = false;
-
-    _startTimersAndStreams(isNew: true);
-
-    AnalyticsService().logRunStarted(
-      runType: _distanceGoal != null ? 'meta_distancia' : 'livre',
-    );
-  }
-
-  void _startTimersAndStreams({required bool isNew}) {
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_isPaused || _isAutoPaused) {
-        _pausedSecondsElapsed++;
-        if (_isAutoPaused) {
-          _currentAutoPauseDurationSeconds++;
-        }
-        _uiTick.value++;
-        if (_pausedSecondsElapsed % 5 == 0) {
-          _persistState();
-        }
-        return;
-      }
-      _secondsElapsed++;
-      if (_pacingService != null) {
-        final oldStatus = _pacingFeedback?.status;
-        _pacingFeedback = _pacingService!.getUpdate(
-          _distanceKm,
-          _secondsElapsed,
+  void _onRunSessionEvent(RunSessionEvent event) {
+    if (!mounted) return;
+    switch (event) {
+      case RunLocationReady(:final position):
+        _centerMapInitially(position);
+      case RunPositionUpdated(:final position):
+        unawaited(_updateCamera(position));
+      case RunAutoPauseStarted():
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Treino pausado automaticamente'),
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
-
-        if (_pacingFeedback != null &&
-            _pacingFeedback!.status != oldStatus &&
-            _pacingFeedback!.status != PacingStatus.none) {
-          HapticFeedback.mediumImpact();
-        }
-      }
-      _uiTick.value++;
-      if (_secondsElapsed % 5 == 0) {
-        _persistState();
-      }
-    });
-
-    WakelockPlus.enable();
-
-    if (isNew) {
-      _persistState(forceRoute: true);
-    }
-
-    try {
-      _positionStream = _locationService.getLocationStream().listen((
-        Position position,
-      ) {
-        if (_isPaused) return;
-
-        final newPoint = LatLng(position.latitude, position.longitude);
-
-        if (_isAutoPaused) {
-          final distanceMeters = _autoPauseAnchor != null
-              ? Geolocator.distanceBetween(
-                  _autoPauseAnchor!.latitude,
-                  _autoPauseAnchor!.longitude,
-                  position.latitude,
-                  position.longitude,
-                )
-              : 0.0;
-
-          bool shouldResume = false;
-          if (position.speed > 1.2) {
-            shouldResume = true;
-          } else if (distanceMeters > 12.0) {
-            shouldResume = true;
-          }
-
-          if (shouldResume) {
-            final pauseAnchor = _autoPauseAnchor;
-            final durationSecs = _currentAutoPauseDurationSeconds;
-            final startTime = _autoPauseStartTime ?? DateTime.now();
-
-            setState(() {
-              if (pauseAnchor != null && durationSecs > 0) {
-                _autoPauses.add(AutoPauseEvent(
-                  latitude: pauseAnchor.latitude,
-                  longitude: pauseAnchor.longitude,
-                  resumeLatitude: newPoint.latitude,
-                  resumeLongitude: newPoint.longitude,
-                  durationSeconds: durationSecs,
-                  timestamp: startTime.toIso8601String(),
-                ));
-              }
-              _isAutoPaused = false;
-              _autoPauseAnchor = null;
-              _autoPauseStartTime = null;
-              _currentAutoPauseDurationSeconds = 0;
-              _lowSpeedTicks = 0;
-              _isFirstPointAfterResume = true;
-              _lastResumeSeconds = _secondsElapsed;
-              if (_routePoints.isEmpty || _routePoints.last.isNotEmpty) {
-                _routePoints.add([]);
-                _routePointTimes.add([]);
-              }
-            });
-            _vibrateAutoPauseEnded();
-            if (mounted) {
-              _showAutoResumeSnackBar();
-            }
-          }
-          return;
-        }
-
-        if (GpsFilterService.shouldRejectByAccuracy(
-          pointAccuracy: position.accuracy,
-          elapsedSeconds: _secondsElapsed,
-        )) {
-          debugPrint(
-            "GPS impreciso ignorado: ${position.accuracy}m (Max: ${GpsFilterService.maxAllowedAccuracy(_secondsElapsed)})",
-          );
-          return;
-        }
-
-        if (_autoPauseEnabled) {
-          _lowSpeedTicks = GpsFilterService.updateLowSpeedTicks(
-            speed: position.speed,
-            currentTicks: _lowSpeedTicks,
-            elapsedSeconds: _secondsElapsed,
-            lastResumeSeconds: _lastResumeSeconds,
-          );
-          if (GpsFilterService.shouldAutoPause(
-            speed: position.speed,
-            lowSpeedTicks: _lowSpeedTicks,
-            elapsedSeconds: _secondsElapsed,
-            lastResumeSeconds: _lastResumeSeconds,
-          )) {
-            setState(() {
-              _isAutoPaused = true;
-              _autoPauseAnchor = newPoint;
-              _autoPauseStartTime = DateTime.now();
-              _currentAutoPauseDurationSeconds = 0;
-              _lowSpeedTicks = 0;
-            });
-            _vibrateAutoPauseStarted();
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Treino pausado automaticamente'),
-                  duration: Duration(seconds: 2),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            }
-            return;
-          }
-        }
-
-        if (_routePoints.isNotEmpty && _routePoints.last.isNotEmpty) {
-          final lastPoint = _routePoints.last.last;
-          final distanceInMeters = Geolocator.distanceBetween(
-            lastPoint.latitude,
-            lastPoint.longitude,
-            newPoint.latitude,
-            newPoint.longitude,
-          );
-
-          if (_isFirstPointAfterResume) {
-            setState(() {
-              if (_routePoints.last.isEmpty) {
-                _routePoints.last.add(newPoint);
-                _routePointTimes.last.add(_secondsElapsed);
-              } else {
-                _routePoints.add([newPoint]);
-                _routePointTimes.add([_secondsElapsed]);
-              }
-              _paceBuffer = [position];
-              _isFirstPointAfterResume = false;
-            });
-            _updateCamera(newPoint);
-            return;
-          }
-
-          final lastPosition = _paceBuffer.isNotEmpty ? _paceBuffer.last : null;
-          if (lastPosition != null) {
-            final timeDiff = position.timestamp
-                .difference(lastPosition.timestamp)
-                .inSeconds;
-            if (GpsFilterService.shouldRejectBySpeedJump(
-              distanceMeters: distanceInMeters,
-              timeDiffSeconds: timeDiff,
-            )) {
-              debugPrint(
-                "Salto de GPS detectado (velocidade excessiva): ${(distanceInMeters / timeDiff).toStringAsFixed(1)} m/s",
-              );
-              return;
-            }
-          }
-
-          if (GpsFilterService.isSignificantDisplacement(
-            distanceMeters: distanceInMeters,
-            estimatedSpeed: position.speed,
-          )) {
-            setState(() {
-              _distanceKm += distanceInMeters / 1000;
-              _paceBuffer.add(position);
-              if (_paceBuffer.length > 30) _paceBuffer.removeAt(0);
-              _updateSmoothedPace();
-
-              _routePoints.last.add(newPoint);
-              _routePointTimes.last.add(_secondsElapsed);
-            });
-
-            _updateCamera(newPoint);
-
-            int currentKm = _distanceKm.floor();
-            if (currentKm > _lastKmNotified) {
-              final splitTime = _secondsElapsed - _lastSplitTimeSeconds;
-              final totalCalories = _calculateCalories();
-              final splitCalories = totalCalories - _lastSplitCalories;
-
-              _splits.add(
-                RunSplit(timeSeconds: splitTime, calories: splitCalories),
-              );
-              _lastSplitTimeSeconds = _secondsElapsed;
-              _lastSplitCalories = totalCalories;
-
-              _lastKmNotified = currentKm;
-              _persistState(forceRoute: true);
-
-              if (_userProfile?.kmNotificationsEnabled == true) {
-                final currentPace = _currentSmoothedPace.isNotEmpty
-                    ? _currentSmoothedPace
-                    : '--:--';
-                NotificationService.sendKmMilestone(currentKm, currentPace);
-              }
-
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Row(
-                      children: [
-                        const Icon(
-                          LucideIcons.trophy,
-                          color: AppColors.primaryNeon,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            AchievementService.getIncentiveMessage(currentKm),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
+      case RunAutoPauseResumed():
+        _showAutoResumeSnackBar();
+      case RunKilometerReached(:final message):
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(LucideIcons.trophy, color: AppColors.primaryNeon),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
-                    backgroundColor: AppColors.backgroundDarkGreen,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    duration: const Duration(seconds: 4),
                   ),
-                );
-              }
-            }
-          }
-        } else {
-          setState(() {
-            if (_routePoints.isEmpty) {
-              _routePoints = [
-                [newPoint],
-              ];
-              _routePointTimes = [
-                [_secondsElapsed],
-              ];
-            } else if (_routePoints.last.isEmpty) {
-              _routePoints.last.add(newPoint);
-              _routePointTimes.last.add(_secondsElapsed);
-            } else {
-              _routePoints.add([newPoint]);
-              _routePointTimes.add([_secondsElapsed]);
-            }
-            _paceBuffer = [position];
-            _isFirstPointAfterResume = false;
-          });
-          _updateCamera(newPoint);
-        }
-      });
-    } catch (e) {
-      debugPrint("Error starting location stream: $e");
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.backgroundDarkGreen,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      case RunSessionError(:final message):
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
     }
   }
 
-  void _updateSmoothedPace() {
-    if (_paceBuffer.length < 5) {
-      _currentSmoothedPace = '0:00';
-      return;
-    }
-
-    final first = _paceBuffer.first;
-    final last = _paceBuffer.last;
-
-    double totalBufferDist = 0;
-    for (int i = 0; i < _paceBuffer.length - 1; i++) {
-      totalBufferDist += Geolocator.distanceBetween(
-        _paceBuffer[i].latitude,
-        _paceBuffer[i].longitude,
-        _paceBuffer[i + 1].latitude,
-        _paceBuffer[i + 1].longitude,
+  Future<void> _centerMapInitially(LatLng position) async {
+    try {
+      final controller = await _controller.future;
+      if (!mounted) return;
+      _lastCameraUpdateAt = DateTime.now();
+      await controller.animateCamera(
+        CameraUpdate.newLatLngZoom(
+          LatLng(position.latitude - 0.002, position.longitude),
+          16,
+        ),
       );
-    }
-
-    final timeSeconds = last.timestamp.difference(first.timestamp).inSeconds;
-
-    if (timeSeconds > 0 && totalBufferDist > 10) {
-      double paceInMinutes = (timeSeconds / 60) / (totalBufferDist / 1000);
-      if (paceInMinutes > 0 && paceInMinutes < 35) {
-        int minutes = paceInMinutes.toInt();
-        int seconds = ((paceInMinutes - minutes) * 60).toInt();
-        _currentSmoothedPace = '$minutes:${seconds.toString().padLeft(2, '0')}';
-      }
-    } else if (timeSeconds > 10) {
-      _currentSmoothedPace = '0:00';
+    } catch (e) {
+      debugPrint('Error centering map: $e');
     }
   }
 
-  void _pauseRun() {
-    setState(() {
-      _isPaused = true;
-      _isAutoPaused = false;
-      _lowSpeedTicks = 0;
-      _autoPauseAnchor = null;
-    });
-    _timer?.cancel();
-    WakelockPlus.disable();
-    _persistState(forceRoute: true);
+  Future<void> _updateCamera(LatLng target) async {
+    final now = DateTime.now();
+    final last = _lastCameraUpdateAt;
+    if (last != null && now.difference(last) < _cameraUpdateInterval) return;
+    _lastCameraUpdateAt = now;
+    try {
+      final controller = await _controller.future;
+      if (!mounted) return;
+      await controller.animateCamera(CameraUpdate.newLatLng(target));
+    } catch (e) {
+      debugPrint('Error updating map camera: $e');
+    }
   }
 
-  void _resumeRun() {
-    setState(() {
-      _isPaused = false;
-      _isAutoPaused = false;
-      _lowSpeedTicks = 0;
-      _autoPauseAnchor = null;
-      _isFirstPointAfterResume = true;
-      _lastResumeSeconds = _secondsElapsed;
-      if (_routePoints.isEmpty || _routePoints.last.isNotEmpty) {
-        _routePoints.add([]);
-        _routePointTimes.add([]);
-      }
-    });
-    _startTimersAndStreams(isNew: false);
-    _persistState(forceRoute: true);
+  Future<void> _startRun() async {
+    await _session.start();
   }
 
-  void _stopRun() async {
-    _pauseRun();
+  void _pauseRun() => _session.pause();
 
-    final bool? shouldStop = await showDialog<bool>(
+  void _resumeRun() => _session.resume();
+
+  Future<void> _stopRun() async {
+    _session.pause();
+    final shouldStop = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
@@ -1091,109 +447,54 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         ],
       ),
     );
-
+    if (!mounted) return;
     if (shouldStop == true) {
-      _finalizeRun();
+      await _finalizeRun();
     } else {
-      _resumeRun();
+      _session.resume();
     }
   }
 
-  void _finalizeRun() {
-    _positionStream?.cancel();
-
-    if (RunFinalizationService.isShortRun(
-      distanceKm: _distanceKm,
-      elapsedSeconds: _secondsElapsed,
-    )) {
-      _showShortRunWarning();
-    } else {
-      if (RunFinalizationService.shouldAddFinalSplit(
-        distanceKm: _distanceKm,
-        lastKmNotified: _lastKmNotified,
-      )) {
-        final splitTime = RunFinalizationService.calculateFinalSplitTime(
-          elapsedSeconds: _secondsElapsed,
-          lastSplitTimeSeconds: _lastSplitTimeSeconds,
-        );
-        final totalCalories = _calculateCalories();
-        final splitCalories = RunFinalizationService.calculateFinalSplitCalories(
-          totalCalories: totalCalories,
-          lastSplitCalories: _lastSplitCalories,
-        );
-
-        _splits.add(RunSplit(timeSeconds: splitTime, calories: splitCalories));
-        _lastKmNotified = RunFinalizationService.calculateFinalNotifiedKm(
-          _distanceKm,
-        );
-      }
-
-      setState(() {
-        _isRunning = false;
-        _isFinished = true;
-      });
-      // NÃO limpa o treino ativo aqui: se o app morrer antes de o usuário
-      // salvar, o snapshot continua recuperável no próximo boot.
-      _persistFinished();
+  Future<void> _finalizeRun() async {
+    final needsConfirmation = await _session.finish();
+    if (needsConfirmation && mounted) {
+      await _showShortRunWarning();
     }
   }
 
   Future<void> _showShortRunWarning() async {
     final shouldDiscard = await ActiveRunDialogs.showShortRunWarning(
       context,
-      (_distanceKm * 1000).toInt(),
-      _secondsElapsed,
+      (_session.distanceKm * 1000).toInt(),
+      _session.elapsedSeconds,
     );
+    if (!mounted) return;
 
     if (shouldDiscard == true) {
-      _stopRunInternals();
-      await DatabaseService().clearActiveRun();
+      await _session.discardActiveRun();
       if (mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/dashboard', (route) => false);
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/dashboard', (route) => false);
       }
     } else if (shouldDiscard == false) {
-      DatabaseService().clearActiveRun();
-      setState(() {
-        _isRunning = false;
-        _isFinished = true;
-      });
+      // Preserva o snapshot finalizado. Nada é apagado antes do save real.
+      await _session.finish(forceSave: true);
     }
-  }
-
-  Future<void> _updateCamera(LatLng target) async {
-    // Reposicionar a câmera a cada ponto custa caro no Maps. 3 s já acompanha
-    // o corredor e sobra para o mapa respirar.
-    final now = DateTime.now();
-    final last = _lastCameraUpdateAt;
-    if (last != null && now.difference(last) < _cameraUpdateInterval) return;
-    _lastCameraUpdateAt = now;
-
-    final controller = await _controller.future;
-    controller.animateCamera(CameraUpdate.newLatLng(target));
-  }
-
-  Future<bool?> _showDiscardConfirmation() {
-    return ActiveRunDialogs.showDiscardConfirmation(context);
-  }
-
-  Future<bool?> _showExitConfirmation() {
-    return ActiveRunDialogs.showExitConfirmation(context);
   }
 
   void _handleBackPress() async {
-    if (_isExiting) return;
-
-    final bool canExit = !_isRunning && !_isFinished;
-    if (canExit) {
+    if (_session.canExit) {
       if (mounted) Navigator.of(context).pop();
       return;
     }
-
-    final shouldExit = await _showExitConfirmation();
-    if (shouldExit == true) {
-      _stopRunInternals();
+    final shouldExit = await ActiveRunDialogs.showExitConfirmation(context);
+    if (shouldExit == true && mounted) {
+      await _session.suspendAndPersist();
       if (mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/dashboard', (route) => false);
+        Navigator.of(
+          context,
+        ).pushNamedAndRemoveUntil('/dashboard', (route) => false);
       }
     }
   }
@@ -1201,84 +502,44 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
   void _showGoalDialog() {
     ActiveRunDialogs.showGoalDialog(
       context,
-      initialDistanceGoal: _distanceGoal,
+      initialDistanceGoal: _session.distanceGoal,
       onGoalSet: (distance, targetTimeSeconds, pacingService) {
-        setState(() {
-          _distanceGoal = distance;
-          _targetTimeSeconds = targetTimeSeconds;
-          _pacingService = pacingService;
-          _pacingFeedback = null;
-        });
+        _session.setGoal(
+          distanceKm: distance,
+          targetTimeSeconds: targetTimeSeconds,
+          pacingService: pacingService,
+        );
       },
-      onNoGoal: () {
-        setState(() {
-          _distanceGoal = null;
-          _targetTimeSeconds = null;
-          _pacingService = null;
-          _pacingFeedback = null;
-        });
-      },
+      onNoGoal: () => _session.setGoal(
+        distanceKm: null,
+        targetTimeSeconds: null,
+        pacingService: null,
+      ),
     );
   }
 
-  Future<String?> _showTrainingTypePicker() async {
-    return ActiveRunDialogs.showTrainingTypePicker(context);
-  }
-
-  Future<String?> _showMoodPicker() async {
-    return ActiveRunDialogs.showMoodPicker(context);
-  }
-
-  void _stopRunInternals() {
-    _timer?.cancel();
-    _positionStream?.cancel();
-    WakelockPlus.disable();
-  }
-
   void _toggleMinimalMap() {
-    setState(() {
-      _showMinimalMap = !_showMinimalMap;
-    });
-    _saveMapPreference(_showMinimalMap);
+    setState(() => _showMinimalMap = !_showMinimalMap);
+    unawaited(_saveMapPreference(_showMinimalMap));
   }
 
   void _lockScreen() {
-    setState(() {
-      _isScreenLocked = true;
-    });
+    setState(() => _isScreenLocked = true);
     HapticFeedback.heavyImpact();
   }
 
   void _unlockScreen() {
-    setState(() {
-      _isScreenLocked = false;
-    });
-  }
-
-  Future<void> _vibrateAutoPauseStarted() async {
-    final hasVibrator = await Vibration.hasVibrator();
-    if (hasVibrator == true) {
-      await Vibration.vibrate(duration: 350, amplitude: 180);
-      return;
-    }
-    await HapticFeedback.heavyImpact();
-  }
-
-  Future<void> _vibrateAutoPauseEnded() async {
-    final hasVibrator = await Vibration.hasVibrator();
-    if (hasVibrator == true) {
-      await Vibration.vibrate(pattern: [0, 120, 80, 120]);
-      return;
-    }
-    await HapticFeedback.mediumImpact();
+    setState(() => _isScreenLocked = false);
   }
 
   Future<void> _discardFinishedRun() async {
-    final confirmed = await _showDiscardConfirmation();
+    final confirmed = await ActiveRunDialogs.showDiscardConfirmation(context);
     if (confirmed != true || !mounted) return;
-    await DatabaseService().clearActiveRun();
+    await _session.discardActiveRun();
     if (!mounted) return;
-    Navigator.of(context).pushNamedAndRemoveUntil('/dashboard', (route) => false);
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil('/dashboard', (route) => false);
   }
 
   Future<void> _saveRun() async {
@@ -1286,29 +547,21 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
     setState(() => _isSaving = true);
 
     try {
-      final String? selectedType = await _showTrainingTypePicker();
+      final selectedType = await ActiveRunDialogs.showTrainingTypePicker(
+        context,
+      );
       if (!mounted) return;
       if (selectedType == null) {
         setState(() => _isSaving = false);
         return;
       }
 
-      final String selectedMood = await _showMoodPicker() ?? '';
+      final selectedMood = await ActiveRunDialogs.showMoodPicker(context) ?? '';
       if (!mounted) return;
 
-      final result = await RunPersistenceCoordinator().saveCompletedRun(
-        startTime: _runStartTime,
-        distanceKm: _distanceKm,
-        durationSeconds: _secondsElapsed,
-        pausedDurationSeconds: _pausedSecondsElapsed,
-        pace: _calculatePace(),
-        calories: _calculateCalories(),
-        route: List<List<LatLng>>.from(_routePoints),
-        routeTimes: List<List<int>>.from(_routePointTimes),
+      final result = await _session.saveCompletedRun(
         type: selectedType,
         mood: selectedMood,
-        splits: List.from(_splits),
-        autoPauses: List.from(_autoPauses),
       );
       if (!mounted) return;
 
@@ -1318,7 +571,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       if (result.isPlanSuccessful) {
         snackMessage = 'SESSÃO DO PLANO CONCLUÍDA! 🎯';
       } else if (result.newAwards.isNotEmpty) {
-        snackMessage = 'PARABÉNS! Você ganhou ${result.newAwards.length} novas conquistas! 🏆';
+        snackMessage =
+            'PARABÉNS! Você ganhou ${result.newAwards.length} novas conquistas! 🏆';
       }
 
       if (snackMessage.isNotEmpty) {
@@ -1337,10 +591,9 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
         );
       }
 
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        '/dashboard',
-        (route) => false,
-      );
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil('/dashboard', (route) => false);
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -1355,7 +608,6 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
           ),
         );
       }
-      // O snapshot do treino permanece no banco: nada é perdido aqui.
       AnalyticsService().recordError(
         e,
         StackTrace.current,
@@ -1381,9 +633,8 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
       );
   }
 
-  /// Minimiza o treino: empurra o modo navegação POR CIMA. O motor (GPS,
-  /// timers, persistência) continua vivo na rota de baixo — o treino segue
-  /// contando e traçando enquanto o usuário navega pelas abas.
+  /// Minimiza o treino: empurra o modo navegação por cima. O controller
+  /// continua vivo na rota de baixo, contando e persistindo normalmente.
   void _minimizeRun() {
     Navigator.push(
       context,
@@ -1393,128 +644,95 @@ class _ActiveRunScreenState extends State<ActiveRunScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool canExit = !_isRunning && !_isFinished;
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final double safeTopInset = MediaQuery.viewPaddingOf(context).top;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final safeTopInset = MediaQuery.viewPaddingOf(context).top;
 
     return PopScope(
-      canPop: _isExiting || canExit,
+      canPop: _session.canExit,
       onPopInvokedWithResult: (didPop, result) {
-        if (didPop || _isExiting) return;
+        if (didPop || _session.canExit) return;
         _handleBackPress();
       },
       child: Scaffold(
         resizeToAvoidBottomInset: false,
         body: Stack(
           children: [
-            ActiveRunMapView(
-              isDark: isDark,
-              hasPermissions: _hasPermissions,
-              isFinished: _isFinished,
-              isMapReady: _isMapReady,
-              mapStyle: _getMapStyle(),
-              safeTopInset: safeTopInset,
-              distanceGoal: _distanceGoal,
-              polylines: _buildRoutePolylines(),
-              markers: _buildMapMarkers(),
-              onMapCreated: (GoogleMapController controller) {
-                _controller.complete(controller);
-                Future.delayed(const Duration(milliseconds: 150), () {
-                  if (mounted) {
-                    setState(() => _isMapReady = true);
-                  }
-                });
-              },
-            ),
-
-            ActiveRunTopBar(
-              isDark: isDark,
-              isRunning: _isRunning,
-              isPaused: _isPaused,
-              isAutoPaused: _isAutoPaused,
-              showMinimalMap: _showMinimalMap,
-              autoPauseEnabled: _autoPauseEnabled,
-              onBack: _handleBackPress,
-              onMinimize: _minimizeRun,
-              onToggleMinimalMap: _toggleMinimalMap,
-              onToggleAutoPause: _toggleAutoPause,
-              onLock: _lockScreen,
-            ),
-
-            // Painel de métricas: ÚNICO subtree que redesenha a cada segundo.
-            // O mapa, os markers e a top bar ficam fora do tick — o
-            // cronômetro só mexe no notifier.
-            ValueListenableBuilder<int>(
-              valueListenable: _uiTick,
-              builder: (context, _, _) => ActiveRunBottomPanel(
+            ListenableBuilder(
+              listenable: _mapListenable,
+              builder: (context, _) => ActiveRunMapView(
                 isDark: isDark,
-                isRunning: _isRunning,
-                isPaused: _isPaused,
-                isAutoPaused: _isAutoPaused,
-                isFinished: _isFinished,
+                hasPermissions: _session.hasPermissions,
+                isFinished: _session.isFinished,
+                isMapReady: _isMapReady,
+                mapStyle: _getMapStyle(),
+                safeTopInset: safeTopInset,
+                distanceGoal: _session.distanceGoal,
+                polylines: _buildRoutePolylines(),
+                markers: _buildMapMarkers(),
+                onMapCreated: (controller) {
+                  _controller.complete(controller);
+                  Future.delayed(const Duration(milliseconds: 150), () {
+                    if (mounted) setState(() => _isMapReady = true);
+                  });
+                },
+              ),
+            ),
+            ListenableBuilder(
+              listenable: _session.stateChanges,
+              builder: (context, _) => ActiveRunTopBar(
+                isDark: isDark,
+                isRunning: _session.isRunning,
+                isPaused: _session.isPaused,
+                isAutoPaused: _session.isAutoPaused,
+                showMinimalMap: _showMinimalMap,
+                autoPauseEnabled: _session.autoPauseEnabled,
+                onBack: _handleBackPress,
+                onMinimize: _minimizeRun,
+                onToggleMinimalMap: _toggleMinimalMap,
+                onToggleAutoPause: _toggleAutoPause,
+                onLock: _lockScreen,
+              ),
+            ),
+            // Só o painel escuta o tick; mapa e top bar usam canais próprios.
+            ListenableBuilder(
+              listenable: _panelListenable,
+              builder: (context, _) => ActiveRunBottomPanel(
+                isDark: isDark,
+                isRunning: _session.isRunning,
+                isPaused: _session.isPaused,
+                isAutoPaused: _session.isAutoPaused,
+                isFinished: _session.isFinished,
                 isSaving: _isSaving,
-                distanceKm: _distanceKm,
-                distanceGoal: _distanceGoal,
-                formattedTime: _formatTime(),
-                pace: _calculatePace(),
-                calories: _calculateCalories().toString(),
-                eta: _calculateETA(),
-                pausedSeconds: _pausedSecondsElapsed,
-                pacingFeedback: _pacingFeedback,
-                onStart: () => _startRun(),
+                distanceKm: _session.distanceKm,
+                distanceGoal: _session.distanceGoal,
+                formattedTime: _session.formattedTime,
+                pace: _session.pace,
+                calories: _session.calories.toString(),
+                eta: _session.eta,
+                pausedSeconds: _session.pausedSeconds,
+                pacingFeedback: _session.pacingFeedback,
+                onStart: () => unawaited(_startRun()),
                 onPause: _pauseRun,
                 onResume: _resumeRun,
-                onStop: _stopRun,
+                onStop: () => unawaited(_stopRun()),
                 onShowGoalDialog: _showGoalDialog,
                 onDiscard: _discardFinishedRun,
                 onSave: _saveRun,
               ),
             ),
-
-            if (_isScreenLocked)
-              ActiveRunLockOverlay(
-                onUnlock: _unlockScreen,
-              ),
+            if (_isScreenLocked) ActiveRunLockOverlay(onUnlock: _unlockScreen),
           ],
         ),
       ),
     );
   }
 
-  int _calculateCalories() {
-    return RunMetricsService.calculateCalories(
-      _distanceKm,
-      _userProfile?.weight ?? 70.0,
-    );
-  }
-
-  String _calculatePace() {
-    if (_isRunning && !_isFinished) {
-      return _currentSmoothedPace;
-    }
-    return RunMetricsService.calculatePace(_secondsElapsed, _distanceKm);
-  }
-
-  String _calculateETA() {
-    return RunMetricsService.calculateETA(
-      currentDistanceKm: _distanceKm,
-      goalDistanceKm: _distanceGoal ?? 0,
-      elapsedSeconds: _secondsElapsed,
-    );
-  }
-
-  String _formatTime() {
-    return TimeUtils.formatDuration(_secondsElapsed);
-  }
-
   @override
   void dispose() {
-    _timer?.cancel();
-    _uiTick.dispose();
-    _positionStream?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _eventSubscription?.cancel();
     _themeService?.removeListener(_onThemeChanged);
-    // Evita a tela ficar acesa para sempre se o usuário sair sem parar o treino.
-    WakelockPlus.disable();
+    _session.dispose();
     super.dispose();
   }
 }
