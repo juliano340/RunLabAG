@@ -128,8 +128,8 @@ class _RunDetailScreenState extends State<RunDetailScreen>
     setState(() {
       _dragProgress = hasNeighbor ? next : next.sign * 0.12;
       _dragNeighborIndex = hasNeighbor ? targetIndex : null;
-      // a pagina desliza com o dedo (max ~8% da largura)
-      _slideFraction = _dragProgress! * 0.12;
+      // a pagina desliza com o dedo (~24dp, mesma linguagem da transicao)
+      _slideFraction = _dragProgress! * 0.06;
     });
   }
 
@@ -214,9 +214,16 @@ class _RunDetailScreenState extends State<RunDetailScreen>
     final crossed = !_flipSwapped && v >= 0.5 && _flipIncoming != null;
     if (mounted) {
       setState(() {
-        final half = v < 0.5 ? v * 2 : (1 - v) * 2;
-        final exiting = v < 0.5;
-        _slideFraction = _flipDirection * (exiting ? half : -half) * 0.35;
+        // Padrao Material "shared axis": saida rapida, pausa curta de
+        // respiro, entrada devagar — as faces nunca se cruzam
+        // semi-transparentes.
+        if (v < 0.4) {
+          _slideFraction = _flipDirection * 0.06 * (v / 0.4);
+        } else if (v > 0.6) {
+          _slideFraction = -_flipDirection * 0.06 * (1 - (v - 0.6) / 0.4);
+        } else {
+          _slideFraction = _flipDirection * 0.06;
+        }
         if (crossed) {
           _flipSwapped = true;
           _run = _flipIncoming!;
@@ -238,13 +245,15 @@ class _RunDetailScreenState extends State<RunDetailScreen>
       ..translateByDouble(slide * width, 0.0, 0.0, 1.0);
   }
 
-  /// Crossfade com piso: a face esmaece ate 25% (nunca some de todo) —
-  /// a troca de dados acontece esmaecida, sem piscar para o fundo.
+  /// Fade sequenciado (Material shared axis): o treino atual some rapido
+  /// (ate 40% do tempo), ha uma pausa curta de respiro e o novo surge
+  /// devagar — as duas faces nunca aparecem juntas.
   double _pageOpacity() {
     if (_flipIncoming == null) return 1.0;
     final v = _flipCurved.value;
-    final k = v < 0.5 ? 1 - v * 2 : (v - 0.5) * 2;
-    return (0.25 + 0.75 * k).clamp(0.0, 1.0);
+    if (v < 0.4) return 1 - v / 0.4;
+    if (v > 0.6) return (v - 0.6) / 0.4;
+    return 0.0;
   }
 
   PaceZoneResult _analyzePace() {
