@@ -6,10 +6,10 @@ import '../../domain/models/user_stats.dart';
 import '../../domain/models/user_totals.dart';
 import '../../domain/models/weekly_evolution_stats.dart';
 import '../../domain/repositories/stats_repository.dart';
+import '../data_change_hub.dart';
 import '../read_model_cache.dart';
 
-/// Cache de consultas derivadas. A invalidação é global após qualquer escrita,
-/// o que é simples e seguro para o volume atual do app.
+/// Cache de consultas derivadas com invalidação por escopo.
 class CachingStatsRepository implements StatsRepository {
   final StatsRepository _inner;
   final ReadModelCache _cache;
@@ -23,7 +23,7 @@ class CachingStatsRepository implements StatsRepository {
     double goalValue,
   ) async {
     await _inner.saveGoalHistory(periodId, goalType, goalValue);
-    _cache.invalidate();
+    _cache.invalidate({DataScope.goals});
   }
 
   @override
@@ -31,6 +31,7 @@ class CachingStatsRepository implements StatsRepository {
     return _cache.getOrFetch(
       'goal:$periodId:$goalType',
       () => _inner.getGoalHistory(periodId, goalType),
+      scopes: {DataScope.goals},
     );
   }
 
@@ -42,6 +43,7 @@ class CachingStatsRepository implements StatsRepository {
     final value = await _cache.getOrFetch(
       key,
       () => _inner.getWeeklyEvolution(numberOfWeeks),
+      scopes: {DataScope.runs, DataScope.profile, DataScope.goals},
     );
     return List<WeeklyEvolutionStats>.unmodifiable(value);
   }
@@ -49,13 +51,21 @@ class CachingStatsRepository implements StatsRepository {
   @override
   Future<UserTotals> getTotals({DateTime? since}) {
     final key = 'totals:${_windowKey(since, DateTime.now())}';
-    return _cache.getOrFetch(key, () => _inner.getTotals(since: since));
+    return _cache.getOrFetch(
+      key,
+      () => _inner.getTotals(since: since),
+      scopes: {DataScope.runs},
+    );
   }
 
   @override
   Future<UserStats> getUserStats({DateTime? since}) {
     final key = 'user-stats:${_windowKey(since, DateTime.now())}';
-    return _cache.getOrFetch(key, () => _inner.getUserStats(since: since));
+    return _cache.getOrFetch(
+      key,
+      () => _inner.getUserStats(since: since),
+      scopes: {DataScope.runs},
+    );
   }
 
   @override
@@ -63,6 +73,7 @@ class CachingStatsRepository implements StatsRepository {
     final value = await _cache.getOrFetch(
       'monitored-distances',
       _inner.getMonitoredDistances,
+      scopes: {DataScope.monitoredDistances},
     );
     return List<double>.unmodifiable(value);
   }
@@ -70,18 +81,22 @@ class CachingStatsRepository implements StatsRepository {
   @override
   Future<void> addMonitoredDistance(double distance) async {
     await _inner.addMonitoredDistance(distance);
-    _cache.invalidate();
+    _cache.invalidate({DataScope.monitoredDistances});
   }
 
   @override
   Future<void> removeMonitoredDistance(double distance) async {
     await _inner.removeMonitoredDistance(distance);
-    _cache.invalidate();
+    _cache.invalidate({DataScope.monitoredDistances});
   }
 
   @override
   Future<PersonalRecordsSnapshot> getPersonalRecords() {
-    return _cache.getOrFetch('personal-records', _inner.getPersonalRecords);
+    return _cache.getOrFetch(
+      'personal-records',
+      _inner.getPersonalRecords,
+      scopes: {DataScope.runs, DataScope.monitoredDistances},
+    );
   }
 
   @override
@@ -91,6 +106,7 @@ class CachingStatsRepository implements StatsRepository {
     final value = await _cache.getOrFetch(
       'record-history:${targetDistanceKm.toStringAsFixed(4)}',
       () => _inner.getRecordHistory(targetDistanceKm),
+      scopes: {DataScope.runs},
     );
     return List<RecordHistoryEntry>.unmodifiable(value);
   }
@@ -100,6 +116,7 @@ class CachingStatsRepository implements StatsRepository {
     final value = await _cache.getOrFetch(
       'longest-distance-history',
       _inner.getLongestDistanceHistory,
+      scopes: {DataScope.runs},
     );
     return List<LongestDistanceHistoryEntry>.unmodifiable(value);
   }
@@ -107,7 +124,11 @@ class CachingStatsRepository implements StatsRepository {
   @override
   Future<List<double>> getWeeklyProgress() async {
     final key = 'weekly-progress:${_weekKey(DateTime.now())}';
-    final value = await _cache.getOrFetch(key, _inner.getWeeklyProgress);
+    final value = await _cache.getOrFetch(
+      key,
+      _inner.getWeeklyProgress,
+      scopes: {DataScope.runs},
+    );
     return List<double>.unmodifiable(value);
   }
 
@@ -120,6 +141,7 @@ class CachingStatsRepository implements StatsRepository {
     final value = await _cache.getOrFetch(
       key,
       () => _inner.getMonthlyEvolution(numberOfMonths),
+      scopes: {DataScope.runs, DataScope.profile, DataScope.goals},
     );
     return List<MonthlyEvolutionStats>.unmodifiable(value);
   }
@@ -133,6 +155,7 @@ class CachingStatsRepository implements StatsRepository {
       'runs-by-type:${start.millisecondsSinceEpoch}:'
       '${end.millisecondsSinceEpoch}',
       () => _inner.getRunsByTypeBetween(start, end),
+      scopes: {DataScope.runs},
     );
     return Map<String, int>.unmodifiable(value);
   }
@@ -140,13 +163,21 @@ class CachingStatsRepository implements StatsRepository {
   @override
   Future<ConsistencyStats> getConsistencyStats(DateTime since) {
     final key = 'consistency:${_dayKey(since)}:${_dayKey(DateTime.now())}';
-    return _cache.getOrFetch(key, () => _inner.getConsistencyStats(since));
+    return _cache.getOrFetch(
+      key,
+      () => _inner.getConsistencyStats(since),
+      scopes: {DataScope.runs},
+    );
   }
 
   @override
   Future<Map<String, dynamic>> getPerformanceTrend(int weeks) {
     final key = 'performance-trend:$weeks:${_weekKey(DateTime.now())}';
-    return _cache.getOrFetch(key, () => _inner.getPerformanceTrend(weeks));
+    return _cache.getOrFetch(
+      key,
+      () => _inner.getPerformanceTrend(weeks),
+      scopes: {DataScope.runs, DataScope.profile, DataScope.goals},
+    );
   }
 
   @override
@@ -164,6 +195,7 @@ class CachingStatsRepository implements StatsRepository {
     return _cache.getOrFetch(
       key,
       () => _inner.comparePeriods(start1, end1, start2, end2),
+      scopes: {DataScope.runs},
     );
   }
 

@@ -1,5 +1,6 @@
 import '../../domain/models/run_model.dart';
 import '../../domain/repositories/run_repository.dart';
+import '../data_change_hub.dart';
 import '../read_model_cache.dart';
 
 /// Compartilha resumos leves entre Histórico, Home, Recordes e Análises.
@@ -13,12 +14,16 @@ class CachingRunRepository implements RunRepository {
   @override
   Future<void> saveRun(RunModel run) async {
     await _inner.saveRun(run);
-    _cache.invalidate();
+    _cache.invalidate({DataScope.runs});
   }
 
   @override
   Future<List<RunModel>> getSummaries() async {
-    final runs = await _cache.getOrFetch('run-summaries', _inner.getSummaries);
+    final runs = await _cache.getOrFetch(
+      'run-summaries',
+      _inner.getSummaries,
+      scopes: {DataScope.runs},
+    );
     return List<RunModel>.unmodifiable(runs);
   }
 
@@ -48,7 +53,7 @@ class CachingRunRepository implements RunRepository {
   @override
   Future<void> deleteRun(String id) async {
     await _inner.deleteRun(id);
-    _cache.invalidate();
+    _cache.invalidate({DataScope.runs});
   }
 
   @override
@@ -57,7 +62,7 @@ class CachingRunRepository implements RunRepository {
     Map<String, double> distanceByZone,
   ) async {
     await _inner.savePaceZones(runId, distanceByZone);
-    _cache.invalidate();
+    _cache.invalidate({DataScope.paceZones});
   }
 
   @override

@@ -1,19 +1,23 @@
 import 'package:flutter/foundation.dart';
+
+import '../data/data_change_hub.dart';
 import '../data/read_model_cache.dart';
 
-/// Sinal global de mudança dos dados persistidos.
+/// Ponte de compatibilidade para publicar mudanças no hub.
 ///
-/// Não armazena dados: apenas avisa as abas vivas e, no próximo passo, o
-/// cache compartilhado de que alguma leitura precisa ser invalidada.
+/// As telas novas escutam escopos diretamente pelo [DataChangeHub].
 class RunsProvider extends ChangeNotifier {
-  final ReadModelCache? _cache;
+  final DataChangeHub? _hub;
 
-  RunsProvider({ReadModelCache? cache}) : _cache = cache;
+  RunsProvider({DataChangeHub? changes, ReadModelCache? cache})
+    : _hub = changes ?? cache?.changes;
 
-  void notifyRunSaved() => notifyDataChanged();
+  void notifyRunSaved({Set<DataScope> scopes = const {DataScope.runs}}) {
+    notifyDataChanged(scopes: scopes);
+  }
 
-  void notifyDataChanged() {
-    _cache?.invalidate();
+  void notifyDataChanged({Set<DataScope> scopes = const {DataScope.all}}) {
+    _hub?.emit(scopes);
     notifyListeners();
   }
 }

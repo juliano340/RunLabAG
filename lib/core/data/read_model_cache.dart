@@ -1,23 +1,31 @@
+import 'data_change_hub.dart';
+
 /// Cache de read models compartilhado por todas as telas.
 ///
-/// A chave inclui a revisão dos dados. Resultados de consultas iniciadas antes
-/// de uma invalidação nunca são armazenados como atuais, e chamadas simultâneas
-/// para a mesma chave compartilham um único Future (single-flight).
+/// A versão de cada entrada considera apenas os escopos dos quais ela depende.
+/// Consultas iniciadas antes de uma mudança não são armazenadas como atuais e
+/// chamadas simultâneas para a mesma chave compartilham um Future.
 class ReadModelCache {
-  int _revision = 0;
+  final DataChangeHub _hub;
   final Map<String, Object?> _values = {};
   final Map<String, Future<Object?>> _inFlight = {};
 
-  int get revision => _revision;
+  ReadModelCache({DataChangeHub? hub}) : _hub = hub ?? DataChangeHub();
 
-  void invalidate() {
-    _revision++;
-    _values.clear();
+  DataChangeHub get changes => _hub;
+  int get revision => _hub.revision(DataScope.all);
+
+  void invalidate([Set<DataScope> scopes = const {DataScope.all}]) {
+    _hub.emit(scopes);
   }
 
-  Future<T> getOrFetch<T>(String key, Future<T> Function() fetch) async {
-    final version = _revision;
-    final versionedKey = '$version:$key';
+  Future<T> getOrFetch<T>(
+    String key,
+    Future<T> Function() fetch, {
+    Set<DataScope> scopes = const {DataScope.all},
+  }) async {
+    final signature = _hub.signature(scopes);
+    final versionedKey = '$signature:$key';
     final cached = _values[versionedKey];
     if (_values.containsKey(versionedKey) && cached is T) return cached;
 
@@ -27,7 +35,7 @@ class ReadModelCache {
     late final Future<T> future;
     future = fetch()
         .then((value) {
-          if (_revision == version) {
+          if (_hub.signature(scopes) == signature) {
             _values[versionedKey] = value;
             if (_values.length > 200) {
               _values.remove(_values.keys.first);

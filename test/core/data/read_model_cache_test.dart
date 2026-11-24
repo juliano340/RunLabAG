@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:runlabag/core/data/data_change_hub.dart';
 import 'package:runlabag/core/data/read_model_cache.dart';
 
 void main() {
@@ -59,6 +60,64 @@ void main() {
       oldGate.complete(1);
       expect(await oldRead, 1);
       expect(await cache.getOrFetch('value', () async => 3), 2);
+    },
+  );
+
+  test('invalidação por escopo preserva cache independente', () async {
+    final cache = ReadModelCache();
+    var profileCalls = 0;
+    var runCalls = 0;
+
+    Future<String> profile() async {
+      profileCalls++;
+      return 'profile';
+    }
+
+    Future<String> runs() async {
+      runCalls++;
+      return 'runs';
+    }
+
+    expect(
+      await cache.getOrFetch('profile', profile, scopes: {DataScope.profile}),
+      'profile',
+    );
+    expect(
+      await cache.getOrFetch('runs', runs, scopes: {DataScope.runs}),
+      'runs',
+    );
+
+    cache.invalidate({DataScope.profile});
+
+    expect(
+      await cache.getOrFetch('profile', profile, scopes: {DataScope.profile}),
+      'profile',
+    );
+    expect(
+      await cache.getOrFetch('runs', runs, scopes: {DataScope.runs}),
+      'runs',
+    );
+    expect(profileCalls, 2);
+    expect(runCalls, 1);
+  });
+
+  test(
+    'mudança de qualquer dependência invalida a entrada combinada',
+    () async {
+      final cache = ReadModelCache();
+      var calls = 0;
+
+      Future<int> fetch() async {
+        calls++;
+        return calls;
+      }
+
+      const scopes = {DataScope.runs, DataScope.profile};
+      expect(await cache.getOrFetch('mixed', fetch, scopes: scopes), 1);
+      cache.invalidate({DataScope.goals});
+      expect(await cache.getOrFetch('mixed', fetch, scopes: scopes), 1);
+      cache.invalidate({DataScope.profile});
+      expect(await cache.getOrFetch('mixed', fetch, scopes: scopes), 2);
     },
   );
 

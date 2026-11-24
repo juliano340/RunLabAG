@@ -2,6 +2,7 @@ import '../core/data/repositories/active_run_repository.dart';
 import '../core/data/repositories/caching_run_repository.dart';
 import '../core/data/repositories/caching_stats_repository.dart';
 import '../core/data/repositories/caching_user_repository.dart';
+import '../core/data/data_change_hub.dart';
 import '../core/data/read_model_cache.dart';
 import '../core/data/repositories/run_repository.dart';
 import '../core/data/repositories/sqflite_run_completion_store.dart';
@@ -23,6 +24,7 @@ import '../features/strength_training/domain/repositories/strength_workout_repos
 ///
 /// Nenhuma tela precisa saber construir SQLite, serviços ou efeitos colaterais.
 class AppDependencies {
+  final DataChangeHub changes;
   final ReadModelCache cache;
   final DatabaseService databaseService;
   final RunRepository runRepository;
@@ -34,6 +36,7 @@ class AppDependencies {
   final StrengthWorkoutRepository strengthWorkoutRepository;
 
   const AppDependencies({
+    required this.changes,
     required this.cache,
     required this.databaseService,
     required this.runRepository,
@@ -47,7 +50,8 @@ class AppDependencies {
 }
 
 AppDependencies buildAppDependencies() {
-  final cache = ReadModelCache();
+  final changes = DataChangeHub();
+  final cache = ReadModelCache(hub: changes);
   final runRepository = CachingRunRepository(SqfliteRunRepository(), cache);
   final userRepository = CachingUserRepository(SqfliteUserRepository(), cache);
   final statsRepository = CachingStatsRepository(
@@ -71,10 +75,11 @@ AppDependencies buildAppDependencies() {
     backupService: backupService,
     analyticsService: AnalyticsService(),
     completionStore: SqfliteRunCompletionStore(),
-    onRunCommitted: cache.invalidate,
+    onRunCommitted: () => changes.emit({DataScope.runs, DataScope.paceZones}),
   );
 
   return AppDependencies(
+    changes: changes,
     cache: cache,
     databaseService: databaseService,
     runRepository: runRepository,
