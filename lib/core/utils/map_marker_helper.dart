@@ -4,19 +4,31 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class MapMarkerHelper {
+  /// Um bitmap por combinação de parâmetros, compartilhado por todas as telas.
+  /// O Future também é cacheado: chamadas simultâneas não desenham duas vezes.
+  static final Map<String, Future<BitmapDescriptor>> _cache = {};
+
+  static Future<BitmapDescriptor> _cached(
+    String key,
+    Future<BitmapDescriptor> Function() builder,
+  ) => _cache.putIfAbsent(key, builder);
+
   /// Generates a premium custom pause marker (orange circle with a pause icon)
   static Future<BitmapDescriptor> getPauseMarkerIcon({
     double radius = 16.0,
     double shadowRadius = 3.0,
     double borderWidth = 2.0,
-  }) async {
-    return _drawMarker(
-      circleColor: const Color(0xFFFF9800), // Elegant orange
-      iconColor: Colors.white,
-      radius: radius,
-      shadowRadius: shadowRadius,
-      borderWidth: borderWidth,
-      isPause: true,
+  }) {
+    return _cached(
+      'pause:$radius:$shadowRadius:$borderWidth',
+      () => _drawMarker(
+        circleColor: const Color(0xFFFF9800), // Elegant orange
+        iconColor: Colors.white,
+        radius: radius,
+        shadowRadius: shadowRadius,
+        borderWidth: borderWidth,
+        isPause: true,
+      ),
     );
   }
 
@@ -25,14 +37,17 @@ class MapMarkerHelper {
     double radius = 16.0,
     double shadowRadius = 3.0,
     double borderWidth = 2.0,
-  }) async {
-    return _drawMarker(
-      circleColor: const Color(0xFF10B981), // Elegant emerald green
-      iconColor: Colors.white,
-      radius: radius,
-      shadowRadius: shadowRadius,
-      borderWidth: borderWidth,
-      isPause: false,
+  }) {
+    return _cached(
+      'resume:$radius:$shadowRadius:$borderWidth',
+      () => _drawMarker(
+        circleColor: const Color(0xFF10B981), // Elegant emerald green
+        iconColor: Colors.white,
+        radius: radius,
+        shadowRadius: shadowRadius,
+        borderWidth: borderWidth,
+        isPause: false,
+      ),
     );
   }
 

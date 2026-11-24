@@ -34,9 +34,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(tester.takeException(), isNull);
-      expect(find.text('Treino de 17/11/2026 às 07:30'), findsOneWidget);
+      expect(find.text('17/11/2026 às 07:30'), findsOneWidget);
       expect(find.text('5.00'), findsWidgets);
-      expect(find.text('6:00'), findsWidgets);
+      expect(find.text('6:00/km'), findsWidgets);
     },
   );
 
@@ -69,7 +69,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(tester.takeException(), isNull);
-      expect(find.text('Treino de 16/11/2026 às 18:00'), findsOneWidget);
+      expect(find.text('16/11/2026 às 18:00'), findsOneWidget);
     },
   );
 
@@ -108,7 +108,7 @@ void main() {
 
       // Sem crash e com a legenda de faixas visível (rota 100% caminhada).
       expect(tester.takeException(), isNull);
-      expect(find.text('Treino de 16/11/2026 às 18:00'), findsOneWidget);
+      expect(find.text('16/11/2026 às 18:00'), findsOneWidget);
       expect(find.text('Caminhada 100%'), findsOneWidget);
     },
   );

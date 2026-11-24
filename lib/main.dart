@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/app_colors.dart';
@@ -28,6 +29,10 @@ void main() async {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+
+      // Fontes bundladas no pubspec: nunca baixar em runtime (cold start
+      // previsível e app funcionando offline desde o primeiro frame).
+      GoogleFonts.config.allowRuntimeFetching = false;
 
       // Erros que escapam do framework nunca devem virar tela preta.
       FlutterError.onError = (details) {
