@@ -32,14 +32,20 @@ RunLabAG é um aplicativo Flutter de acompanhamento de corridas e performance pe
 
 ```text
 lib/
+├── app/
+│   └── composition_root.dart
 ├── core/
 │   ├── data/repositories/
 │   ├── domain/models/
+│   ├── domain/repositories/
 │   ├── domain/services/
 │   ├── services/
 │   └── widgets/
 └── features/
     ├── run/
+    │   ├── application/
+    │   ├── data/
+    │   └── domain/
     ├── history/
     ├── dashboard/
     ├── analytics/
@@ -47,6 +53,17 @@ lib/
     ├── onboarding/
     └── strength_training/
 ```
+
+## Arquitetura
+
+- `app/composition_root.dart` monta o grafo de dependências uma única vez;
+- `RunSessionController` concentra GPS, timer, autopausa, splits e persistência,
+  enquanto `ActiveRunScreen` cuida apenas de UI, mapa e navegação;
+- Repositórios são consumidos por interfaces no domínio, com implementações
+  sqflite e decorators de cache na camada de dados;
+- `ReadModelCache` compartilha resumos, perfil, recordes e estatísticas entre as
+  abas, com single-flight e invalidação após escritas;
+- Atualizações de corrida são separadas em tick de 1 s, estado estrutural e rota.
 
 ## Pré-requisitos
 

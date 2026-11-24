@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/backup_service.dart';
+import '../../../../core/providers/runs_provider.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -138,6 +139,7 @@ class WelcomeScreen extends StatelessWidget {
                               final prefs = await SharedPreferences.getInstance();
                               await prefs.setBool('hasCompletedOnboarding', true);
                               if (context.mounted) {
+                                context.read<RunsProvider>().notifyDataChanged();
                                 Navigator.pushReplacementNamed(context, '/dashboard');
                               }
                             } else {

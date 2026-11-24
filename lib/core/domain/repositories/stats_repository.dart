@@ -1,4 +1,8 @@
+import '../models/consistency_stats.dart';
 import '../models/monthly_evolution_stats.dart';
+import '../models/personal_records.dart';
+import '../models/record_history_entry.dart';
+import '../models/user_stats.dart';
 import '../models/user_totals.dart';
 import '../models/weekly_evolution_stats.dart';
 
@@ -16,7 +20,7 @@ abstract interface class StatsRepository {
 
   Future<UserTotals> getTotals({DateTime? since});
 
-  Future<Map<String, dynamic>> getUserStats({DateTime? since});
+  Future<UserStats> getUserStats({DateTime? since});
 
   Future<List<double>> getMonitoredDistances();
 
@@ -24,11 +28,11 @@ abstract interface class StatsRepository {
 
   Future<void> removeMonitoredDistance(double distance);
 
-  Future<Map<String, dynamic>> getPersonalRecords();
+  Future<PersonalRecordsSnapshot> getPersonalRecords();
 
-  Future<List<Map<String, dynamic>>> getRecordHistory(String category);
+  Future<List<RecordHistoryEntry>> getRecordHistory(double targetDistanceKm);
 
-  Future<List<Map<String, dynamic>>> getLongestDistanceHistory();
+  Future<List<LongestDistanceHistoryEntry>> getLongestDistanceHistory();
 
   Future<List<double>> getWeeklyProgress();
 
@@ -36,7 +40,7 @@ abstract interface class StatsRepository {
 
   Future<Map<String, int>> getRunsByTypeBetween(DateTime start, DateTime end);
 
-  Future<Map<String, dynamic>> getConsistencyStats(DateTime since);
+  Future<ConsistencyStats> getConsistencyStats(DateTime since);
 
   Future<Map<String, dynamic>> getPerformanceTrend(int weeks);
 

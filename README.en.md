@@ -32,14 +32,20 @@ RunLabAG is a Flutter app for run tracking and personal performance. It combines
 
 ```text
 lib/
+├── app/
+│   └── composition_root.dart
 ├── core/
 │   ├── data/repositories/
 │   ├── domain/models/
+│   ├── domain/repositories/
 │   ├── domain/services/
 │   ├── services/
 │   └── widgets/
 └── features/
     ├── run/
+    │   ├── application/
+    │   ├── data/
+    │   └── domain/
     ├── history/
     ├── dashboard/
     ├── analytics/
@@ -47,6 +53,17 @@ lib/
     ├── onboarding/
     └── strength_training/
 ```
+
+## Architecture
+
+- `app/composition_root.dart` builds the dependency graph once;
+- `RunSessionController` owns GPS, timer, auto-pause, splits, and persistence,
+  while `ActiveRunScreen` handles only UI, maps, and navigation;
+- Repositories are consumed through domain interfaces, with sqflite
+  implementations and cache decorators in the data layer;
+- `ReadModelCache` shares summaries, profile, records, and statistics across
+  tabs, with single-flight behavior and invalidation after writes;
+- Run updates are split into a 1-second tick, structural state, and route changes.
 
 ## Requirements
 

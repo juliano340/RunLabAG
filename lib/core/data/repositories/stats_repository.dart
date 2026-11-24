@@ -1,6 +1,10 @@
 import 'package:sqflite/sqflite.dart';
+import '../../domain/models/consistency_stats.dart';
 import '../../domain/models/monthly_evolution_stats.dart';
+import '../../domain/models/personal_records.dart';
+import '../../domain/models/record_history_entry.dart';
 import '../../domain/models/run_model.dart';
+import '../../domain/models/user_stats.dart';
 import '../../domain/models/user_totals.dart';
 import '../../domain/models/weekly_evolution_stats.dart';
 import '../../services/database_helper.dart';
@@ -54,21 +58,52 @@ class SqfliteStatsRepository implements StatsRepository {
     return null;
   }
 
+  Future<Map<String, double>> _getGoalHistoryMap(
+    Iterable<String> periodIds,
+    String goalType,
+  ) async {
+    final ids = periodIds.toSet().toList();
+    if (ids.isEmpty) return {};
+    final placeholders = List.filled(ids.length, '?').join(',');
+    final db = await DatabaseHelper.database;
+    final rows = await db.query(
+      'goal_history',
+      columns: ['periodId', 'goalValue'],
+      where: 'periodId IN ($placeholders) AND goalType = ?',
+      whereArgs: [...ids, goalType],
+    );
+    return {
+      for (final row in rows)
+        row['periodId'] as String: (row['goalValue'] as num).toDouble(),
+    };
+  }
+
   // --- Evolução semanal ---------------------------------------------------
 
-  /// Evolução semanal em **uma única consulta** ao banco (sem a coluna route).
+  /// Evolução semanal sem consultas N+1 de metas (uma busca em lote).
   @override
-  Future<List<WeeklyEvolutionStats>> getWeeklyEvolution(int numberOfWeeks) async {
+  Future<List<WeeklyEvolutionStats>> getWeeklyEvolution(
+    int numberOfWeeks,
+  ) async {
     if (numberOfWeeks <= 0) return [];
 
     final now = DateTime.now();
-    final currentWeekStart = DateTime(now.year, now.month, now.day)
-        .subtract(Duration(days: now.weekday % 7));
-    final oldestStart =
-        currentWeekStart.subtract(Duration(days: 7 * (numberOfWeeks - 1)));
+    final currentWeekStart = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: now.weekday % 7));
+    final oldestStart = currentWeekStart.subtract(
+      Duration(days: 7 * (numberOfWeeks - 1)),
+    );
 
     final runs = await _runRepo.getSummariesBetween(oldestStart, now);
     final profile = await _userRepo.getUserProfile();
+    final periodIds = [
+      for (var i = 0; i < numberOfWeeks; i++)
+        _getWeekPeriodId(currentWeekStart.subtract(Duration(days: 7 * i))),
+    ];
+    final goals = await _getGoalHistoryMap(periodIds, 'weekly');
 
     final evolution = <WeeklyEvolutionStats>[];
     for (int i = 0; i < numberOfWeeks; i++) {
@@ -87,27 +122,31 @@ class SqfliteStatsRepository implements StatsRepository {
         }
       }
 
-      double? goal = await getGoalHistory(periodId, 'weekly');
+      double? goal = goals[periodId];
       if (goal == null && i == 0) {
         goal = profile?.weeklyGoal ?? 20.0;
       }
 
-      evolution.add(WeeklyEvolutionStats(
-        periodId: periodId,
-        startDate: start,
-        endDate: end.subtract(const Duration(seconds: 1)),
-        totalDistance: totalDist,
-        totalDurationSeconds: totalSeconds,
-        goalDistance: goal ?? 20.0,
-        runCount: runCount,
-      ));
+      evolution.add(
+        WeeklyEvolutionStats(
+          periodId: periodId,
+          startDate: start,
+          endDate: end.subtract(const Duration(seconds: 1)),
+          totalDistance: totalDist,
+          totalDurationSeconds: totalSeconds,
+          goalDistance: goal ?? 20.0,
+          runCount: runCount,
+        ),
+      );
     }
     return evolution;
   }
 
   String _getWeekPeriodId(DateTime date) {
     final startOfWeek = date.subtract(Duration(days: date.weekday % 7));
-    final dayOfYear = startOfWeek.difference(DateTime(startOfWeek.year, 1, 1)).inDays;
+    final dayOfYear = startOfWeek
+        .difference(DateTime(startOfWeek.year, 1, 1))
+        .inDays;
     final weekNum = (dayOfYear / 7).floor() + 1;
     return '${startOfWeek.year}-W${weekNum.toString().padLeft(2, '0')}';
   }
@@ -137,29 +176,15 @@ class SqfliteStatsRepository implements StatsRepository {
   }
 
   @override
-  Future<Map<String, dynamic>> getUserStats({DateTime? since}) async {
+  Future<UserStats> getUserStats({DateTime? since}) async {
     final totals = await getTotals(since: since);
-    final totalDistance = totals.totalDistanceKm;
-    final totalRuns = totals.runCount;
-    final totalSeconds = totals.totalSeconds;
-    final totalCalories = totals.totalCalories;
-
-    String avgPace = '0:00';
-    if (totalDistance > 0) {
-      double paceInMinutes = (totalSeconds / 60) / totalDistance;
-      int minutes = paceInMinutes.toInt();
-      int seconds = ((paceInMinutes - minutes) * 60).toInt();
-      avgPace = '$minutes:${seconds.toString().padLeft(2, '0')}';
-    }
-
-    return {
-      'totalDistance': totalDistance.toStringAsFixed(1),
-      'totalRuns': totalRuns.toString(),
-      'avgPace': avgPace,
-      'totalCalories': totalCalories >= 1000
-          ? '${(totalCalories / 1000).toStringAsFixed(1)}k'
-          : totalCalories.toString(),
-    };
+    final averagePaceSecondsPerKm = totals.totalDistanceKm > 0
+        ? totals.totalSeconds / totals.totalDistanceKm
+        : 0.0;
+    return UserStats(
+      totals: totals,
+      averagePaceSecondsPerKm: averagePaceSecondsPerKm,
+    );
   }
 
   // --- Distâncias monitoradas (recordes) ---------------------------------
@@ -167,105 +192,70 @@ class SqfliteStatsRepository implements StatsRepository {
   @override
   Future<List<double>> getMonitoredDistances() async {
     final db = await DatabaseHelper.database;
-    final List<Map<String, dynamic>> maps =
-        await db.query('monitored_distances', orderBy: 'distanceKm ASC');
+    final List<Map<String, dynamic>> maps = await db.query(
+      'monitored_distances',
+      orderBy: 'distanceKm ASC',
+    );
     return List.generate(maps.length, (i) => maps[i]['distanceKm'] as double);
   }
 
   @override
   Future<void> addMonitoredDistance(double distance) async {
     final db = await DatabaseHelper.database;
-    await db.insert('monitored_distances', {'distanceKm': distance},
-        conflictAlgorithm: ConflictAlgorithm.ignore);
+    await db.insert('monitored_distances', {
+      'distanceKm': distance,
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
   }
 
   @override
   Future<void> removeMonitoredDistance(double distance) async {
     final db = await DatabaseHelper.database;
-    await db.delete('monitored_distances',
-        where: 'distanceKm = ?', whereArgs: [distance]);
+    await db.delete(
+      'monitored_distances',
+      where: 'distanceKm = ?',
+      whereArgs: [distance],
+    );
   }
 
   // --- Recordes -----------------------------------------------------------
 
   @override
-  Future<Map<String, dynamic>> getPersonalRecords() async {
+  Future<PersonalRecordsSnapshot> getPersonalRecords() async {
     final runs = await _runRepo.getSummaries();
     final monitored = await getMonitoredDistances();
+    final records = <double, PersonalRecord>{
+      for (final distance in monitored)
+        distance: PersonalRecord(
+          targetDistanceKm: distance,
+          timeSeconds: null,
+          date: null,
+          runId: null,
+          interval: null,
+        ),
+    };
 
-    Map<String, Map<String, dynamic>> records = {};
-    for (double dist in monitored) {
-      String key = dist == 21.0975 ? '21km' : dist == 42.195 ? '42km' : '${dist.toStringAsFixed(dist == dist.toInt() ? 0 : 1)}km';
-      records[key] = {'time': null, 'date': null, 'runId': null};
-    }
-
-    double longestDistance = 0;
+    var longestDistance = 0.0;
     DateTime? longestDistanceDate;
     String? longestDistanceRunId;
 
     for (final run in runs) {
-      // Logic for all-time bests for specific distances
-      for (double targetDist in monitored) {
-        // Treino sem duração não disputa recorde de tempo: com
-        // durationSeconds = 0, "10km em 00:00" venceria tudo injustamente.
-        if (run.durationSeconds <= 0) continue;
-        // Tolerância de 1% (ex: 4.95km conta como 5k para RP)
-        final double toleranceFactor = 0.99;
+      for (final targetDistance in monitored) {
+        final best = _bestTimeForTarget(run, targetDistance);
+        if (best == null) continue;
 
-        if (run.distanceKm >= targetDist * toleranceFactor) {
-          // 1. Initial estimation based on average pace
-          // Se o treino for muito próximo da meta (ex: 5.0003km para 5k), usamos o tempo total direto
-          double bestTimeInRun;
-          String currentInterval;
-
-          if ((run.distanceKm - targetDist).abs() / targetDist < 0.005) {
-            // Extremamente próximo (menos de 0.5% de diferença): usar o tempo real do treino
-            bestTimeInRun = run.durationSeconds.toDouble();
-            currentInterval = "Tempo Total";
-          } else {
-            bestTimeInRun = (run.durationSeconds / run.distanceKm) * targetDist;
-            currentInterval = "Média do Treino";
-          }
-
-          // 2. If we have splits, they are much more accurate for integer distances
-          if (run.splits.isNotEmpty) {
-            final int tDistInt = targetDist.round();
-            // Check if it's very close to an integer (to handle 5.0, 10.0, etc.)
-            if ((targetDist - tDistInt).abs() < 0.001) {
-              // Se tivermos splits suficientes para cobrir a distância inteira
-              if (run.splits.length >= tDistInt) {
-                // Find fastest consecutive sequence of splits
-                for (int i = 0; i <= run.splits.length - tDistInt; i++) {
-                  int sequenceTime = 0;
-                  for (int j = 0; j < tDistInt; j++) {
-                    sequenceTime += run.splits[i + j].timeSeconds;
-                  }
-
-                  // Se o segmento for mais rápido que a média/tempo total, ele vence
-                  if (sequenceTime < bestTimeInRun) {
-                    bestTimeInRun = sequenceTime.toDouble();
-                    currentInterval = tDistInt == 1 ? "km ${i + 1}" : "km ${i + 1} a ${i + tDistInt}";
-                  }
-                }
-              }
-            }
-          }
-
-          String key = targetDist == 21.0975 ? '21km' : targetDist == 42.195 ? '42km' : '${targetDist.toStringAsFixed(targetDist == targetDist.toInt() ? 0 : 1)}km';
-
-          // Atualiza se for o primeiro registro ou se este for mais rápido
-          if (records[key]!['time'] == null || bestTimeInRun < (records[key]!['time'] as double)) {
-            records[key] = {
-              'time': bestTimeInRun,
-              'date': run.date,
-              'runId': run.id,
-              'interval': currentInterval,
-            };
-          }
+        final current = records[targetDistance]!;
+        if (current.timeSeconds == null ||
+            best.timeSeconds < current.timeSeconds!) {
+          records[targetDistance] = PersonalRecord(
+            targetDistanceKm: targetDistance,
+            timeSeconds: best.timeSeconds,
+            date: run.date,
+            runId: run.id,
+            interval: best.interval,
+          );
         }
       }
 
-      // Logic for longest run
       if (run.distanceKm > longestDistance) {
         longestDistance = run.distanceKm;
         longestDistanceDate = run.date;
@@ -273,117 +263,109 @@ class SqfliteStatsRepository implements StatsRepository {
       }
     }
 
-    return {
-      'bests': records,
-      'longestDistance': {
-        'value': longestDistance,
-        'date': longestDistanceDate,
-        'runId': longestDistanceRunId,
-      },
-    };
+    return PersonalRecordsSnapshot(
+      bests: [for (final distance in monitored) records[distance]!],
+      longestDistance: LongestDistanceRecord(
+        distanceKm: longestDistance,
+        date: longestDistanceDate,
+        runId: longestDistanceRunId,
+      ),
+    );
   }
 
   @override
-  Future<List<Map<String, dynamic>>> getRecordHistory(String category) async {
+  Future<List<RecordHistoryEntry>> getRecordHistory(
+    double targetDistanceKm,
+  ) async {
+    if (targetDistanceKm <= 0) return [];
     final runs = await _runRepo.getSummaries();
-    // Sort by date ascending to track evolution
     final sortedRuns = runs.reversed.toList();
-
-    double targetDist = 0;
-    if (category.endsWith('km')) {
-      targetDist = double.tryParse(category.replaceAll('km', '')) ?? 0;
-      if (category == '21km') targetDist = 21.0975;
-      if (category == '42km') targetDist = 42.195;
-    }
-
-    if (targetDist == 0) return [];
-
-    List<Map<String, dynamic>> history = [];
+    final history = <RecordHistoryEntry>[];
     double? currentBest;
 
     for (final run in sortedRuns) {
-      final double toleranceFactor = 0.99;
-      if (run.distanceKm >= targetDist * toleranceFactor) {
-        // 1. Initial estimation based on average pace
-        double bestTimeInRun;
-        String currentInterval;
-
-        if ((run.distanceKm - targetDist).abs() / targetDist < 0.005) {
-          bestTimeInRun = run.durationSeconds.toDouble();
-          currentInterval = "Tempo Total";
-        } else {
-          bestTimeInRun = (run.durationSeconds / run.distanceKm) * targetDist;
-          currentInterval = "Média do Treino";
-        }
-
-        // 2. Accurate calculation if splits are present
-        if (run.splits.isNotEmpty) {
-          final int tDistInt = targetDist.round();
-          if ((targetDist - tDistInt).abs() < 0.001) {
-            if (run.splits.length >= tDistInt) {
-              for (int i = 0; i <= run.splits.length - tDistInt; i++) {
-                int sequenceTime = 0;
-                for (int j = 0; j < tDistInt; j++) {
-                  sequenceTime += run.splits[i + j].timeSeconds;
-                }
-                if (sequenceTime < bestTimeInRun) {
-                  bestTimeInRun = sequenceTime.toDouble();
-                  currentInterval = tDistInt == 1 ? "km ${i + 1}" : "km ${i + 1} a ${i + tDistInt}";
-                }
-              }
-            }
-          }
-        }
-
-        if (currentBest == null || bestTimeInRun < currentBest) {
-          double improvement = 0;
-          if (currentBest != null) {
-            improvement = currentBest - bestTimeInRun;
-          }
-
-          history.add({
-            'time': bestTimeInRun,
-            'date': run.date,
-            'improvement': improvement,
-            'runId': run.id,
-            'interval': currentInterval,
-          });
-          currentBest = bestTimeInRun;
-        }
+      final best = _bestTimeForTarget(run, targetDistanceKm);
+      if (best == null) continue;
+      if (currentBest == null || best.timeSeconds < currentBest) {
+        history.add(
+          RecordHistoryEntry(
+            timeSeconds: best.timeSeconds,
+            date: run.date,
+            improvementSeconds: currentBest == null
+                ? 0
+                : currentBest - best.timeSeconds,
+            runId: run.id,
+            interval: best.interval,
+          ),
+        );
+        currentBest = best.timeSeconds;
       }
     }
 
-    // Return descending (newest first) for UI
     return history.reversed.toList();
   }
 
   @override
-  Future<List<Map<String, dynamic>>> getLongestDistanceHistory() async {
+  Future<List<LongestDistanceHistoryEntry>> getLongestDistanceHistory() async {
     final runs = await _runRepo.getSummaries();
-    // Sort by date ascending to track evolution
     final sortedRuns = runs.reversed.toList();
-
-    List<Map<String, dynamic>> history = [];
-    double currentMax = 0;
+    final history = <LongestDistanceHistoryEntry>[];
+    var currentMax = 0.0;
 
     for (final run in sortedRuns) {
       if (run.distanceKm > currentMax) {
-        double improvement = 0;
-        if (currentMax > 0) {
-          improvement = run.distanceKm - currentMax;
-        }
-
+        history.add(
+          LongestDistanceHistoryEntry(
+            distanceKm: run.distanceKm,
+            date: run.date,
+            runId: run.id,
+            improvementKm: currentMax > 0 ? run.distanceKm - currentMax : 0,
+          ),
+        );
         currentMax = run.distanceKm;
-        history.add({
-          'value': run.distanceKm,
-          'date': run.date,
-          'runId': run.id,
-          'improvement': improvement,
-        });
       }
     }
 
     return history.reversed.toList();
+  }
+
+  /// Preserva as regras de recorde: tolerância de 1%, tempo total para metas
+  /// quase exatas e melhor sequência consecutiva de splits.
+  ({double timeSeconds, String interval})? _bestTimeForTarget(
+    RunModel run,
+    double targetDistanceKm,
+  ) {
+    if (run.durationSeconds <= 0 || run.distanceKm <= 0) return null;
+    if (run.distanceKm < targetDistanceKm * 0.99) return null;
+
+    double bestTime;
+    String interval;
+    if ((run.distanceKm - targetDistanceKm).abs() / targetDistanceKm < 0.005) {
+      bestTime = run.durationSeconds.toDouble();
+      interval = 'Tempo Total';
+    } else {
+      bestTime = (run.durationSeconds / run.distanceKm) * targetDistanceKm;
+      interval = 'Média do Treino';
+    }
+
+    final targetInteger = targetDistanceKm.round();
+    if ((targetDistanceKm - targetInteger).abs() < 0.001 &&
+        run.splits.length >= targetInteger) {
+      for (var i = 0; i <= run.splits.length - targetInteger; i++) {
+        var sequenceTime = 0;
+        for (var j = 0; j < targetInteger; j++) {
+          sequenceTime += run.splits[i + j].timeSeconds;
+        }
+        if (sequenceTime < bestTime) {
+          bestTime = sequenceTime.toDouble();
+          interval = targetInteger == 1
+              ? 'km ${i + 1}'
+              : 'km ${i + 1} a ${i + targetInteger}';
+        }
+      }
+    }
+
+    return (timeSeconds: bestTime, interval: interval);
   }
 
   @override
@@ -391,13 +373,18 @@ class SqfliteStatsRepository implements StatsRepository {
     final now = DateTime.now();
     // Encontrar o último domingo (ou hoje se for domingo)
     final startOfWeek = now.subtract(Duration(days: now.weekday % 7));
-    final startDate = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+    final startDate = DateTime(
+      startOfWeek.year,
+      startOfWeek.month,
+      startOfWeek.day,
+    );
 
     final List<double> dailyDistances = List.filled(7, 0.0);
 
     final db = await DatabaseHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'runs',
+      columns: ['date', 'distanceKm'],
       where: 'date >= ?',
       whereArgs: [startDate.toIso8601String()],
     );
@@ -417,7 +404,9 @@ class SqfliteStatsRepository implements StatsRepository {
   // --- Analíticos ---------------------------------------------------------
 
   @override
-  Future<List<MonthlyEvolutionStats>> getMonthlyEvolution(int numberOfMonths) async {
+  Future<List<MonthlyEvolutionStats>> getMonthlyEvolution(
+    int numberOfMonths,
+  ) async {
     if (numberOfMonths <= 0) return [];
 
     final now = DateTime.now();
@@ -425,6 +414,12 @@ class SqfliteStatsRepository implements StatsRepository {
 
     final runs = await _runRepo.getSummariesBetween(oldestStart, now);
     final profile = await _userRepo.getUserProfile();
+    final periodIds = [
+      for (var i = 0; i < numberOfMonths; i++)
+        '${DateTime(now.year, now.month - i, 1).year}-'
+            '${DateTime(now.year, now.month - i, 1).month.toString().padLeft(2, '0')}',
+    ];
+    final goals = await _getGoalHistoryMap(periodIds, 'monthly');
 
     final evolution = <MonthlyEvolutionStats>[];
     for (int i = 0; i < numberOfMonths; i++) {
@@ -432,7 +427,8 @@ class SqfliteStatsRepository implements StatsRepository {
       final end = (i == 0)
           ? now.add(const Duration(seconds: 1))
           : DateTime(now.year, now.month - i + 1, 1);
-      final periodId = '${start.year}-${start.month.toString().padLeft(2, '0')}';
+      final periodId =
+          '${start.year}-${start.month.toString().padLeft(2, '0')}';
 
       double totalDist = 0;
       int totalSeconds = 0;
@@ -450,28 +446,33 @@ class SqfliteStatsRepository implements StatsRepository {
         runsByType[type] = (runsByType[type] ?? 0) + 1;
       }
 
-      double? goal = await getGoalHistory(periodId, 'monthly');
+      double? goal = goals[periodId];
       if (goal == null && i == 0) {
         goal = profile?.monthlyGoal ?? 80.0;
       }
 
-      evolution.add(MonthlyEvolutionStats(
-        periodId: periodId,
-        startDate: start,
-        endDate: end.subtract(const Duration(seconds: 1)),
-        totalDistance: totalDist,
-        totalDurationSeconds: totalSeconds,
-        goalDistance: goal ?? 80.0,
-        runCount: runCount,
-        totalCalories: totalCal,
-        runsByType: runsByType,
-      ));
+      evolution.add(
+        MonthlyEvolutionStats(
+          periodId: periodId,
+          startDate: start,
+          endDate: end.subtract(const Duration(seconds: 1)),
+          totalDistance: totalDist,
+          totalDurationSeconds: totalSeconds,
+          goalDistance: goal ?? 80.0,
+          runCount: runCount,
+          totalCalories: totalCal,
+          runsByType: runsByType,
+        ),
+      );
     }
     return evolution;
   }
 
   @override
-  Future<Map<String, int>> getRunsByTypeBetween(DateTime start, DateTime end) async {
+  Future<Map<String, int>> getRunsByTypeBetween(
+    DateTime start,
+    DateTime end,
+  ) async {
     final runs = await _runRepo.getSummariesBetween(start, end);
     Map<String, int> result = {};
     for (var r in runs) {
@@ -482,8 +483,9 @@ class SqfliteStatsRepository implements StatsRepository {
   }
 
   @override
-  Future<Map<String, dynamic>> getConsistencyStats(DateTime since) async {
-    final runs = await _runRepo.getSummariesBetween(since, DateTime.now());
+  Future<ConsistencyStats> getConsistencyStats(DateTime since) async {
+    final now = DateTime.now();
+    final runs = await _runRepo.getSummariesBetween(since, now);
 
     final Set<String> trainedDays = {};
     for (var r in runs) {
@@ -491,7 +493,7 @@ class SqfliteStatsRepository implements StatsRepository {
       trainedDays.add(day.toIso8601String());
     }
 
-    final totalDays = DateTime.now().difference(since).inDays + 1;
+    final totalDays = now.difference(since).inDays + 1;
     final taxaFrequencia = totalDays > 0 ? trainedDays.length / totalDays : 0.0;
 
     int currentStreak = 0;
@@ -499,7 +501,8 @@ class SqfliteStatsRepository implements StatsRepository {
     int tempStreak = 0;
     DateTime? lastRunDate;
 
-    final sortedRuns = List<RunModel>.from(runs)..sort((a, b) => a.date.compareTo(b.date));
+    final sortedRuns = List<RunModel>.from(runs)
+      ..sort((a, b) => a.date.compareTo(b.date));
 
     for (var r in sortedRuns) {
       final day = DateTime(r.date.year, r.date.month, r.date.day);
@@ -518,28 +521,38 @@ class SqfliteStatsRepository implements StatsRepository {
     }
     if (tempStreak > bestStreak) bestStreak = tempStreak;
 
-    final today = DateTime.now();
-    final todayStr = DateTime(today.year, today.month, today.day).toIso8601String();
+    final today = now;
+    final todayStr = DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).toIso8601String();
     final lastRunStr = lastRunDate != null
-        ? DateTime(lastRunDate.year, lastRunDate.month, lastRunDate.day).toIso8601String()
+        ? DateTime(
+            lastRunDate.year,
+            lastRunDate.month,
+            lastRunDate.day,
+          ).toIso8601String()
         : '';
     final trainedToday = lastRunStr == todayStr;
 
     currentStreak = trainedToday ? tempStreak : 0;
     if (!trainedToday && lastRunDate != null) {
       final diff = DateTime(today.year, today.month, today.day)
-          .difference(DateTime(lastRunDate.year, lastRunDate.month, lastRunDate.day))
+          .difference(
+            DateTime(lastRunDate.year, lastRunDate.month, lastRunDate.day),
+          )
           .inDays;
       if (diff > 1) currentStreak = 0;
     }
 
-    return {
-      'trainedDays': trainedDays.length,
-      'totalDays': totalDays,
-      'taxaFrequencia': taxaFrequencia,
-      'currentStreak': currentStreak,
-      'bestStreak': bestStreak > currentStreak ? bestStreak : currentStreak,
-    };
+    return ConsistencyStats(
+      trainedDays: trainedDays.length,
+      totalDays: totalDays,
+      frequencyRate: taxaFrequencia,
+      currentStreak: currentStreak,
+      bestStreak: bestStreak > currentStreak ? bestStreak : currentStreak,
+    );
   }
 
   @override
@@ -564,7 +577,11 @@ class SqfliteStatsRepository implements StatsRepository {
     if (paces.length >= 4) {
       final recentPaces = paces.sublist(paces.length - 4);
       final avg = recentPaces.reduce((a, b) => a + b) / recentPaces.length;
-      final variance = recentPaces.map((p) => (p - avg) * (p - avg)).reduce((a, b) => a + b) / recentPaces.length;
+      final variance =
+          recentPaces
+              .map((p) => (p - avg) * (p - avg))
+              .reduce((a, b) => a + b) /
+          recentPaces.length;
       final cv = variance > 0 ? (variance / (avg * avg)) : 0;
       isPlateau = cv < 0.002;
     }
@@ -594,8 +611,10 @@ class SqfliteStatsRepository implements StatsRepository {
 
   @override
   Future<Map<String, dynamic>> comparePeriods(
-    DateTime start1, DateTime end1,
-    DateTime start2, DateTime end2,
+    DateTime start1,
+    DateTime end1,
+    DateTime start2,
+    DateTime end2,
   ) async {
     final runs1 = await _runRepo.getSummariesBetween(start1, end1);
     final runs2 = await _runRepo.getSummariesBetween(start2, end2);
@@ -619,8 +638,20 @@ class SqfliteStatsRepository implements StatsRepository {
     double pace2 = dist2 > 0 ? (sec2 / 60) / dist2 : 0;
 
     return {
-      'period1': {'distance': dist1, 'runs': runs1.length, 'pace': pace1, 'calories': cal1, 'seconds': sec1},
-      'period2': {'distance': dist2, 'runs': runs2.length, 'pace': pace2, 'calories': cal2, 'seconds': sec2},
+      'period1': {
+        'distance': dist1,
+        'runs': runs1.length,
+        'pace': pace1,
+        'calories': cal1,
+        'seconds': sec1,
+      },
+      'period2': {
+        'distance': dist2,
+        'runs': runs2.length,
+        'pace': pace2,
+        'calories': cal2,
+        'seconds': sec2,
+      },
       'deltaDistance': dist1 - dist2,
       'deltaRuns': runs1.length - runs2.length,
       'deltaPace': pace1 - pace2,

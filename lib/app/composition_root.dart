@@ -1,4 +1,8 @@
 import '../core/data/repositories/active_run_repository.dart';
+import '../core/data/repositories/caching_run_repository.dart';
+import '../core/data/repositories/caching_stats_repository.dart';
+import '../core/data/repositories/caching_user_repository.dart';
+import '../core/data/read_model_cache.dart';
 import '../core/data/repositories/run_repository.dart';
 import '../core/data/repositories/stats_repository.dart';
 import '../core/data/repositories/user_repository.dart';
@@ -18,6 +22,7 @@ import '../features/strength_training/domain/repositories/strength_workout_repos
 ///
 /// Nenhuma tela precisa saber construir SQLite, serviços ou efeitos colaterais.
 class AppDependencies {
+  final ReadModelCache cache;
   final DatabaseService databaseService;
   final RunRepository runRepository;
   final StatsRepository statsRepository;
@@ -28,6 +33,7 @@ class AppDependencies {
   final StrengthWorkoutRepository strengthWorkoutRepository;
 
   const AppDependencies({
+    required this.cache,
     required this.databaseService,
     required this.runRepository,
     required this.statsRepository,
@@ -40,11 +46,15 @@ class AppDependencies {
 }
 
 AppDependencies buildAppDependencies() {
-  final runRepository = SqfliteRunRepository();
-  final userRepository = SqfliteUserRepository();
-  final statsRepository = SqfliteStatsRepository(
-    runRepository: runRepository,
-    userRepository: userRepository,
+  final cache = ReadModelCache();
+  final runRepository = CachingRunRepository(SqfliteRunRepository(), cache);
+  final userRepository = CachingUserRepository(SqfliteUserRepository(), cache);
+  final statsRepository = CachingStatsRepository(
+    SqfliteStatsRepository(
+      runRepository: runRepository,
+      userRepository: userRepository,
+    ),
+    cache,
   );
   final activeRunRepository = SqfliteActiveRunRepository();
   final databaseService = DatabaseService(
@@ -62,6 +72,7 @@ AppDependencies buildAppDependencies() {
   );
 
   return AppDependencies(
+    cache: cache,
     databaseService: databaseService,
     runRepository: runRepository,
     statsRepository: statsRepository,

@@ -20,6 +20,7 @@ import 'features/profile/presentation/screens/privacy_screen.dart';
 
 import 'features/strength_training/presentation/providers/strength_workout_provider.dart';
 import 'core/providers/runs_provider.dart';
+import 'core/data/read_model_cache.dart';
 import 'core/domain/repositories/run_repository.dart';
 import 'core/domain/repositories/stats_repository.dart';
 import 'core/domain/repositories/user_repository.dart';
@@ -78,7 +79,10 @@ void main() async {
         MultiProvider(
           providers: [
             ChangeNotifierProvider(create: (_) => ThemeService()),
-            ChangeNotifierProvider(create: (_) => RunsProvider()),
+            ChangeNotifierProvider(
+              create: (_) => RunsProvider(cache: dependencies.cache),
+            ),
+            Provider<ReadModelCache>.value(value: dependencies.cache),
             Provider<DatabaseService>.value(
               value: dependencies.databaseService,
             ),

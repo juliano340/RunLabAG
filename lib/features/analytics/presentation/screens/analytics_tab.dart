@@ -8,6 +8,7 @@ import '../../../../core/services/database_service.dart';
 import '../../../../core/widgets/glass_container.dart';
 import 'package:runlabag/core/domain/models/weekly_evolution_stats.dart';
 import 'package:runlabag/core/domain/models/monthly_evolution_stats.dart';
+import 'package:runlabag/core/domain/models/consistency_stats.dart';
 import '../../domain/models/pace_series_point.dart';
 import '../../domain/models/performance_alert.dart';
 import '../../domain/services/pace_series_service.dart';
@@ -35,7 +36,7 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
   List<MonthlyEvolutionStats> _monthlyData = [];
   List<RunModel> _weekRuns = [];
   List<PerformanceAlert> _alerts = [];
-  Map<String, dynamic> _consistency = {};
+  ConsistencyStats _consistency = ConsistencyStats.empty;
   bool _isLoading = true;
 
   @override
@@ -456,12 +457,11 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
         GlassContainer(
           padding: const EdgeInsets.all(16),
           child: ConsistencyCard(
-            currentStreak: _consistency['currentStreak'] ?? 0,
-            bestStreak: _consistency['bestStreak'] ?? 0,
-            trainedDays: _consistency['trainedDays'] ?? 0,
-            totalDays: _consistency['totalDays'] ?? 0,
-            taxaFrequencia:
-                (_consistency['taxaFrequencia'] as num?)?.toDouble() ?? 0.0,
+            currentStreak: _consistency.currentStreak,
+            bestStreak: _consistency.bestStreak,
+            trainedDays: _consistency.trainedDays,
+            totalDays: _consistency.totalDays,
+            taxaFrequencia: _consistency.frequencyRate,
           ),
         ),
       ],

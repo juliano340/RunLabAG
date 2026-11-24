@@ -111,14 +111,9 @@ class _AddRunScreenState extends State<AddRunScreen> {
     final profile = await _dbService.getUserProfile();
     if (!mounted) return;
 
-    // 'avgPace' vem como "m:ss"; converte para minutos decimais.
-    double? pace;
-    final parts = (stats['avgPace'] as String?)?.split(':');
-    if (parts != null && parts.length == 2) {
-      final m = int.tryParse(parts[0]);
-      final s = int.tryParse(parts[1]);
-      if (m != null && s != null && m > 0) pace = m + s / 60;
-    }
+    // Ritmo médio tipado; a UI não faz parse de string formatada.
+    final paceMinutes = stats.averagePaceMinutesPerKm;
+    final pace = paceMinutes > 0 ? paceMinutes : null;
 
     setState(() {
       _avgPaceMinPerKm = pace;

@@ -16,6 +16,7 @@ import 'package:runlabag/core/services/database_service.dart';
 import '../../../history/presentation/screens/run_detail_screen.dart';
 import 'package:runlabag/core/domain/models/run_model.dart';
 import 'package:runlabag/core/domain/models/user_profile.dart';
+import 'package:runlabag/core/domain/models/user_stats.dart';
 
 class HomeTab extends StatefulWidget {
   final VoidCallback? onNavigateToProfile;
@@ -38,12 +39,7 @@ class HomeTab extends StatefulWidget {
 
 class _HomeTabState extends State<HomeTab> {
   DatabaseService get _dbService => context.read<DatabaseService>();
-  Map<String, dynamic> _stats = {
-    'totalDistance': '0.0',
-    'totalRuns': '0',
-    'avgPace': '0:00',
-    'totalCalories': '0',
-  };
+  UserStats _stats = UserStats.empty;
   // Janela da Visão Geral: 0 = tudo, 1 = 30d, 2 = 60d, 3 = 90d.
   int _statsPeriod = 0;
   List<double> _weeklyProgress = List.filled(7, 0.0);
@@ -626,25 +622,25 @@ class _HomeTabState extends State<HomeTab> {
                   children: [
                     _buildCompactStat(
                       icon: LucideIcons.map,
-                      value: _stats['totalDistance'],
+                      value: _stats.formattedTotalDistance,
                       unit: 'km',
                     ),
                     _buildStatDivider(isDark),
                     _buildCompactStat(
                       icon: LucideIcons.activity,
-                      value: _stats['totalRuns'],
+                      value: _stats.formattedTotalRuns,
                       unit: 'treinos',
                     ),
                     _buildStatDivider(isDark),
                     _buildCompactStat(
                       icon: LucideIcons.timer,
-                      value: _stats['avgPace'],
+                      value: _stats.formattedAveragePace,
                       unit: '/km',
                     ),
                     _buildStatDivider(isDark),
                     _buildCompactStat(
                       icon: LucideIcons.flame,
-                      value: _stats['totalCalories'],
+                      value: _stats.formattedTotalCalories,
                       unit: 'kcal',
                     ),
                   ],

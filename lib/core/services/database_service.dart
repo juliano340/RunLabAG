@@ -15,8 +15,12 @@ import 'package:runlabag/core/domain/models/strength_workout.dart';
 import 'package:runlabag/core/domain/models/workout_block.dart';
 import 'package:runlabag/core/domain/models/weekly_evolution_stats.dart';
 import 'package:runlabag/core/domain/models/monthly_evolution_stats.dart';
+import 'package:runlabag/core/domain/models/consistency_stats.dart';
+import 'package:runlabag/core/domain/models/personal_records.dart';
+import 'package:runlabag/core/domain/models/record_history_entry.dart';
 import 'package:runlabag/core/domain/models/run_model.dart';
 import 'package:runlabag/core/domain/models/user_profile.dart';
+import 'package:runlabag/core/domain/models/user_stats.dart';
 import 'package:runlabag/core/domain/models/user_totals.dart';
 
 /// Fachada de dados do app: CRUD de treinos, treino ativo, perfil,
@@ -200,7 +204,7 @@ class DatabaseService {
   Future<UserTotals> getTotals({DateTime? since}) =>
       _statsRepo.getTotals(since: since);
 
-  Future<Map<String, dynamic>> getUserStats({DateTime? since}) =>
+  Future<UserStats> getUserStats({DateTime? since}) =>
       _statsRepo.getUserStats(since: since);
 
   // Monitored Distances Management (delegado ao StatsRepository)
@@ -213,13 +217,13 @@ class DatabaseService {
   Future<void> removeMonitoredDistance(double distance) =>
       _statsRepo.removeMonitoredDistance(distance);
 
-  Future<Map<String, dynamic>> getPersonalRecords() =>
+  Future<PersonalRecordsSnapshot> getPersonalRecords() =>
       _statsRepo.getPersonalRecords();
 
-  Future<List<Map<String, dynamic>>> getRecordHistory(String category) =>
-      _statsRepo.getRecordHistory(category);
+  Future<List<RecordHistoryEntry>> getRecordHistory(double targetDistanceKm) =>
+      _statsRepo.getRecordHistory(targetDistanceKm);
 
-  Future<List<Map<String, dynamic>>> getLongestDistanceHistory() =>
+  Future<List<LongestDistanceHistoryEntry>> getLongestDistanceHistory() =>
       _statsRepo.getLongestDistanceHistory();
 
   Future<List<double>> getWeeklyProgress() => _statsRepo.getWeeklyProgress();
@@ -415,7 +419,7 @@ class DatabaseService {
   Future<Map<String, int>> getRunsByTypeBetween(DateTime start, DateTime end) =>
       _statsRepo.getRunsByTypeBetween(start, end);
 
-  Future<Map<String, dynamic>> getConsistencyStats(DateTime since) =>
+  Future<ConsistencyStats> getConsistencyStats(DateTime since) =>
       _statsRepo.getConsistencyStats(since);
 
   Future<Map<String, dynamic>> getPerformanceTrend(int weeks) =>

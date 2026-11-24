@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:runlabag/core/providers/runs_provider.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/services/database_service.dart';
+import '../../../../core/domain/models/personal_records.dart';
 import '../../../../core/utils/time_utils.dart';
 
 class RecordsTab extends StatefulWidget {
@@ -16,7 +17,7 @@ class RecordsTab extends StatefulWidget {
 
 class _RecordsTabState extends State<RecordsTab> {
   DatabaseService get _dbService => context.read<DatabaseService>();
-  Map<String, dynamic>? _records;
+  PersonalRecordsSnapshot? _records;
   List<double> _monitoredDistances = [];
   List<String> _earnedAchievementIds = [];
   bool _isLoading = true;
@@ -48,13 +49,14 @@ class _RecordsTabState extends State<RecordsTab> {
   }
 
   Future<void> _loadData() async {
-    final monitored = await _dbService.getMonitoredDistances();
     final records = await _dbService.getPersonalRecords();
     final earned = await _dbService.getEarnedAchievements();
 
     if (mounted) {
       setState(() {
-        _monitoredDistances = monitored;
+        _monitoredDistances = records.bests
+            .map((record) => record.targetDistanceKm)
+            .toList();
         _records = records;
         _earnedAchievementIds = earned.map((e) => e['id'] as String).toList();
         _isLoading = false;
@@ -76,8 +78,8 @@ class _RecordsTabState extends State<RecordsTab> {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
-  void _showRecordHistory(String category, String label) async {
-    final history = await _dbService.getRecordHistory(category);
+  void _showRecordHistory(double targetDistanceKm, String label) async {
+    final history = await _dbService.getRecordHistory(targetDistanceKm);
     if (!mounted) return;
 
     showModalBottomSheet(
@@ -102,13 +104,13 @@ class _RecordsTabState extends State<RecordsTab> {
                 itemBuilder: (context, index) {
                   final item = history[index];
                   final bool isLast = index == history.length - 1;
-                  final double improvement = item['improvement'] ?? 0.0;
+                  final double improvement = item.improvementSeconds;
                   return _buildTimelineItem(
                     index: index,
                     isLast: isLast,
-                    title: _formatTime((item['time'] as double)),
-                    subtitle: _formatDate(item['date']),
-                    interval: item['interval'] as String?,
+                    title: _formatTime(item.timeSeconds),
+                    subtitle: _formatDate(item.date),
+                    interval: item.interval,
                     improvement: improvement > 0 ? '-${_formatTime(improvement)}' : null,
                   );
                 },
@@ -143,12 +145,12 @@ class _RecordsTabState extends State<RecordsTab> {
                 itemBuilder: (context, index) {
                   final item = history[index];
                   final bool isLast = index == history.length - 1;
-                  final double improvement = item['improvement'] ?? 0.0;
+                  final double improvement = item.improvementKm;
                   return _buildTimelineItem(
                     index: index,
                     isLast: isLast,
-                    title: '${(item['value'] as double).toStringAsFixed(2)} km',
-                    subtitle: _formatDate(item['date']),
+                    title: '${item.distanceKm.toStringAsFixed(2)} km',
+                    subtitle: _formatDate(item.date),
                     improvement: improvement > 0 ? '+${improvement.toStringAsFixed(2)} km' : null,
                     isPositive: true,
                   );
@@ -518,8 +520,8 @@ class _RecordsTabState extends State<RecordsTab> {
   }
 
   Widget _buildBestsGrid(ColorScheme cs) {
-    final bests = _records?['bests'] as Map<String, dynamic>?;
-    if (bests == null) return const SizedBox.shrink();
+    final records = _records;
+    if (records == null) return const SizedBox.shrink();
 
     return GridView.builder(
       key: const ValueKey('records_bests_grid'),
@@ -531,25 +533,25 @@ class _RecordsTabState extends State<RecordsTab> {
         mainAxisSpacing: 16,
         childAspectRatio: 1.15,
       ),
-      itemCount: _monitoredDistances.length,
+      itemCount: records.bests.length,
       itemBuilder: (context, index) {
-        final dist = _monitoredDistances[index];
-        final key = dist == 21.0975
-            ? '21km'
-            : dist == 42.195
-                ? '42km'
-                : '${dist.toStringAsFixed(dist == dist.toInt() ? 0 : 1)}km';
-        final data = bests[key];
+        final record = records.bests[index];
+        final dist = record.targetDistanceKm;
 
         return _buildBestCard(
           cs,
           dist == 21.0975
               ? 'Meia Maratona'
-              : (dist == 42.195 ? 'Maratona' : '${dist.toStringAsFixed(dist == dist.toInt() ? 0 : 1)} km'),
-          _formatTime(data?['time']),
-          _formatDate(data?['date']),
-          interval: data?['interval'],
-          onTap: () => _showRecordHistory(key, '${dist.toStringAsFixed(1)} km'),
+              : (dist == 42.195
+                    ? 'Maratona'
+                    : '${dist.toStringAsFixed(dist == dist.toInt() ? 0 : 1)} km'),
+          _formatTime(record.timeSeconds),
+          _formatDate(record.date),
+          interval: record.interval,
+          onTap: () => _showRecordHistory(
+            dist,
+            '${dist.toStringAsFixed(1)} km',
+          ),
         );
       },
     );
@@ -630,8 +632,8 @@ class _RecordsTabState extends State<RecordsTab> {
   }
 
   Widget _buildLongestRunCard(ColorScheme cs) {
-    final longest = _records?['longestDistance'] as Map<String, dynamic>?;
-    final double value = (longest?['value'] ?? 0.0);
+    final longest = _records?.longestDistance;
+    final double value = longest?.distanceKm ?? 0.0;
     final bool hasData = value > 0;
 
     return GlassContainer(
@@ -676,7 +678,7 @@ class _RecordsTabState extends State<RecordsTab> {
                 ),
                 if (hasData)
                   Text(
-                    'Registrado em ${_formatDate(longest?['date'])}',
+                    'Registrado em ${_formatDate(longest?.date)}',
                     style: GoogleFonts.outfit(color: cs.onSurfaceVariant, fontSize: 12),
                   ),
               ],
