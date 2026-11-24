@@ -43,7 +43,6 @@ class BackupService {
       'profile': profile,
       'runs': runsData,
       'achievements': await db.query('achievements'),
-      'waterIntake': await db.query('water_intake'),
       'goalHistory': await db.query('goal_history'),
       'monitoredDistances': await db.query('monitored_distances'),
       'strengthWorkouts': await db.query('strength_workouts'),
@@ -119,9 +118,6 @@ class BackupService {
         }
         if (backup['achievements'] != null) {
           await _upsertRows(txn, 'achievements', backup['achievements']);
-        }
-        if (backup['waterIntake'] != null) {
-          await _upsertRows(txn, 'water_intake', backup['waterIntake']);
         }
         if (backup['goalHistory'] != null) {
           await _upsertRows(txn, 'goal_history', backup['goalHistory']);

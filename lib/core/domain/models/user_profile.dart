@@ -6,7 +6,6 @@ class UserProfile {
   final String? profilePicturePath;
   final double weeklyGoal;
   final double monthlyGoal;
-  final double waterGoal;
   final DateTime? lastGoalUpdate;
   final bool kmNotificationsEnabled;
 
@@ -18,7 +17,6 @@ class UserProfile {
     this.profilePicturePath,
     this.weeklyGoal = 20.0,
     this.monthlyGoal = 80.0,
-    this.waterGoal = 2000.0,
     this.lastGoalUpdate,
     this.kmNotificationsEnabled = true,
   });
@@ -33,7 +31,6 @@ class UserProfile {
       'profilePicturePath': profilePicturePath,
       'weeklyGoal': weeklyGoal,
       'monthlyGoal': monthlyGoal,
-      'waterGoal': waterGoal,
       'lastGoalUpdate': lastGoalUpdate?.toIso8601String(),
       'kmNotificationsEnabled': kmNotificationsEnabled ? 1 : 0,
     };
@@ -48,7 +45,6 @@ class UserProfile {
       profilePicturePath: map['profilePicturePath'],
       weeklyGoal: map['weeklyGoal'] ?? 20.0,
       monthlyGoal: map['monthlyGoal'] ?? 80.0,
-      waterGoal: map['waterGoal']?.toDouble() ?? 2000.0,
       lastGoalUpdate: map['lastGoalUpdate'] != null ? DateTime.parse(map['lastGoalUpdate']) : null,
       kmNotificationsEnabled: (map['kmNotificationsEnabled'] ?? 1) == 1,
     );

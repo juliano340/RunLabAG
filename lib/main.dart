@@ -16,7 +16,6 @@ import 'features/dashboard/presentation/screens/main_screen.dart';
 import 'features/profile/presentation/screens/onboarding_screen.dart';
 import 'features/profile/presentation/screens/privacy_screen.dart';
 
-import 'features/water/presentation/providers/water_provider.dart';
 import 'features/strength_training/presentation/providers/strength_workout_provider.dart';
 import 'features/strength_training/data/repositories/strength_workout_repository_impl.dart';
 import 'core/providers/runs_provider.dart';
@@ -66,7 +65,6 @@ void main() async {
         MultiProvider(
           providers: [
             ChangeNotifierProvider(create: (_) => ThemeService()),
-            ChangeNotifierProvider(create: (_) => WaterProvider()),
             ChangeNotifierProvider(create: (_) => RunsProvider()),
             ChangeNotifierProvider(
               create: (_) => StrengthWorkoutProvider(

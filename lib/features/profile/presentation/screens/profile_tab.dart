@@ -15,7 +15,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart';
 import 'package:runlabag/core/services/ad_service.dart';
-import 'package:runlabag/features/water/presentation/providers/water_provider.dart';
 import '../../../../core/providers/runs_provider.dart';
 import '../../../../core/services/notification_service.dart';
 import 'bmi_detail_screen.dart';
@@ -149,7 +148,6 @@ class _ProfileTabState extends State<ProfileTab> {
         profilePicturePath: savedImage.path,
         weeklyGoal: _profile!.weeklyGoal,
         monthlyGoal: _profile!.monthlyGoal,
-        waterGoal: _profile!.waterGoal,
         kmNotificationsEnabled: _profile!.kmNotificationsEnabled,
       );
 
@@ -167,9 +165,6 @@ class _ProfileTabState extends State<ProfileTab> {
         }
       }
 
-      if (mounted) {
-        context.read<WaterProvider>().refresh();
-      }
       _loadProfile();
     }
   }
@@ -197,14 +192,10 @@ class _ProfileTabState extends State<ProfileTab> {
       profilePicturePath: null,
       weeklyGoal: _profile!.weeklyGoal,
       monthlyGoal: _profile!.monthlyGoal,
-      waterGoal: _profile!.waterGoal,
       kmNotificationsEnabled: _profile!.kmNotificationsEnabled,
     );
 
     await _dbService.saveUserProfile(updatedProfile);
-    if (mounted) {
-      context.read<WaterProvider>().refresh();
-    }
     _loadProfile();
   }
 
@@ -221,7 +212,6 @@ class _ProfileTabState extends State<ProfileTab> {
     final weightController = TextEditingController(text: _profile!.weight.toString().replaceAll('.', ','));
     final heightController = TextEditingController(text: _profile!.height.toInt().toString());
     final weeklyGoalController = TextEditingController(text: _profile!.weeklyGoal.toString().replaceAll('.', ','));
-    final waterGoalController = TextEditingController(text: _profile!.waterGoal.toInt().toString());
     final formKey = GlobalKey<FormState>();
 
     showDialog(
@@ -246,8 +236,6 @@ class _ProfileTabState extends State<ProfileTab> {
                 _buildEditField(heightController, 'Altura (cm)', LucideIcons.ruler, keyboardType: TextInputType.number),
                 const SizedBox(height: 16),
                 _buildEditField(weeklyGoalController, 'Meta Semanal (km)', LucideIcons.target, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-                const SizedBox(height: 16),
-                _buildEditField(waterGoalController, 'Meta de Água (ml)', LucideIcons.droplet, keyboardType: TextInputType.number),
               ],
             ),
           ),
@@ -269,12 +257,10 @@ class _ProfileTabState extends State<ProfileTab> {
                   profilePicturePath: _profile!.profilePicturePath,
                   weeklyGoal: _parseNumber(weeklyGoalController.text),
                   monthlyGoal: _profile!.monthlyGoal,
-                  waterGoal: _parseNumber(waterGoalController.text),
                   kmNotificationsEnabled: _profile!.kmNotificationsEnabled,
                 );
                 await _dbService.saveUserProfile(updatedProfile);
                 if (context.mounted) {
-                  context.read<WaterProvider>().refresh();
                   Navigator.pop(context);
                   _loadProfile();
                 }
@@ -424,7 +410,6 @@ class _ProfileTabState extends State<ProfileTab> {
                 _buildInfoBadge('${_profile?.weight.toStringAsFixed(1) ?? 0} kg'),
                 _buildInfoBadge('${_profile?.height.toInt() ?? 0} cm'),
                 _buildInfoBadge('Meta: ${_profile?.weeklyGoal.toStringAsFixed(1) ?? 20} km'),
-                _buildInfoBadge('Água: ${(_profile?.waterGoal ?? 2000).toInt()} ml'),
               ],
             ),
             const SizedBox(height: 24),
@@ -538,8 +523,7 @@ class _ProfileTabState extends State<ProfileTab> {
                           profilePicturePath: _profile!.profilePicturePath,
                           weeklyGoal: _profile!.weeklyGoal,
                           monthlyGoal: _profile!.monthlyGoal,
-                          waterGoal: _profile!.waterGoal,
-                          lastGoalUpdate: _profile!.lastGoalUpdate,
+                                            lastGoalUpdate: _profile!.lastGoalUpdate,
                           kmNotificationsEnabled: value,
                         );
                         await _dbService.saveUserProfile(updated);
@@ -671,7 +655,6 @@ class _ProfileTabState extends State<ProfileTab> {
                             ),
                           );
                           if (success) {
-                            context.read<WaterProvider>().refresh();
                             context.read<RunsProvider>().notifyRunSaved();
                             _loadProfile();
                           }
@@ -891,7 +874,6 @@ class _ProfileTabState extends State<ProfileTab> {
     }
     if (!mounted || !context.mounted) return;
 
-    context.read<WaterProvider>().refresh();
     context.read<RunsProvider>().notifyRunSaved();
     _loadProfile();
 

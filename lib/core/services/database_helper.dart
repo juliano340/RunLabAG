@@ -4,7 +4,7 @@ import 'package:path/path.dart';
 
 class DatabaseHelper {
   static Database? _database;
-  static const databaseVersion = 22;
+  static const databaseVersion = 23;
 
   /// Nome do arquivo do banco. Testes usam nomes distintos para rodar em
   /// paralelo sem disputar o mesmo arquivo.
@@ -58,9 +58,6 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX idx_runs_date ON runs(date)');
     await db.execute(
       'CREATE TABLE monitored_distances(distanceKm REAL PRIMARY KEY)',
-    );
-    await db.execute(
-      'CREATE TABLE water_intake(id INTEGER PRIMARY KEY AUTOINCREMENT, amount INTEGER, timestamp TEXT)',
     );
     await db.execute(
       'CREATE TABLE training_plans(id TEXT PRIMARY KEY, title TEXT, description TEXT, totalWeeks INTEGER, level INTEGER, goal TEXT)',
@@ -210,6 +207,13 @@ class DatabaseHelper {
         'CREATE TABLE IF NOT EXISTS run_pace_zones(runId TEXT, zone TEXT, distanceKm REAL, PRIMARY KEY(runId, zone))',
       );
       await db.execute('CREATE INDEX IF NOT EXISTS idx_runs_date ON runs(date)');
+    }
+
+    if (oldVersion < 23) {
+      // Feature de hidratação removida. DROP é seguro/idempotente; a coluna
+      // legada user_profile.waterGoal fica no banco porque DROP COLUMN não
+      // é suportado por SQLites antigos de Android e não afeta o app.
+      await db.execute('DROP TABLE IF EXISTS water_intake');
     }
 
     // Rede de segurança: instalações antigas criaram `active_run` pelo caminho

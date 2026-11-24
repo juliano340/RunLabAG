@@ -155,9 +155,6 @@ void main() {
             'earnedDate': DateTime.now().toIso8601String(),
           }
         ],
-        'waterIntake': [
-          {'amount': 250, 'timestamp': DateTime.now().toIso8601String()},
-        ],
         'goalHistory': [
           {'periodId': '2026-08', 'goalType': 'weekly', 'goalValue': 25.0},
         ],
@@ -220,7 +217,6 @@ void main() {
         await db.query('achievements').then((r) => r.first['title']),
         'Primeira Corrida',
       );
-      expect(await db.query('water_intake').then((r) => r.length), 1);
       expect(
         await db.query('goal_history').then((r) => r.first['goalValue']),
         25.0,

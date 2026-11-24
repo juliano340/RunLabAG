@@ -108,7 +108,6 @@ class DatabaseService {
         'achievements',
         'active_run',
         'active_run_route',
-        'water_intake',
         'goal_history',
         'training_plans',
         'plan_sessions',
@@ -203,41 +202,6 @@ class DatabaseService {
       _statsRepo.getLongestDistanceHistory();
 
   Future<List<double>> getWeeklyProgress() => _statsRepo.getWeeklyProgress();
-
-  // Water Intake Methods
-  Future<void> saveWaterIntake(int amount) async {
-    final db = await database;
-    await db.insert(
-      'water_intake',
-      {
-        'amount': amount,
-        'timestamp': DateTime.now().toIso8601String(),
-      },
-    );
-  }
-
-  Future<List<Map<String, dynamic>>> getDailyWaterIntake() async {
-    final db = await database;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day).toIso8601String();
-    
-    return await db.query(
-      'water_intake',
-      where: 'timestamp >= ?',
-      whereArgs: [today],
-      orderBy: 'timestamp DESC',
-    );
-  }
-
-  Future<int> getTotalDailyWaterIntake() async {
-    final logs = await getDailyWaterIntake();
-    return logs.fold<int>(0, (sum, log) => sum + (log['amount'] as int));
-  }
-
-  Future<void> deleteWaterIntake(int id) async {
-    final db = await database;
-    await db.delete('water_intake', where: 'id = ?', whereArgs: [id]);
-  }
 
   // --- Training Plans Methods ---
 
