@@ -51,6 +51,14 @@ Scaffold(
 
 **Correção**: Envolver o `Column` do título em `Expanded` + `SizedBox(width: 12)` antes do badge.
 
+## Rotas e tempo por ponto (mapa colorido por pace)
+- `RunModel.route` (List<List<LatLng>>) tem uma lista PARALELA `routeTimes` (List<List<int>>) — segundos ativos por ponto
+- No JSON do banco, cada ponto é `{lat, lng, t}`; formato antigo sem `t` decodifica com `routeTimes` vazia (não quebrar isso)
+- `copyWith(route: nova)` LIMPA routeTimes automaticamente (tempos antigos deixam de ser paralelos) — informar `routeTimes` junto se quiser mantê-los
+- A gravação (`active_run_screen`) mantém `_routePointTimes` em paralelo com `_routePoints` em TODOS os pontos de mutação (append, novo segmento, restore, reset) — sempre editar os dois juntos
+- Cor do mapa por faixa de ritmo: `PaceZoneService.analyze(...)` → polylines coloridas + `distanceByZoneKm` para percentuais da legenda
+- Fallbacks em cascata: tempos por ponto → voltas (splits) → média uniforme do treino
+
 ## GlassContainer
 - `enableBlur: true` por padrão usa `BackdropFilter` (efeito glass visível em dark mode — fundo é 20% opacidade verde)
 - Em light mode o blur não é visível (fundo opaco `cardLight`)
