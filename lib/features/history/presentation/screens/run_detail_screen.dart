@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:flutter/services.dart' show rootBundle, HapticFeedback;
 import 'package:provider/provider.dart';
+import '../../../../core/providers/runs_provider.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/services/theme_service.dart';
 import '../../../../core/services/backup_service.dart';
@@ -31,6 +32,8 @@ class RunDetailScreen extends StatefulWidget {
 class _RunDetailScreenState extends State<RunDetailScreen>
     with SingleTickerProviderStateMixin {
   late RunModel _run;
+  DatabaseService get _dbService => context.read<DatabaseService>();
+  BackupService get _backupService => context.read<BackupService>();
   late PaceZoneResult _paceResult;
   GoogleMapController? _mapController;
   String? _mapStyle;
@@ -81,7 +84,7 @@ class _RunDetailScreenState extends State<RunDetailScreen>
 
   Future<void> _loadFullRun() async {
     try {
-      final full = await DatabaseService().getRunById(widget.run.id);
+      final full = await _dbService.getRunById(widget.run.id);
       if (!mounted || full == null) return;
       setState(() {
         _run = full;
@@ -98,7 +101,7 @@ class _RunDetailScreenState extends State<RunDetailScreen>
 
   Future<void> _loadNeighbors() async {
     try {
-      final summaries = await DatabaseService().getRunSummaries();
+      final summaries = await _dbService.getRunSummaries();
       if (!mounted) return;
       // getRunSummaries já ordena do mais recente para o mais antigo.
       setState(() {
@@ -189,7 +192,7 @@ class _RunDetailScreenState extends State<RunDetailScreen>
     if (_isNavigating) return;
     setState(() => _isNavigating = true);
     try {
-      final run = await DatabaseService().getRunById(runId);
+      final run = await _dbService.getRunById(runId);
       if (!mounted) return;
       if (run == null) {
         setState(() => _isNavigating = false);
@@ -1435,11 +1438,14 @@ class _RunDetailScreenState extends State<RunDetailScreen>
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: () async {
-                final dbService = DatabaseService();
+                final dbService = context.read<DatabaseService>();
                 await dbService.deleteRun(_run.id);
 
                 // Atualiza backup automático após exclusão. Falha silencioso.
-                unawaited(BackupService().runAutoBackupIfEnabled());
+                unawaited(_backupService.runAutoBackupIfEnabled());
+                if (context.mounted) {
+                  context.read<RunsProvider>().notifyRunSaved();
+                }
 
                 if (context.mounted) {
                   Navigator.of(context).pop(); // Close dialog

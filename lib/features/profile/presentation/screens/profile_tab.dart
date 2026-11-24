@@ -31,8 +31,8 @@ class ProfileTab extends StatefulWidget {
 }
 
 class _ProfileTabState extends State<ProfileTab> {
-  final _dbService = DatabaseService();
-  final _backupService = BackupService();
+  DatabaseService get _dbService => context.read<DatabaseService>();
+  BackupService get _backupService => context.read<BackupService>();
   UserProfile? _profile;
   bool _isLoading = true;
   bool _autoBackupEnabled = true;
@@ -168,6 +168,7 @@ class _ProfileTabState extends State<ProfileTab> {
       );
 
       await _dbService.saveUserProfile(updatedProfile);
+      if (mounted) context.read<RunsProvider>().notifyDataChanged();
 
       // Remove a foto antiga para não acumular arquivos órfãos
       if (oldPhotoPath != null && oldPhotoPath != savedImage.path) {
@@ -212,6 +213,7 @@ class _ProfileTabState extends State<ProfileTab> {
     );
 
     await _dbService.saveUserProfile(updatedProfile);
+    if (mounted) context.read<RunsProvider>().notifyDataChanged();
     _loadProfile();
   }
 
@@ -277,6 +279,7 @@ class _ProfileTabState extends State<ProfileTab> {
                 );
                 await _dbService.saveUserProfile(updatedProfile);
                 if (context.mounted) {
+                  context.read<RunsProvider>().notifyDataChanged();
                   Navigator.pop(context);
                   _loadProfile();
                 }
@@ -531,6 +534,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       key: const ValueKey('notifications_switch'),
                       value: _profile?.kmNotificationsEnabled ?? true,
                       onChanged: _profile == null ? null : (value) async {
+                        final runsProvider = context.read<RunsProvider>();
                         final updated = UserProfile(
                           name: _profile!.name,
                           age: _profile!.age,
@@ -543,7 +547,10 @@ class _ProfileTabState extends State<ProfileTab> {
                           kmNotificationsEnabled: value,
                         );
                         await _dbService.saveUserProfile(updated);
-                        if (mounted) setState(() => _profile = updated);
+                        if (mounted) {
+                          runsProvider.notifyDataChanged();
+                          setState(() => _profile = updated);
+                        }
                       },
                       activeThumbColor: Theme.of(context).colorScheme.primary,
                     ),

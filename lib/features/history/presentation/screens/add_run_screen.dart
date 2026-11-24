@@ -59,7 +59,8 @@ class AddRunScreen extends StatefulWidget {
 }
 
 class _AddRunScreenState extends State<AddRunScreen> {
-  final _dbService = DatabaseService();
+  DatabaseService get _dbService => context.read<DatabaseService>();
+  BackupService get _backupService => context.read<BackupService>();
   final _distanceController = TextEditingController();
   final _durationController = TextEditingController();
 
@@ -253,7 +254,7 @@ class _AddRunScreenState extends State<AddRunScreen> {
 
     try {
       await _dbService.saveRun(run);
-      unawaited(BackupService().runAutoBackupIfEnabled());
+      unawaited(_backupService.runAutoBackupIfEnabled());
       if (!mounted) return;
       // Histórico (e outras telas) recarregam ao receber o sinal.
       context.read<RunsProvider>().notifyRunSaved();

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:runlabag/main.dart';
 import 'package:runlabag/core/services/theme_service.dart';
+import 'package:runlabag/core/services/backup_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -10,8 +11,11 @@ void main() {
 
     // Build our app and trigger a frame.
     await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) => ThemeService(),
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => ThemeService()),
+          Provider<BackupService>.value(value: BackupService()),
+        ],
         child: const RunLabApp(hasCompletedOnboarding: false),
       ),
     );

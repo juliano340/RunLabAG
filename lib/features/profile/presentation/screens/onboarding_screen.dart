@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:runlabag/core/theme/app_colors.dart';
 import 'package:runlabag/core/services/database_service.dart';
 import 'package:runlabag/core/domain/models/user_profile.dart';
+import 'package:runlabag/core/providers/runs_provider.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -99,8 +101,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         weeklyGoal: _parseNumber(_weeklyGoalController.text),
       );
 
-      final dbService = DatabaseService();
+      final dbService = context.read<DatabaseService>();
       await dbService.saveUserProfile(profile);
+      if (mounted) context.read<RunsProvider>().notifyDataChanged();
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('hasCompletedOnboarding', true);

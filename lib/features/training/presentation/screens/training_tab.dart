@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/services/database_service.dart';
@@ -15,7 +16,7 @@ class TrainingTab extends StatefulWidget {
 }
 
 class _TrainingTabState extends State<TrainingTab> {
-  final DatabaseService _dbService = DatabaseService();
+  DatabaseService get _dbService => context.read<DatabaseService>();
   late TrainingService _trainingService;
   
   UserPlanEnrollment? _activeEnrollment;

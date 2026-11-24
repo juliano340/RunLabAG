@@ -37,7 +37,7 @@ class HomeTab extends StatefulWidget {
 }
 
 class _HomeTabState extends State<HomeTab> {
-  final _dbService = DatabaseService();
+  DatabaseService get _dbService => context.read<DatabaseService>();
   Map<String, dynamic> _stats = {
     'totalDistance': '0.0',
     'totalRuns': '0',

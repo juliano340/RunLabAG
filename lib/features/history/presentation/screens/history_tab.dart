@@ -24,7 +24,7 @@ class HistoryTab extends StatefulWidget {
 }
 
 class _HistoryTabState extends State<HistoryTab> {
-  final DatabaseService _dbService = DatabaseService();
+  DatabaseService get _dbService => context.read<DatabaseService>();
   List<RunModel> _allRuns = [];
   List<RunModel> _filteredRuns = [];
   bool _isLoading = true;
@@ -479,6 +479,7 @@ class _HistoryTabState extends State<HistoryTab> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: cs.primary),
               onPressed: () async {
+                final runsProvider = context.read<RunsProvider>();
                 final newPeriodGoal =
                     double.tryParse(periodController.text) ??
                     _currentPeriodGoal;
@@ -515,6 +516,7 @@ class _HistoryTabState extends State<HistoryTab> {
                 }
 
                 if (mounted) {
+                  runsProvider.notifyDataChanged();
                   setState(() => _currentPeriodGoal = newPeriodGoal);
                   navigator.pop();
                 }
@@ -1205,10 +1207,13 @@ class _HistoryTabState extends State<HistoryTab> {
                         lastGoalUpdate: DateTime.now(),
                       );
                       await _dbService.saveUserProfile(newProfile);
-                      setState(() {
-                        _userProfile = newProfile;
-                        _recommendation = null;
-                      });
+                      if (mounted) {
+                        context.read<RunsProvider>().notifyDataChanged();
+                        setState(() {
+                          _userProfile = newProfile;
+                          _recommendation = null;
+                        });
+                      }
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(

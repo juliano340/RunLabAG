@@ -11,6 +11,7 @@ import 'core/services/theme_service.dart';
 import 'core/services/ad_service.dart';
 import 'core/services/analytics_service.dart';
 import 'core/services/database_service.dart';
+import 'core/services/backup_service.dart';
 import 'core/services/notification_service.dart';
 import 'features/onboarding/presentation/screens/welcome_screen.dart';
 import 'features/dashboard/presentation/screens/main_screen.dart';
@@ -18,8 +19,13 @@ import 'features/profile/presentation/screens/onboarding_screen.dart';
 import 'features/profile/presentation/screens/privacy_screen.dart';
 
 import 'features/strength_training/presentation/providers/strength_workout_provider.dart';
-import 'features/strength_training/data/repositories/strength_workout_repository_impl.dart';
 import 'core/providers/runs_provider.dart';
+import 'core/domain/repositories/run_repository.dart';
+import 'core/domain/repositories/stats_repository.dart';
+import 'core/domain/repositories/user_repository.dart';
+import 'core/domain/repositories/active_run_repository.dart';
+import 'features/run/application/run_persistence_coordinator.dart';
+import 'app/composition_root.dart';
 
 /// Contador de inicializações que não chegaram ao primeiro frame.
 /// Duas seguidas = o boot anterior morreu; o app abre em modo seguro.
@@ -66,14 +72,31 @@ void main() async {
         debugPrint('[Boot] SharedPreferences indisponível: $e');
       }
 
+      final dependencies = buildAppDependencies();
+
       runApp(
         MultiProvider(
           providers: [
             ChangeNotifierProvider(create: (_) => ThemeService()),
             ChangeNotifierProvider(create: (_) => RunsProvider()),
+            Provider<DatabaseService>.value(
+              value: dependencies.databaseService,
+            ),
+            Provider<RunRepository>.value(value: dependencies.runRepository),
+            Provider<StatsRepository>.value(
+              value: dependencies.statsRepository,
+            ),
+            Provider<UserRepository>.value(value: dependencies.userRepository),
+            Provider<ActiveRunRepository>.value(
+              value: dependencies.activeRunRepository,
+            ),
+            Provider<BackupService>.value(value: dependencies.backupService),
+            Provider<RunPersistenceCoordinator>.value(
+              value: dependencies.runPersistenceCoordinator,
+            ),
             ChangeNotifierProvider(
               create: (_) => StrengthWorkoutProvider(
-                StrengthWorkoutRepositoryImpl(DatabaseService()),
+                dependencies.strengthWorkoutRepository,
               )..loadWorkouts(),
             ),
           ],
@@ -86,7 +109,7 @@ void main() async {
 
       // Só depois do primeiro frame: nada aqui pode atrasar a abertura.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(_afterFirstFrame(prefs));
+        unawaited(_afterFirstFrame(prefs, dependencies.databaseService));
       });
     },
     (error, stack) {
@@ -97,7 +120,10 @@ void main() async {
 }
 
 /// Boot concluído: zera o contador e inicializa serviços pesados sem bloquear.
-Future<void> _afterFirstFrame(SharedPreferences? prefs) async {
+Future<void> _afterFirstFrame(
+  SharedPreferences? prefs,
+  DatabaseService databaseService,
+) async {
   try {
     await prefs?.setInt(_bootAttemptsKey, 0);
   } catch (_) {}
@@ -105,7 +131,8 @@ Future<void> _afterFirstFrame(SharedPreferences? prefs) async {
   await AnalyticsService().init();
 
   if (AnalyticsService().isInitialized) {
-    final id = prefs?.getString('user_analytics_id') ??
+    final id =
+        prefs?.getString('user_analytics_id') ??
         'user_${DateTime.now().millisecondsSinceEpoch}';
     if (prefs?.getString('user_analytics_id') == null) {
       unawaited(prefs?.setString('user_analytics_id', id));
@@ -131,7 +158,7 @@ Future<void> _afterFirstFrame(SharedPreferences? prefs) async {
     try {
       // Limite de segurança: nunca fica em loop se uma gravação falhar.
       for (var round = 0; round < 50; round++) {
-        final processed = await DatabaseService().backfillPaceZones();
+        final processed = await databaseService.backfillPaceZones();
         if (processed == 0) break;
       }
     } catch (e) {

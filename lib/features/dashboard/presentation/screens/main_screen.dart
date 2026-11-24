@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/theme/app_colors.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -54,7 +55,7 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _warnStaleBackupIfNeeded() async {
     try {
-      final backupService = BackupService();
+      final backupService = context.read<BackupService>();
       if (!await backupService.shouldWarnStaleBackup()) return;
       if (!mounted) return;
 
@@ -100,15 +101,17 @@ class _MainScreenState extends State<MainScreen> {
 
       // Deixa o primeiro frame assentar antes da rajada de diálogos.
       await Future<void>.delayed(const Duration(milliseconds: 900));
+      if (!mounted) return;
 
       // 1. Localização — o mesmo fluxo da corrida; no Android 13+ já
       //    inclui a permissão de notificação do foreground service.
       await LocationService().requestPermission();
+      if (!mounted) return;
 
       // 2. "Acesso a todos os arquivos" — adiciona a cópia externa em
       //    /Download/RunLab. Sem conceder, a cópia interna do app continua
       //    funcionando e o Perfil mostra o status do backup.
-      await BackupService().requestStoragePermission();
+      await context.read<BackupService>().requestStoragePermission();
     } catch (e) {
       debugPrint('[Permissões] Fluxo de inicialização falhou: $e');
     }

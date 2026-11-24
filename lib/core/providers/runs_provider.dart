@@ -1,8 +1,11 @@
 import 'package:flutter/foundation.dart';
 
-/// Sinal global para notificar quando um novo treino de corrida é salvo.
-/// Não armazena dados — apenas dispara notifyListeners() para que
-/// HistoryTab (e outras telas) saibam que precisam recarregar do banco.
+/// Sinal global de mudança dos dados persistidos.
+///
+/// Não armazena dados: apenas avisa as abas vivas e, no próximo passo, o
+/// cache compartilhado de que alguma leitura precisa ser invalidada.
 class RunsProvider extends ChangeNotifier {
-  void notifyRunSaved() => notifyListeners();
+  void notifyRunSaved() => notifyDataChanged();
+
+  void notifyDataChanged() => notifyListeners();
 }

@@ -5,6 +5,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter/services.dart'
     show FilteringTextInputFormatter, LengthLimitingTextInputFormatter;
 import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
+import '../../../../core/providers/runs_provider.dart';
 import '../../../../core/services/backup_service.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -30,6 +32,8 @@ class EditRunRouteScreen extends StatefulWidget {
 
 class _EditRunRouteScreenState extends State<EditRunRouteScreen> {
   bool _isSaving = false;
+  DatabaseService get _dbService => context.read<DatabaseService>();
+  BackupService get _backupService => context.read<BackupService>();
 
   // ── Salvamento ────────────────────────────────────────────────────────
 
@@ -80,7 +84,7 @@ class _EditRunRouteScreenState extends State<EditRunRouteScreen> {
       if (drawnKm > 0) {
         final newDuration = await _askUpdateMetrics(drawnKm);
         if (newDuration != null) {
-          final profile = await DatabaseService().getUserProfile();
+          final profile = await _dbService.getUserProfile();
           final newPace = RunMetricsService.calculatePace(newDuration, drawnKm);
           final newCalories = (profile != null && profile.weight > 0)
               ? RunMetricsService.calculateCalories(drawnKm, profile.weight)
@@ -98,7 +102,7 @@ class _EditRunRouteScreenState extends State<EditRunRouteScreen> {
       // Adicionar: o tempo do trecho riscado JÁ está dentro da duração
       // registrada (a corrida aconteceu) — soma a distância e atualiza
       // pace/calorias na hora, sem perguntar.
-      final profile = await DatabaseService().getUserProfile();
+      final profile = await _dbService.getUserProfile();
       final duration = updated.durationSeconds;
       updated = updated.copyWith(
         pace: duration > 0
@@ -112,13 +116,14 @@ class _EditRunRouteScreenState extends State<EditRunRouteScreen> {
     }
 
     try {
-      await DatabaseService().saveRun(updated);
+      await _dbService.saveRun(updated);
       // Faixas de ritmo: rota e distância mudaram — as salvas na gravação
       // original ficariam velhas. Depois do save, em segundo plano.
       unawaited(_refreshPaceZones(updated));
-      unawaited(BackupService().runAutoBackupIfEnabled());
+      unawaited(_backupService.runAutoBackupIfEnabled());
 
       if (!mounted) return;
+      context.read<RunsProvider>().notifyRunSaved();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -188,7 +193,7 @@ class _EditRunRouteScreenState extends State<EditRunRouteScreen> {
         durationSeconds: run.durationSeconds,
         splits: run.splits,
       );
-      await DatabaseService().savePaceZones(
+      await _dbService.savePaceZones(
         run.id,
         {for (final e in zones.distanceByZoneKm.entries) e.key.name: e.value},
       );

@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import '../../services/database_helper.dart';
+import '../../domain/repositories/run_repository.dart';
 import 'package:runlabag/core/domain/models/run_model.dart';
 
 /// Acesso à tabela `runs`.
@@ -9,11 +10,12 @@ import 'package:runlabag/core/domain/models/run_model.dart';
 /// decodificá-la em toda leitura custava caro o suficiente para travar o app
 /// no boot. Use [getSummaries]/[getSummariesBetween] por padrão e
 /// [getById] apenas quando a tela for realmente desenhar o mapa.
-class RunRepository {
+class SqfliteRunRepository implements RunRepository {
   static const summaryColumns =
       'id, date, distanceKm, durationSeconds, pausedDurationSeconds, '
       'pace, calories, type, mood, splits';
 
+  @override
   Future<void> saveRun(RunModel run) async {
     final db = await DatabaseHelper.database;
     await db.insert(
@@ -24,6 +26,7 @@ class RunRepository {
   }
 
   /// Treinos sem rota (leve). Ordenados do mais recente para o mais antigo.
+  @override
   Future<List<RunModel>> getSummaries() async {
     final db = await DatabaseHelper.database;
     final maps = await db.query(
@@ -34,6 +37,7 @@ class RunRepository {
     return List.generate(maps.length, (i) => RunModel.fromSummaryMap(maps[i]));
   }
 
+  @override
   Future<List<RunModel>> getSummariesBetween(DateTime start, DateTime end) async {
     final db = await DatabaseHelper.database;
     final maps = await db.query(
@@ -46,6 +50,7 @@ class RunRepository {
     return List.generate(maps.length, (i) => RunModel.fromSummaryMap(maps[i]));
   }
 
+  @override
   Future<RunModel?> getLastRunSummary() async {
     final db = await DatabaseHelper.database;
     final maps = await db.query(
@@ -59,6 +64,7 @@ class RunRepository {
   }
 
   /// Treino completo (com rota). Use só para desenhar o mapa / compartilhar.
+  @override
   Future<RunModel?> getById(String id) async {
     final db = await DatabaseHelper.database;
     final maps = await db.query('runs', where: 'id = ?', whereArgs: [id], limit: 1);
@@ -66,6 +72,7 @@ class RunRepository {
     return RunModel.fromMap(maps.first);
   }
 
+  @override
   Future<void> deleteRun(String id) async {
     final db = await DatabaseHelper.database;
     await db.delete('runs', where: 'id = ?', whereArgs: [id]);
@@ -76,6 +83,7 @@ class RunRepository {
   // Guardadas por treino no momento em que ele é salvo, para que o histórico
   // e as análises leiam só números em vez de reprocessar milhares de pontos.
 
+  @override
   Future<void> savePaceZones(String runId, Map<String, double> distanceByZone) async {
     final db = await DatabaseHelper.database;
     await db.transaction((txn) async {
@@ -98,6 +106,7 @@ class RunRepository {
     });
   }
 
+  @override
   Future<Map<String, double>> getPaceZoneTotals(DateTime start, DateTime end) async {
     final db = await DatabaseHelper.database;
     final rows = await db.rawQuery(
@@ -114,6 +123,7 @@ class RunRepository {
   }
 
   /// Ids de treinos que ainda não tiveram as faixas de ritmo calculadas.
+  @override
   Future<List<Map<String, dynamic>>> getRunsMissingPaceZones({int limit = 40}) async {
     final db = await DatabaseHelper.database;
     return db.rawQuery(

@@ -2,9 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:runlabag/core/services/database_service.dart';
 import 'package:runlabag/core/services/theme_service.dart';
 import 'package:runlabag/core/domain/models/run_model.dart';
 import 'package:runlabag/features/history/presentation/screens/run_detail_screen.dart';
+
+class _EmptyDatabaseService extends DatabaseService {
+  @override
+  Future<RunModel?> getRunById(String id) async => null;
+
+  @override
+  Future<List<RunModel>> getRunSummaries() async => const [];
+}
 
 void main() {
   // Regressão: o initState chegou a ficar com "_run = _run" (auto-atribuição),
@@ -23,8 +32,11 @@ void main() {
       );
 
       await tester.pumpWidget(
-        ChangeNotifierProvider(
-          create: (_) => ThemeService(),
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => ThemeService()),
+            Provider<DatabaseService>.value(value: _EmptyDatabaseService()),
+          ],
           child: MaterialApp(home: RunDetailScreen(run: run)),
         ),
       );
@@ -59,8 +71,11 @@ void main() {
       );
 
       await tester.pumpWidget(
-        ChangeNotifierProvider(
-          create: (_) => ThemeService(),
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => ThemeService()),
+            Provider<DatabaseService>.value(value: _EmptyDatabaseService()),
+          ],
           child: MaterialApp(home: RunDetailScreen(run: run)),
         ),
       );
@@ -97,8 +112,11 @@ void main() {
       );
 
       await tester.pumpWidget(
-        ChangeNotifierProvider(
-          create: (_) => ThemeService(),
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => ThemeService()),
+            Provider<DatabaseService>.value(value: _EmptyDatabaseService()),
+          ],
           child: MaterialApp(home: RunDetailScreen(run: run)),
         ),
       );

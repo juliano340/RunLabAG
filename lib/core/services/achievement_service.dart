@@ -3,7 +3,10 @@ import 'database_service.dart';
 import 'package:runlabag/core/domain/models/run_model.dart';
 
 class AchievementService {
-  final DatabaseService _dbService = DatabaseService();
+  final DatabaseService _dbService;
+
+  AchievementService({DatabaseService? dbService})
+    : _dbService = dbService ?? DatabaseService();
 
   /// Verifica e salva novas conquistas com base no último treino.
   /// Retorna apenas conquistas REALMENTE novas (ainda não desbloqueadas).
@@ -75,7 +78,8 @@ class AchievementService {
         final minutes = int.parse(parts[0]);
         final seconds = int.parse(parts[1]);
         final totalSeconds = (minutes * 60) + seconds;
-        if (totalSeconds < 270) { // 270s = 4:30 min
+        if (totalSeconds < 270) {
+          // 270s = 4:30 min
           candidates.add({
             'id': 'speed_demon',
             'title': 'Demônio da Velocidade',
@@ -121,7 +125,7 @@ class AchievementService {
       '9km! Só mais um pouco para o double digit! 🚀',
       '10km! INSANO! Você é lendário! 👑',
     ];
-    
+
     if (km <= messages.length) {
       return messages[km - 1];
     }

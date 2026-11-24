@@ -6,6 +6,10 @@ import '../data/repositories/active_run_repository.dart';
 import '../data/repositories/run_repository.dart';
 import '../data/repositories/stats_repository.dart';
 import '../data/repositories/user_repository.dart';
+import '../domain/repositories/active_run_repository.dart';
+import '../domain/repositories/run_repository.dart';
+import '../domain/repositories/stats_repository.dart';
+import '../domain/repositories/user_repository.dart';
 import 'package:runlabag/core/domain/models/training_plan.dart';
 import 'package:runlabag/core/domain/models/strength_workout.dart';
 import 'package:runlabag/core/domain/models/workout_block.dart';
@@ -13,18 +17,35 @@ import 'package:runlabag/core/domain/models/weekly_evolution_stats.dart';
 import 'package:runlabag/core/domain/models/monthly_evolution_stats.dart';
 import 'package:runlabag/core/domain/models/run_model.dart';
 import 'package:runlabag/core/domain/models/user_profile.dart';
+import 'package:runlabag/core/domain/models/user_totals.dart';
 
 /// Fachada de dados do app: CRUD de treinos, treino ativo, perfil,
-/// conquistas, metas, água, planos e força — apoiada em repositórios por
-/// domínio (`RunRepository`, `UserRepository`, `ActiveRunRepository`,
-/// `StatsRepository`). Estatísticas e recordes ficam no stats repository.
+/// conquistas, metas, planos e força — apoiada em repositórios por
+/// domínio. `DatabaseService` continua como compatibilidade, mas as
+/// dependências podem ser injetadas pelo composition root.
 class DatabaseService {
   Future<Database> get database => DatabaseHelper.database;
 
-  final _activeRunRepo = ActiveRunRepository();
-  final _runRepo = RunRepository();
-  final _userRepo = UserRepository();
-  final _statsRepo = StatsRepository();
+  final ActiveRunRepository _activeRunRepo;
+  final RunRepository _runRepo;
+  final UserRepository _userRepo;
+  late final StatsRepository _statsRepo;
+
+  DatabaseService({
+    ActiveRunRepository? activeRunRepository,
+    RunRepository? runRepository,
+    UserRepository? userRepository,
+    StatsRepository? statsRepository,
+  }) : _activeRunRepo = activeRunRepository ?? SqfliteActiveRunRepository(),
+       _runRepo = runRepository ?? SqfliteRunRepository(),
+       _userRepo = userRepository ?? SqfliteUserRepository() {
+    _statsRepo =
+        statsRepository ??
+        SqfliteStatsRepository(
+          runRepository: _runRepo,
+          userRepository: _userRepo,
+        );
+  }
 
   // Active Run Persistence (for recovery)
   Future<void> saveActiveRun(Map<String, dynamic> data) => _activeRunRepo.saveActiveRunMeta(data);
@@ -90,8 +111,8 @@ class DatabaseService {
   Future<UserProfile?> getUserProfile() => _userRepo.getUserProfile();
 
   // --- Reset ---
-  /// Apaga todos os dados do usuário (perfil, foto, treinos, conquistas, água,
-  /// planos e treinos de força). Preserva catálogos e restaura as
+  /// Apaga todos os dados do usuário (perfil, foto, treinos, conquistas,
+  /// metas, planos e treinos de força). Preserva catálogos e restaura as
   /// distâncias monitoradas padrão.
   ///
   /// Cada tabela é apagada com tolerância individual: numa transação

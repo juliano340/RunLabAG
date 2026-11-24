@@ -1,8 +1,10 @@
 import 'package:sqflite/sqflite.dart';
 import '../../services/database_helper.dart';
+import '../../domain/repositories/user_repository.dart';
 import 'package:runlabag/core/domain/models/user_profile.dart';
 
-class UserRepository {
+class SqfliteUserRepository implements UserRepository {
+  @override
   Future<void> saveUserProfile(UserProfile profile) async {
     final db = await DatabaseHelper.database;
     await db.insert(
@@ -12,6 +14,7 @@ class UserRepository {
     );
   }
 
+  @override
   Future<UserProfile?> getUserProfile() async {
     final db = await DatabaseHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(

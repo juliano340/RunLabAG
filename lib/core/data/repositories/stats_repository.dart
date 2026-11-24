@@ -1,32 +1,12 @@
 import 'package:sqflite/sqflite.dart';
 import '../../domain/models/monthly_evolution_stats.dart';
 import '../../domain/models/run_model.dart';
+import '../../domain/models/user_totals.dart';
 import '../../domain/models/weekly_evolution_stats.dart';
 import '../../services/database_helper.dart';
-import 'run_repository.dart';
-import 'user_repository.dart';
-
-/// Totais agregados da carreira do usuário (calculados em SQL).
-class UserTotals {
-  final int runCount;
-  final double totalDistanceKm;
-  final int totalSeconds;
-  final int totalCalories;
-
-  const UserTotals({
-    required this.runCount,
-    required this.totalDistanceKm,
-    required this.totalSeconds,
-    required this.totalCalories,
-  });
-
-  static const empty = UserTotals(
-    runCount: 0,
-    totalDistanceKm: 0,
-    totalSeconds: 0,
-    totalCalories: 0,
-  );
-}
+import '../../domain/repositories/run_repository.dart';
+import '../../domain/repositories/stats_repository.dart';
+import '../../domain/repositories/user_repository.dart';
 
 /// Consultas agregadas: totais, evolução semanal/mensal, recordes,
 /// consistência, distâncias monitoradas e comparativos de período.
@@ -34,12 +14,19 @@ class UserTotals {
 /// Lê treinos **sem a coluna route** (via [RunRepository.getSummaries] /
 /// [getSummariesBetween]) — nenhuma consulta desta classe precisa do mapa,
 /// então o payload grande nunca entra na memória por aqui.
-class StatsRepository {
-  final _runRepo = RunRepository();
-  final _userRepo = UserRepository();
+class SqfliteStatsRepository implements StatsRepository {
+  final RunRepository _runRepo;
+  final UserRepository _userRepo;
+
+  SqfliteStatsRepository({
+    required RunRepository runRepository,
+    required UserRepository userRepository,
+  }) : _runRepo = runRepository,
+       _userRepo = userRepository;
 
   // --- Histórico de metas -------------------------------------------------
 
+  @override
   Future<void> saveGoalHistory(
     String periodId,
     String goalType,
@@ -53,6 +40,7 @@ class StatsRepository {
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
+  @override
   Future<double?> getGoalHistory(String periodId, String goalType) async {
     final db = await DatabaseHelper.database;
     List<Map<String, dynamic>> maps = await db.query(
@@ -69,6 +57,7 @@ class StatsRepository {
   // --- Evolução semanal ---------------------------------------------------
 
   /// Evolução semanal em **uma única consulta** ao banco (sem a coluna route).
+  @override
   Future<List<WeeklyEvolutionStats>> getWeeklyEvolution(int numberOfWeeks) async {
     if (numberOfWeeks <= 0) return [];
 
@@ -127,6 +116,7 @@ class StatsRepository {
 
   /// Totais agregados direto no SQLite — nenhum treino é carregado.
   /// [since] filtra por data (string ISO, mesma convenção de getWeeklyProgress).
+  @override
   Future<UserTotals> getTotals({DateTime? since}) async {
     final db = await DatabaseHelper.database;
     final rows = await db.rawQuery(
@@ -146,6 +136,7 @@ class StatsRepository {
     );
   }
 
+  @override
   Future<Map<String, dynamic>> getUserStats({DateTime? since}) async {
     final totals = await getTotals(since: since);
     final totalDistance = totals.totalDistanceKm;
@@ -173,6 +164,7 @@ class StatsRepository {
 
   // --- Distâncias monitoradas (recordes) ---------------------------------
 
+  @override
   Future<List<double>> getMonitoredDistances() async {
     final db = await DatabaseHelper.database;
     final List<Map<String, dynamic>> maps =
@@ -180,12 +172,14 @@ class StatsRepository {
     return List.generate(maps.length, (i) => maps[i]['distanceKm'] as double);
   }
 
+  @override
   Future<void> addMonitoredDistance(double distance) async {
     final db = await DatabaseHelper.database;
     await db.insert('monitored_distances', {'distanceKm': distance},
         conflictAlgorithm: ConflictAlgorithm.ignore);
   }
 
+  @override
   Future<void> removeMonitoredDistance(double distance) async {
     final db = await DatabaseHelper.database;
     await db.delete('monitored_distances',
@@ -194,6 +188,7 @@ class StatsRepository {
 
   // --- Recordes -----------------------------------------------------------
 
+  @override
   Future<Map<String, dynamic>> getPersonalRecords() async {
     final runs = await _runRepo.getSummaries();
     final monitored = await getMonitoredDistances();
@@ -288,6 +283,7 @@ class StatsRepository {
     };
   }
 
+  @override
   Future<List<Map<String, dynamic>>> getRecordHistory(String category) async {
     final runs = await _runRepo.getSummaries();
     // Sort by date ascending to track evolution
@@ -361,6 +357,7 @@ class StatsRepository {
     return history.reversed.toList();
   }
 
+  @override
   Future<List<Map<String, dynamic>>> getLongestDistanceHistory() async {
     final runs = await _runRepo.getSummaries();
     // Sort by date ascending to track evolution
@@ -389,6 +386,7 @@ class StatsRepository {
     return history.reversed.toList();
   }
 
+  @override
   Future<List<double>> getWeeklyProgress() async {
     final now = DateTime.now();
     // Encontrar o último domingo (ou hoje se for domingo)
@@ -418,6 +416,7 @@ class StatsRepository {
 
   // --- Analíticos ---------------------------------------------------------
 
+  @override
   Future<List<MonthlyEvolutionStats>> getMonthlyEvolution(int numberOfMonths) async {
     if (numberOfMonths <= 0) return [];
 
@@ -471,6 +470,7 @@ class StatsRepository {
     return evolution;
   }
 
+  @override
   Future<Map<String, int>> getRunsByTypeBetween(DateTime start, DateTime end) async {
     final runs = await _runRepo.getSummariesBetween(start, end);
     Map<String, int> result = {};
@@ -481,6 +481,7 @@ class StatsRepository {
     return result;
   }
 
+  @override
   Future<Map<String, dynamic>> getConsistencyStats(DateTime since) async {
     final runs = await _runRepo.getSummariesBetween(since, DateTime.now());
 
@@ -541,6 +542,7 @@ class StatsRepository {
     };
   }
 
+  @override
   Future<Map<String, dynamic>> getPerformanceTrend(int weeks) async {
     final evolution = await getWeeklyEvolution(weeks);
     if (evolution.length < 3) {
@@ -590,6 +592,7 @@ class StatsRepository {
     return (n * sumXY - sumX * sumY) / denominator;
   }
 
+  @override
   Future<Map<String, dynamic>> comparePeriods(
     DateTime start1, DateTime end1,
     DateTime start2, DateTime end2,

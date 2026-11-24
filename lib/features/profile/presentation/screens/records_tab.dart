@@ -15,7 +15,7 @@ class RecordsTab extends StatefulWidget {
 }
 
 class _RecordsTabState extends State<RecordsTab> {
-  final DatabaseService _dbService = DatabaseService();
+  DatabaseService get _dbService => context.read<DatabaseService>();
   Map<String, dynamic>? _records;
   List<double> _monitoredDistances = [];
   List<String> _earnedAchievementIds = [];
@@ -340,7 +340,11 @@ class _RecordsTabState extends State<RecordsTab> {
                             style: TextStyle(color: cs.onPrimaryContainer, fontWeight: FontWeight.bold),
                           ),
                           onDeleted: () async {
+                            final runsProvider = context.read<RunsProvider>();
                             await _dbService.removeMonitoredDistance(dist);
+                            if (mounted) {
+                              runsProvider.notifyDataChanged();
+                            }
                             final updated = await _dbService.getMonitoredDistances();
                             setDialogState(() => _monitoredDistances = updated);
                             setState(() {});
@@ -363,9 +367,13 @@ class _RecordsTabState extends State<RecordsTab> {
                   foregroundColor: cs.onPrimary,
                 ),
                 onPressed: () async {
+                  final runsProvider = context.read<RunsProvider>();
                   final dist = double.tryParse(controller.text);
                   if (dist != null && dist > 0) {
                     await _dbService.addMonitoredDistance(dist);
+                    if (mounted) {
+                      runsProvider.notifyDataChanged();
+                    }
                     final updated = await _dbService.getMonitoredDistances();
                     setDialogState(() {
                       _monitoredDistances = updated;

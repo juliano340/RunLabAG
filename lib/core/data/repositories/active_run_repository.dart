@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import '../../services/database_helper.dart';
+import '../../domain/repositories/active_run_repository.dart';
 
 /// Persistência do treino em andamento.
 ///
@@ -7,11 +8,12 @@ import '../../services/database_helper.dart';
 /// metadados em `active_run`. Assim:
 /// - gravar métricas a cada poucos segundos não reescreve a rota inteira;
 /// - o boot lê só os metadados (`getActiveRunMeta`), nunca centenas de KB.
-class ActiveRunRepository {
+class SqfliteActiveRunRepository implements ActiveRunRepository {
   static const _metaId = 1;
   static const _routeId = 1;
 
   /// Metadados do treino ativo — sem a coluna `route`.
+  @override
   Future<void> saveActiveRunMeta(Map<String, dynamic> data) async {
     final db = await DatabaseHelper.database;
     final meta = Map<String, dynamic>.from(data)..remove('route');
@@ -23,6 +25,7 @@ class ActiveRunRepository {
   }
 
   /// Rota do treino ativo (chamada com pouca frequência).
+  @override
   Future<void> saveActiveRunRoute(String routeJson) async {
     final db = await DatabaseHelper.database;
     await db.insert(
@@ -34,6 +37,7 @@ class ActiveRunRepository {
 
   /// Somente metadados: usado no boot para saber se há treino a recuperar.
   /// A coluna `route` é explicitamente omitida da leitura.
+  @override
   Future<Map<String, dynamic>?> getActiveRunMeta() async {
     final db = await DatabaseHelper.database;
     final maps = await db.query(
@@ -60,6 +64,7 @@ class ActiveRunRepository {
   }
 
   /// Metadados + rota: usado apenas quando o usuário escolhe retomar.
+  @override
   Future<Map<String, dynamic>?> getActiveRun() async {
     final db = await DatabaseHelper.database;
     final maps = await db.query('active_run', where: 'id = ?', whereArgs: [_metaId]);
@@ -76,6 +81,7 @@ class ActiveRunRepository {
     return data;
   }
 
+  @override
   Future<void> clearActiveRun() async {
     final db = await DatabaseHelper.database;
     await db.delete('active_run', where: 'id = ?', whereArgs: [_metaId]);

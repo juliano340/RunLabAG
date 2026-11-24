@@ -28,7 +28,7 @@ class AnalyticsTab extends StatefulWidget {
 }
 
 class _AnalyticsTabState extends State<AnalyticsTab> {
-  final _dbService = DatabaseService();
+  DatabaseService get _dbService => context.read<DatabaseService>();
   int _selectedPeriod = 0;
 
   List<WeeklyEvolutionStats> _weeklyData = [];
