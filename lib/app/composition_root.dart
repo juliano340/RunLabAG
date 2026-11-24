@@ -4,6 +4,7 @@ import '../core/data/repositories/caching_stats_repository.dart';
 import '../core/data/repositories/caching_user_repository.dart';
 import '../core/data/read_model_cache.dart';
 import '../core/data/repositories/run_repository.dart';
+import '../core/data/repositories/sqflite_run_completion_store.dart';
 import '../core/data/repositories/stats_repository.dart';
 import '../core/data/repositories/user_repository.dart';
 import '../core/domain/repositories/active_run_repository.dart';
@@ -69,6 +70,8 @@ AppDependencies buildAppDependencies() {
     achievementService: AchievementService(dbService: databaseService),
     backupService: backupService,
     analyticsService: AnalyticsService(),
+    completionStore: SqfliteRunCompletionStore(),
+    onRunCommitted: cache.invalidate,
   );
 
   return AppDependencies(

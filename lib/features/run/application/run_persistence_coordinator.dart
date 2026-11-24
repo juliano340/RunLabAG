@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../../core/data/repositories/sqflite_run_completion_store.dart';
+import '../../../core/domain/repositories/run_completion_store.dart';
 import '../../../core/services/achievement_service.dart';
 import '../../../core/services/analytics_service.dart';
 import '../../../core/services/backup_service.dart';
@@ -30,16 +32,25 @@ class RunPersistenceCoordinator {
   final AchievementService _achievementService;
   final BackupService _backupService;
   final AnalyticsService _analyticsService;
+  final RunCompletionStore _completionStore;
+  final TrainingService? _trainingService;
+  final VoidCallback? _onRunCommitted;
 
   RunPersistenceCoordinator({
     DatabaseService? dbService,
     AchievementService? achievementService,
     BackupService? backupService,
     AnalyticsService? analyticsService,
+    RunCompletionStore? completionStore,
+    TrainingService? trainingService,
+    VoidCallback? onRunCommitted,
   }) : _dbService = dbService ?? DatabaseService(),
        _achievementService = achievementService ?? AchievementService(),
        _backupService = backupService ?? BackupService(),
-       _analyticsService = analyticsService ?? AnalyticsService();
+       _analyticsService = analyticsService ?? AnalyticsService(),
+       _completionStore = completionStore ?? SqfliteRunCompletionStore(),
+       _trainingService = trainingService,
+       _onRunCommitted = onRunCommitted;
 
   Future<RunPersistenceResult> saveCompletedRun({
     DateTime? startTime,
@@ -71,11 +82,7 @@ class RunPersistenceCoordinator {
       autoPauses: autoPauses,
     );
 
-    await _dbService.saveRun(run);
-    await _dbService.clearActiveRun();
-
-    // Faixas de ritmo: calculadas uma única vez, com a rota já em memória.
-    // Histórico e análises passam a ler só números.
+    final distanceByZone = <String, double>{};
     try {
       final paceZones = PaceZoneService.analyze(
         route: run.route,
@@ -84,34 +91,70 @@ class RunPersistenceCoordinator {
         durationSeconds: run.durationSeconds,
         splits: run.splits,
       );
-      await _dbService.savePaceZones(
-        run.id,
-        {
-          for (final entry in paceZones.distanceByZoneKm.entries)
-            entry.key.name: entry.value,
-        },
-      );
+      distanceByZone.addAll({
+        for (final entry in paceZones.distanceByZoneKm.entries)
+          entry.key.name: entry.value,
+      });
     } catch (e) {
       debugPrint('Falha ao calcular faixas de ritmo: $e');
     }
 
-    unawaited(_backupService.runAutoBackupIfEnabled());
+    // Commit atômico: ou o treino e seus derivados ficam prontos e o rascunho
+    // é removido, ou nada muda.
+    await _completionStore.saveCompletedRun(
+      run: run,
+      distanceByZone: distanceByZone,
+    );
+    try {
+      _onRunCommitted?.call();
+    } catch (e) {
+      debugPrint('Falha ao invalidar cache após confirmar treino: $e');
+    }
 
-    await _analyticsService.logRunCompleted(
-      distanceKm: run.distanceKm,
-      durationSeconds: run.durationSeconds,
-      pace: run.pace,
-      calories: run.calories,
-      runType: run.type,
-      mood: run.mood,
+    // Tudo abaixo é pós-commit. Falha aqui não pode transformar um treino
+    // confirmado em "não foi possível salvar" para o usuário.
+    unawaited(
+      _backupService.runAutoBackupIfEnabled().catchError((Object error) {
+        debugPrint('Falha no backup após salvar treino: $error');
+        return false;
+      }),
     );
 
-    final trainingService = TrainingService(_dbService);
-    final isPlanSuccessful = await trainingService.matchRunToPlan(run);
+    try {
+      await _analyticsService.logRunCompleted(
+        distanceKm: run.distanceKm,
+        durationSeconds: run.durationSeconds,
+        pace: run.pace,
+        calories: run.calories,
+        runType: run.type,
+        mood: run.mood,
+      );
+    } catch (e) {
+      debugPrint('Falha no analytics após salvar treino: $e');
+    }
 
-    final newAwards = await _achievementService.checkAwards(run);
-    for (final award in newAwards) {
-      _analyticsService.logAchievementUnlocked(achievementId: award['id']);
+    var isPlanSuccessful = false;
+    try {
+      final trainingService = _trainingService ?? TrainingService(_dbService);
+      isPlanSuccessful = await trainingService.matchRunToPlan(run);
+    } catch (e) {
+      debugPrint('Falha ao vincular treino ao plano: $e');
+    }
+
+    var newAwards = <Map<String, dynamic>>[];
+    try {
+      newAwards = await _achievementService.checkAwards(run);
+      for (final award in newAwards) {
+        try {
+          await _analyticsService.logAchievementUnlocked(
+            achievementId: award['id'],
+          );
+        } catch (e) {
+          debugPrint('Falha no analytics da conquista: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('Falha ao verificar conquistas: $e');
     }
 
     return RunPersistenceResult(
