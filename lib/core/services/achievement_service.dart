@@ -18,7 +18,7 @@ class AchievementService {
 
     // Conquistas já desbloqueadas — usadas para filtrar duplicatas
     final earned = await _dbService.getEarnedAchievements();
-    final Set<String> earnedIds = earned.map((e) => e['id'] as String).toSet();
+    final Set<String> earnedIds = earned.map((e) => e.id).toSet();
 
     // 1. Primeiro Passo: Complete sua primeira corrida
     if (totals.runCount == 1) {

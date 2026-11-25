@@ -5,7 +5,8 @@ import 'package:provider/provider.dart';
 import '../../../../core/data/data_change_hub.dart';
 import '../../../../core/utils/latest_request.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/services/database_service.dart';
+import '../../../../core/domain/repositories/run_repository.dart';
+import '../../../../core/domain/repositories/stats_repository.dart';
 import '../../../../core/widgets/glass_container.dart';
 import 'package:runlabag/core/domain/models/weekly_evolution_stats.dart';
 import 'package:runlabag/core/domain/models/monthly_evolution_stats.dart';
@@ -30,7 +31,8 @@ class AnalyticsTab extends StatefulWidget {
 }
 
 class _AnalyticsTabState extends State<AnalyticsTab> {
-  DatabaseService get _dbService => context.read<DatabaseService>();
+  StatsRepository get _statsRepo => context.read<StatsRepository>();
+  RunRepository get _runRepo => context.read<RunRepository>();
   int _selectedPeriod = 0;
 
   List<WeeklyEvolutionStats> _weeklyData = [];
@@ -82,10 +84,10 @@ class _AnalyticsTabState extends State<AnalyticsTab> {
     // "Mês" = últimas 5 semanas; Trimestre/Semestre/Ano usam meses
     // agregados (12 cobrem as três janelas) e o comparativo alcança
     // até 36 meses de histórico nos dropdowns.
-    final weeklyFuture = _dbService.getWeeklyEvolution(5);
-    final monthlyFuture = _dbService.getMonthlyEvolution(36);
-    final weekRunsFuture = _dbService.getRunSummariesBetween(startOfWeek, now);
-    final consistencyFuture = _dbService.getConsistencyStats(
+    final weeklyFuture = _statsRepo.getWeeklyEvolution(5);
+    final monthlyFuture = _statsRepo.getMonthlyEvolution(36);
+    final weekRunsFuture = _runRepo.getSummariesBetween(startOfWeek, now);
+    final consistencyFuture = _statsRepo.getConsistencyStats(
       now.subtract(const Duration(days: 90)),
     );
 

@@ -5,7 +5,8 @@ import 'package:provider/provider.dart';
 import '../../../../core/data/data_change_hub.dart';
 import '../../../../core/utils/latest_request.dart';
 import '../../../../core/widgets/glass_container.dart';
-import '../../../../core/services/database_service.dart';
+import '../../../../core/domain/repositories/stats_repository.dart';
+import '../../../../core/domain/repositories/achievement_repository.dart';
 import '../../../../core/domain/models/personal_records.dart';
 import '../../../../core/utils/time_utils.dart';
 
@@ -17,7 +18,9 @@ class RecordsTab extends StatefulWidget {
 }
 
 class _RecordsTabState extends State<RecordsTab> {
-  DatabaseService get _dbService => context.read<DatabaseService>();
+  StatsRepository get _statsRepo => context.read<StatsRepository>();
+  AchievementRepository get _achievementRepo =>
+      context.read<AchievementRepository>();
   PersonalRecordsSnapshot? _records;
   List<double> _monitoredDistances = [];
   List<String> _earnedAchievementIds = [];
@@ -56,8 +59,8 @@ class _RecordsTabState extends State<RecordsTab> {
 
   Future<void> _loadData() async {
     final requestId = _latestLoad.begin();
-    final records = await _dbService.getPersonalRecords();
-    final earned = await _dbService.getEarnedAchievements();
+    final records = await _statsRepo.getPersonalRecords();
+    final earned = await _achievementRepo.getEarnedAchievements();
 
     if (mounted && _latestLoad.isCurrent(requestId)) {
       setState(() {
@@ -65,7 +68,7 @@ class _RecordsTabState extends State<RecordsTab> {
             .map((record) => record.targetDistanceKm)
             .toList();
         _records = records;
-        _earnedAchievementIds = earned.map((e) => e['id'] as String).toList();
+        _earnedAchievementIds = earned.map((e) => e.id).toList();
         _isLoading = false;
       });
     }
@@ -86,7 +89,7 @@ class _RecordsTabState extends State<RecordsTab> {
   }
 
   void _showRecordHistory(double targetDistanceKm, String label) async {
-    final history = await _dbService.getRecordHistory(targetDistanceKm);
+    final history = await _statsRepo.getRecordHistory(targetDistanceKm);
     if (!mounted) return;
 
     showModalBottomSheet(
@@ -127,7 +130,7 @@ class _RecordsTabState extends State<RecordsTab> {
   }
 
   void _showLongestHistory() async {
-    final history = await _dbService.getLongestDistanceHistory();
+    final history = await _statsRepo.getLongestDistanceHistory();
     if (!mounted) return;
 
     showModalBottomSheet(
@@ -349,8 +352,8 @@ class _RecordsTabState extends State<RecordsTab> {
                             style: TextStyle(color: cs.onPrimaryContainer, fontWeight: FontWeight.bold),
                           ),
                           onDeleted: () async {
-                            await _dbService.removeMonitoredDistance(dist);
-                            final updated = await _dbService.getMonitoredDistances();
+                            await _statsRepo.removeMonitoredDistance(dist);
+                            final updated = await _statsRepo.getMonitoredDistances();
                             setDialogState(() => _monitoredDistances = updated);
                             setState(() {});
                           },
@@ -374,8 +377,8 @@ class _RecordsTabState extends State<RecordsTab> {
                 onPressed: () async {
                   final dist = double.tryParse(controller.text);
                   if (dist != null && dist > 0) {
-                    await _dbService.addMonitoredDistance(dist);
-                    final updated = await _dbService.getMonitoredDistances();
+                    await _statsRepo.addMonitoredDistance(dist);
+                    final updated = await _statsRepo.getMonitoredDistances();
                     setDialogState(() {
                       _monitoredDistances = updated;
                       controller.clear();

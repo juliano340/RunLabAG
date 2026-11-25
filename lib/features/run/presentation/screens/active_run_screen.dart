@@ -12,7 +12,6 @@ import '../../../../core/data/data_change_hub.dart';
 import '../../../../core/domain/services/pace_zone_service.dart';
 import '../../../../core/providers/runs_provider.dart';
 import '../../../../core/services/analytics_service.dart';
-import '../../../../core/services/database_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/theme_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -21,9 +20,9 @@ import '../../../../core/utils/map_marker_helper.dart';
 import '../../application/live_pace_trace.dart';
 import '../../application/run_persistence_coordinator.dart';
 import '../../application/run_session_controller.dart';
-import '../../data/repositories/database_active_run_store.dart';
-import '../../data/repositories/database_run_profile_source.dart';
 import '../../domain/models/run_session_event.dart';
+import '../../domain/repositories/active_run_store.dart';
+import '../../domain/repositories/run_profile_source.dart';
 import '../widgets/active_run/active_run_bottom_panel.dart';
 import '../widgets/active_run/active_run_dialogs.dart';
 import '../widgets/active_run/active_run_lock_overlay.dart';
@@ -89,12 +88,11 @@ class _ActiveRunScreenState extends State<ActiveRunScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    final databaseService = context.read<DatabaseService>();
     _session = RunSessionController(
       locations: LocationService(),
       clock: const SystemClock(),
-      activeRunStore: DatabaseActiveRunStore(databaseService),
-      profileSource: DatabaseRunProfileSource(databaseService),
+      activeRunStore: context.read<ActiveRunStore>(),
+      profileSource: context.read<RunProfileSource>(),
       persistenceCoordinator: context.read<RunPersistenceCoordinator>(),
     );
     _mapListenable = Listenable.merge([

@@ -1,22 +1,32 @@
 import '../core/data/repositories/active_run_repository.dart';
+import '../core/data/repositories/achievement_repository.dart';
 import '../core/data/repositories/caching_run_repository.dart';
 import '../core/data/repositories/caching_stats_repository.dart';
 import '../core/data/repositories/caching_user_repository.dart';
 import '../core/data/data_change_hub.dart';
 import '../core/data/read_model_cache.dart';
 import '../core/data/repositories/run_repository.dart';
+import '../core/data/repositories/sqflite_backup_store.dart';
 import '../core/data/repositories/sqflite_run_completion_store.dart';
 import '../core/data/repositories/stats_repository.dart';
 import '../core/data/repositories/user_repository.dart';
+import '../core/data/repositories/user_data_reset_repository.dart';
 import '../core/domain/repositories/active_run_repository.dart';
+import '../core/domain/repositories/achievement_repository.dart';
 import '../core/domain/repositories/run_repository.dart';
 import '../core/domain/repositories/stats_repository.dart';
 import '../core/domain/repositories/user_repository.dart';
+import '../core/domain/repositories/user_data_reset_repository.dart';
 import '../core/services/achievement_service.dart';
 import '../core/services/analytics_service.dart';
 import '../core/services/backup_service.dart';
 import '../core/services/database_service.dart';
 import '../features/run/application/run_persistence_coordinator.dart';
+import '../features/run/data/repositories/database_active_run_store.dart';
+import '../features/run/data/repositories/database_run_profile_source.dart';
+import '../features/run/domain/repositories/active_run_store.dart';
+import '../features/run/domain/repositories/run_profile_source.dart';
+import '../features/training/services/training_service.dart';
 import '../features/strength_training/data/repositories/strength_workout_repository_impl.dart';
 import '../features/strength_training/domain/repositories/strength_workout_repository.dart';
 
@@ -31,8 +41,13 @@ class AppDependencies {
   final StatsRepository statsRepository;
   final UserRepository userRepository;
   final ActiveRunRepository activeRunRepository;
+  final AchievementRepository achievementRepository;
+  final UserDataResetRepository userDataResetRepository;
   final BackupService backupService;
   final RunPersistenceCoordinator runPersistenceCoordinator;
+  final TrainingService trainingService;
+  final ActiveRunStore activeRunStore;
+  final RunProfileSource runProfileSource;
   final StrengthWorkoutRepository strengthWorkoutRepository;
 
   const AppDependencies({
@@ -43,8 +58,13 @@ class AppDependencies {
     required this.statsRepository,
     required this.userRepository,
     required this.activeRunRepository,
+    required this.achievementRepository,
+    required this.userDataResetRepository,
     required this.backupService,
     required this.runPersistenceCoordinator,
+    required this.trainingService,
+    required this.activeRunStore,
+    required this.runProfileSource,
     required this.strengthWorkoutRepository,
   });
 }
@@ -62,19 +82,27 @@ AppDependencies buildAppDependencies() {
     cache,
   );
   final activeRunRepository = SqfliteActiveRunRepository();
+  final achievementRepository = SqfliteAchievementRepository();
+  final resetRepository = SqfliteUserDataResetRepository();
   final databaseService = DatabaseService(
     runRepository: runRepository,
     userRepository: userRepository,
     statsRepository: statsRepository,
     activeRunRepository: activeRunRepository,
+    achievementRepository: achievementRepository,
+    resetRepository: resetRepository,
   );
-  final backupService = BackupService(databaseService: databaseService);
+  final backupService = BackupService(store: SqfliteBackupStore());
+  final trainingService = TrainingService(databaseService);
+  final activeRunStore = DatabaseActiveRunStore(databaseService);
+  final runProfileSource = DatabaseRunProfileSource(databaseService);
   final runPersistenceCoordinator = RunPersistenceCoordinator(
     dbService: databaseService,
     achievementService: AchievementService(dbService: databaseService),
     backupService: backupService,
     analyticsService: AnalyticsService(),
     completionStore: SqfliteRunCompletionStore(),
+    trainingService: trainingService,
     onRunCommitted: () => changes.emit({DataScope.runs, DataScope.paceZones}),
   );
 
@@ -86,8 +114,13 @@ AppDependencies buildAppDependencies() {
     statsRepository: statsRepository,
     userRepository: userRepository,
     activeRunRepository: activeRunRepository,
+    achievementRepository: achievementRepository,
+    userDataResetRepository: resetRepository,
     backupService: backupService,
     runPersistenceCoordinator: runPersistenceCoordinator,
+    trainingService: trainingService,
+    activeRunStore: activeRunStore,
+    runProfileSource: runProfileSource,
     strengthWorkoutRepository: StrengthWorkoutRepositoryImpl(databaseService),
   );
 }

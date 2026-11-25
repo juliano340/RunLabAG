@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 
-import '../../../../core/services/database_service.dart';
+import '../../../../core/domain/repositories/achievement_repository.dart';
 import '../../../../core/data/data_change_hub.dart';
 
 class AchievementsTab extends StatefulWidget {
@@ -15,7 +15,8 @@ class AchievementsTab extends StatefulWidget {
 }
 
 class _AchievementsTabState extends State<AchievementsTab> {
-  DatabaseService get _dbService => context.read<DatabaseService>();
+  AchievementRepository get _achievementRepo =>
+      context.read<AchievementRepository>();
   List<String> _earnedIds = [];
   bool _isLoading = true;
   Listenable? _dataListenable;
@@ -45,10 +46,10 @@ class _AchievementsTabState extends State<AchievementsTab> {
   }
 
   Future<void> _loadAchievements() async {
-    final earnedList = await _dbService.getEarnedAchievements();
+    final earnedList = await _achievementRepo.getEarnedAchievements();
     if (mounted) {
       setState(() {
-        _earnedIds = earnedList.map((e) => e['id'] as String).toList();
+        _earnedIds = earnedList.map((e) => e.id).toList();
         _isLoading = false;
       });
     }

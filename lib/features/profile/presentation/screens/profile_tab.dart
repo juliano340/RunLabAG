@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/glass_container.dart';
-import '../../../../core/services/database_service.dart';
+import '../../../../core/domain/repositories/user_repository.dart';
+import '../../../../core/domain/repositories/user_data_reset_repository.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:image_picker/image_picker.dart';
@@ -32,7 +33,9 @@ class ProfileTab extends StatefulWidget {
 }
 
 class _ProfileTabState extends State<ProfileTab> {
-  DatabaseService get _dbService => context.read<DatabaseService>();
+  UserRepository get _userRepo => context.read<UserRepository>();
+  UserDataResetRepository get _resetRepo =>
+      context.read<UserDataResetRepository>();
   BackupService get _backupService => context.read<BackupService>();
   UserProfile? _profile;
   bool _isLoading = true;
@@ -73,7 +76,7 @@ class _ProfileTabState extends State<ProfileTab> {
   }
 
   Future<void> _loadProfile() async {
-    final profile = await _dbService.getUserProfile();
+    final profile = await _userRepo.getUserProfile();
     if (mounted) {
       setState(() {
         _profile = profile;
@@ -167,7 +170,7 @@ class _ProfileTabState extends State<ProfileTab> {
         kmNotificationsEnabled: _profile!.kmNotificationsEnabled,
       );
 
-      await _dbService.saveUserProfile(updatedProfile);
+      await _userRepo.saveUserProfile(updatedProfile);
 
       // Remove a foto antiga para não acumular arquivos órfãos
       if (oldPhotoPath != null && oldPhotoPath != savedImage.path) {
@@ -211,7 +214,7 @@ class _ProfileTabState extends State<ProfileTab> {
       kmNotificationsEnabled: _profile!.kmNotificationsEnabled,
     );
 
-    await _dbService.saveUserProfile(updatedProfile);
+    await _userRepo.saveUserProfile(updatedProfile);
     _loadProfile();
   }
 
@@ -275,7 +278,7 @@ class _ProfileTabState extends State<ProfileTab> {
                   monthlyGoal: _profile!.monthlyGoal,
                   kmNotificationsEnabled: _profile!.kmNotificationsEnabled,
                 );
-                await _dbService.saveUserProfile(updatedProfile);
+                await _userRepo.saveUserProfile(updatedProfile);
                 if (context.mounted) {
                   Navigator.pop(context);
                   _loadProfile();
@@ -542,7 +545,7 @@ class _ProfileTabState extends State<ProfileTab> {
                                             lastGoalUpdate: _profile!.lastGoalUpdate,
                           kmNotificationsEnabled: value,
                         );
-                        await _dbService.saveUserProfile(updated);
+                        await _userRepo.saveUserProfile(updated);
                         if (mounted) {
                           setState(() => _profile = updated);
                         }
@@ -942,7 +945,7 @@ class _ProfileTabState extends State<ProfileTab> {
     }
 
     try {
-      await _dbService.resetAllData();
+      await _resetRepo.resetAllData();
     } catch (e) {
       // Nada de falha silenciosa: se o banco recusar, o usuário precisa
       // saber que os dados NÃO foram apagados.

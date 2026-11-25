@@ -358,7 +358,12 @@ void main() {
       final internal = Directory('${docsDir.path}/backups');
       final latest = File('${internal.path}/runlab_auto_backup.json');
       expect(await latest.exists(), isTrue);
-      expect(jsonDecode(await latest.readAsString())['version'], 3);
+      final backup = jsonDecode(await latest.readAsString());
+      expect(backup['version'], 4);
+      expect(backup, contains('paceZones'));
+      expect(backup, contains('trainingPlans'));
+      expect(backup, contains('planSessions'));
+      expect(backup, contains('exerciseDictionary'));
       expect(snapshots(internal), hasLength(1));
       expect(
         Directory('${tempDir.path}/external/RunLab').existsSync(),
@@ -394,7 +399,7 @@ void main() {
         jsonDecode(
           await File('${external.path}/runlab_auto_backup.json').readAsString(),
         )['version'],
-        3,
+        4,
       );
       expect(
         await Directory(
@@ -418,7 +423,7 @@ void main() {
       currentTime = currentTime.add(const Duration(minutes: 1));
 
       expect(await service.runAutoBackupIfEnabled(), isTrue);
-      expect(jsonDecode(await latest.readAsString())['version'], 3);
+      expect(jsonDecode(await latest.readAsString())['version'], 4);
     });
 
     test('falha externa não invalida a cópia interna e fica visível', () async {

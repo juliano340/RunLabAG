@@ -26,7 +26,12 @@ import 'core/domain/repositories/run_repository.dart';
 import 'core/domain/repositories/stats_repository.dart';
 import 'core/domain/repositories/user_repository.dart';
 import 'core/domain/repositories/active_run_repository.dart';
+import 'core/domain/repositories/achievement_repository.dart';
+import 'core/domain/repositories/user_data_reset_repository.dart';
 import 'features/run/application/run_persistence_coordinator.dart';
+import 'features/training/services/training_service.dart';
+import 'features/run/domain/repositories/active_run_store.dart';
+import 'features/run/domain/repositories/run_profile_source.dart';
 import 'app/composition_root.dart';
 
 /// Contador de inicializações que não chegaram ao primeiro frame.
@@ -85,9 +90,6 @@ void main() async {
             ),
             Provider<DataChangeHub>.value(value: dependencies.changes),
             Provider<ReadModelCache>.value(value: dependencies.cache),
-            Provider<DatabaseService>.value(
-              value: dependencies.databaseService,
-            ),
             Provider<RunRepository>.value(value: dependencies.runRepository),
             Provider<StatsRepository>.value(
               value: dependencies.statsRepository,
@@ -96,9 +98,22 @@ void main() async {
             Provider<ActiveRunRepository>.value(
               value: dependencies.activeRunRepository,
             ),
+            Provider<AchievementRepository>.value(
+              value: dependencies.achievementRepository,
+            ),
+            Provider<UserDataResetRepository>.value(
+              value: dependencies.userDataResetRepository,
+            ),
             Provider<BackupService>.value(value: dependencies.backupService),
             Provider<RunPersistenceCoordinator>.value(
               value: dependencies.runPersistenceCoordinator,
+            ),
+            Provider<TrainingService>.value(
+              value: dependencies.trainingService,
+            ),
+            Provider<ActiveRunStore>.value(value: dependencies.activeRunStore),
+            Provider<RunProfileSource>.value(
+              value: dependencies.runProfileSource,
             ),
             ChangeNotifierProvider(
               create: (_) => StrengthWorkoutProvider(

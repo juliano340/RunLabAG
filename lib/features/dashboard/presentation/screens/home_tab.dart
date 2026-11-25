@@ -11,7 +11,10 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
 import '../../../../features/run/presentation/screens/active_run_screen.dart';
 
-import 'package:runlabag/core/services/database_service.dart';
+import 'package:runlabag/core/domain/repositories/run_repository.dart';
+import 'package:runlabag/core/domain/repositories/stats_repository.dart';
+import 'package:runlabag/core/domain/repositories/user_repository.dart';
+import 'package:runlabag/core/domain/repositories/active_run_repository.dart';
 import 'package:runlabag/core/data/data_change_hub.dart';
 import 'package:runlabag/core/utils/latest_request.dart';
 import '../../../history/presentation/screens/run_detail_screen.dart';
@@ -39,7 +42,10 @@ class HomeTab extends StatefulWidget {
 }
 
 class _HomeTabState extends State<HomeTab> {
-  DatabaseService get _dbService => context.read<DatabaseService>();
+  StatsRepository get _statsRepo => context.read<StatsRepository>();
+  UserRepository get _userRepo => context.read<UserRepository>();
+  RunRepository get _runRepo => context.read<RunRepository>();
+  ActiveRunRepository get _activeRunRepo => context.read<ActiveRunRepository>();
   UserStats _stats = UserStats.empty;
   // Janela da Visão Geral: 0 = tudo, 1 = 30d, 2 = 60d, 3 = 90d.
   int _statsPeriod = 0;
@@ -95,10 +101,10 @@ class _HomeTabState extends State<HomeTab> {
   Future<void> _loadData() async {
     final requestId = _latestLoad.begin();
     // Dispara em paralelo: o boot não deve esperar uma consulta por vez.
-    final statsFuture = _dbService.getUserStats(since: _statsSince);
-    final progressFuture = _dbService.getWeeklyProgress();
-    final profileFuture = _dbService.getUserProfile();
-    final lastRunFuture = _dbService.getLastRun();
+    final statsFuture = _statsRepo.getUserStats(since: _statsSince);
+    final progressFuture = _statsRepo.getWeeklyProgress();
+    final profileFuture = _userRepo.getUserProfile();
+    final lastRunFuture = _runRepo.getLastRunSummary();
 
     final stats = await statsFuture;
     final progress = await progressFuture;
@@ -122,7 +128,7 @@ class _HomeTabState extends State<HomeTab> {
   Future<void> _checkForActiveRun(int requestId) async {
     // Só metadados aqui: a rota (centenas de KB) só é lida se o usuário
     // decidir retomar/salvar.
-    final activeRun = await _dbService.getActiveRunMeta();
+    final activeRun = await _activeRunRepo.getActiveRunMeta();
     if (activeRun != null &&
         mounted &&
         _latestLoad.isCurrent(requestId)) {
@@ -194,7 +200,7 @@ class _HomeTabState extends State<HomeTab> {
                           ),
                         ),
                         onPressed: () async {
-                          await _dbService.clearActiveRun();
+                          await _activeRunRepo.clearActiveRun();
                           if (context.mounted) Navigator.pop(context);
                         },
                         child: Text(
@@ -216,7 +222,7 @@ class _HomeTabState extends State<HomeTab> {
                         onPressed: () async {
                           // Agora sim: carrega metadados + rota.
                           final navigator = Navigator.of(context);
-                          final full = await _dbService.getActiveRun();
+                          final full = await _activeRunRepo.getActiveRun();
                           if (!mounted) return;
                           navigator.pop();
                           if (full == null) return;
@@ -289,7 +295,7 @@ class _HomeTabState extends State<HomeTab> {
     setState(() => _statsPeriod = index);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_statsPeriodKey, index);
-    final stats = await _dbService.getUserStats(since: _statsSince);
+    final stats = await _statsRepo.getUserStats(since: _statsSince);
     if (mounted && _latestLoad.isCurrent(requestId)) {
       setState(() => _stats = stats);
     }

@@ -1,14 +1,17 @@
-import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'database_helper.dart';
 import 'package:runlabag/core/domain/services/pace_zone_service.dart';
 import '../data/repositories/active_run_repository.dart';
+import '../data/repositories/achievement_repository.dart';
 import '../data/repositories/run_repository.dart';
 import '../data/repositories/stats_repository.dart';
+import '../data/repositories/user_data_reset_repository.dart';
 import '../data/repositories/user_repository.dart';
 import '../domain/repositories/active_run_repository.dart';
+import '../domain/repositories/achievement_repository.dart';
 import '../domain/repositories/run_repository.dart';
 import '../domain/repositories/stats_repository.dart';
+import '../domain/repositories/user_data_reset_repository.dart';
 import '../domain/repositories/user_repository.dart';
 import 'package:runlabag/core/domain/models/training_plan.dart';
 import 'package:runlabag/core/domain/models/strength_workout.dart';
@@ -16,6 +19,7 @@ import 'package:runlabag/core/domain/models/workout_block.dart';
 import 'package:runlabag/core/domain/models/weekly_evolution_stats.dart';
 import 'package:runlabag/core/domain/models/monthly_evolution_stats.dart';
 import 'package:runlabag/core/domain/models/consistency_stats.dart';
+import 'package:runlabag/core/domain/models/earned_achievement.dart';
 import 'package:runlabag/core/domain/models/personal_records.dart';
 import 'package:runlabag/core/domain/models/record_history_entry.dart';
 import 'package:runlabag/core/domain/models/run_model.dart';
@@ -28,11 +32,11 @@ import 'package:runlabag/core/domain/models/user_totals.dart';
 /// domínio. `DatabaseService` continua como compatibilidade, mas as
 /// dependências podem ser injetadas pelo composition root.
 class DatabaseService {
-  Future<Database> get database => DatabaseHelper.database;
-
   final ActiveRunRepository _activeRunRepo;
   final RunRepository _runRepo;
   final UserRepository _userRepo;
+  final AchievementRepository _achievementRepo;
+  final UserDataResetRepository _resetRepo;
   late final StatsRepository _statsRepo;
 
   DatabaseService({
@@ -40,9 +44,13 @@ class DatabaseService {
     RunRepository? runRepository,
     UserRepository? userRepository,
     StatsRepository? statsRepository,
+    AchievementRepository? achievementRepository,
+    UserDataResetRepository? resetRepository,
   }) : _activeRunRepo = activeRunRepository ?? SqfliteActiveRunRepository(),
        _runRepo = runRepository ?? SqfliteRunRepository(),
-       _userRepo = userRepository ?? SqfliteUserRepository() {
+       _userRepo = userRepository ?? SqfliteUserRepository(),
+       _achievementRepo = achievementRepository ?? SqfliteAchievementRepository(),
+       _resetRepo = resetRepository ?? SqfliteUserDataResetRepository() {
     _statsRepo =
         statsRepository ??
         SqfliteStatsRepository(
@@ -115,51 +123,7 @@ class DatabaseService {
   Future<UserProfile?> getUserProfile() => _userRepo.getUserProfile();
 
   // --- Reset ---
-  /// Apaga todos os dados do usuário (perfil, foto, treinos, conquistas,
-  /// metas, planos e treinos de força). Preserva catálogos e restaura as
-  /// distâncias monitoradas padrão.
-  ///
-  /// Cada tabela é apagada com tolerância individual: numa transação
-  /// tudo-ou-nada, UMA tabela ausente/corrompida desfazia o reset inteiro
-  /// (sintoma: "apaguei tudo e o perfil continuou lá"). Agora um problema
-  /// isolado não impede o resto de ser apagado.
-  Future<void> resetAllData() async {
-    final db = await database;
-    await db.transaction((txn) async {
-      for (final table in [
-        'runs',
-        'run_pace_zones',
-        'user_profile',
-        'achievements',
-        'active_run',
-        'active_run_route',
-        'goal_history',
-        'training_plans',
-        'plan_sessions',
-        'user_training_enrollments',
-        'strength_workouts',
-        'workout_blocks',
-        'block_exercises',
-        'strength_workout_templates',
-        'template_items',
-      ]) {
-        try {
-          await txn.delete(table);
-        } catch (e) {
-          debugPrint('Reset: falha ao apagar $table: $e');
-        }
-      }
-      // Restaura as distâncias monitoradas padrão
-      try {
-        await txn.delete('monitored_distances');
-      } catch (e) {
-        debugPrint('Reset: falha ao limpar monitored_distances: $e');
-      }
-      for (double dist in [1.0, 5.0, 10.0, 15.0]) {
-        await txn.insert('monitored_distances', {'distanceKm': dist});
-      }
-    });
-  }
+  Future<void> resetAllData() => _resetRepo.resetAllData();
 
   // --- Goal History (delegado ao StatsRepository) ---
   Future<void> saveGoalHistory(String periodId, String goalType, double goalValue) =>
@@ -169,32 +133,19 @@ class DatabaseService {
       _statsRepo.getGoalHistory(periodId, goalType);
 
   // Achievement Methods
-  Future<void> saveAchievement(String id, String title, String desc, int iconCode) async {
-    final db = await database;
-    await db.insert(
-      'achievements',
-      {
-        'id': id,
-        'title': title,
-        'description': desc,
-        'iconCode': iconCode,
-        'earnedDate': DateTime.now().toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.ignore,
-    );
-  }
+  Future<void> saveAchievement(String id, String title, String desc, int iconCode) =>
+      _achievementRepo.saveAchievement(
+        id: id,
+        title: title,
+        description: desc,
+        iconCode: iconCode,
+      );
 
-  Future<List<Map<String, dynamic>>> getEarnedAchievements() async {
-    final db = await database;
-    return await db.query('achievements');
-  }
+  Future<List<EarnedAchievement>> getEarnedAchievements() =>
+      _achievementRepo.getEarnedAchievements();
 
-  Future<Map<String, dynamic>?> getLastAchievement() async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query('achievements', orderBy: 'earnedDate DESC', limit: 1);
-    if (maps.isEmpty) return null;
-    return maps.first;
-  }
+  Future<EarnedAchievement?> getLastAchievement() =>
+      _achievementRepo.getLastAchievement();
 
   // --- Evolution / estatísticas (delegado ao StatsRepository) ---
   Future<List<WeeklyEvolutionStats>> getWeeklyEvolution(int numberOfWeeks) =>
@@ -231,23 +182,23 @@ class DatabaseService {
   // --- Training Plans Methods ---
 
   Future<void> saveTrainingPlan(TrainingPlan plan) async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     await db.insert('training_plans', plan.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> savePlanSession(PlanSession session) async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     await db.insert('plan_sessions', session.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<List<TrainingPlan>> getTrainingPlans() async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     final List<Map<String, dynamic>> maps = await db.query('training_plans');
     return List.generate(maps.length, (i) => TrainingPlan.fromMap(maps[i]));
   }
 
   Future<List<PlanSession>> getPlanSessions(String planId) async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'plan_sessions',
       where: 'planId = ?',
@@ -258,14 +209,14 @@ class DatabaseService {
   }
 
   Future<void> saveEnrollment(UserPlanEnrollment enrollment) async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     // We only support one active plan for now, so deactivate others
     await db.update('user_training_enrollments', {'isActive': 0});
     await db.insert('user_training_enrollments', enrollment.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<UserPlanEnrollment?> getActiveEnrollment() async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     final List<Map<String, dynamic>> maps = await db.query(
       'user_training_enrollments',
       where: 'isActive = 1',
@@ -276,7 +227,7 @@ class DatabaseService {
   }
 
   Future<void> updateEnrollmentProgress(String planId, int week, int day) async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     await db.update(
       'user_training_enrollments',
       {'currentWeek': week, 'currentDay': day},
@@ -286,13 +237,13 @@ class DatabaseService {
   }
 
   Future<void> deactivateActiveEnrollment() async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     await db.update('user_training_enrollments', {'isActive': 0});
   }
 
   // --- Strength Training Management ---
   Future<void> saveStrengthWorkout(StrengthWorkout workout) async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     await db.insert('strength_workouts', {
       'id': workout.id,
       'name': workout.name,
@@ -302,7 +253,7 @@ class DatabaseService {
   }
 
   Future<List<StrengthWorkout>> getStrengthWorkouts() async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     final List<Map<String, dynamic>> maps = await db.query('strength_workouts', orderBy: 'date DESC');
     return maps.map((map) {
       final payload = map['payload'] as String;
@@ -311,13 +262,13 @@ class DatabaseService {
   }
 
   Future<void> deleteStrengthWorkout(String id) async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     await db.delete('strength_workouts', where: 'id = ?', whereArgs: [id]);
   }
   
   // --- Exercise Dictionary ---
   Future<void> saveToDictionary(String id, String name, String muscleGroupId) async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     await db.insert('exercise_dictionary', {
       'id': id,
       'name': name,
@@ -326,14 +277,14 @@ class DatabaseService {
   }
   
   Future<List<Map<String, dynamic>>> getExerciseDictionary(String muscleGroupId) async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     return await db.query('exercise_dictionary', where: 'muscleGroupId = ?', whereArgs: [muscleGroupId]);
   }
 
   // --- Workout Blocks & Modular Templates ---
 
   Future<void> saveWorkoutBlock(WorkoutBlock block) async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     await db.transaction((txn) async {
       await txn.insert('workout_blocks', block.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
       // Remove previous exercises to overwrite
@@ -347,7 +298,7 @@ class DatabaseService {
   }
 
   Future<List<WorkoutBlock>> getWorkoutBlocks() async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     final List<Map<String, dynamic>> blockMaps = await db.query('workout_blocks');
     List<WorkoutBlock> blocks = [];
     for (var map in blockMaps) {
@@ -366,7 +317,7 @@ class DatabaseService {
   }
 
   Future<void> saveWorkoutTemplate(StrengthWorkoutTemplate template) async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     await db.transaction((txn) async {
       await txn.insert('strength_workout_templates', template.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
       await txn.delete('template_items', where: 'templateId = ?', whereArgs: [template.id]);
@@ -377,7 +328,7 @@ class DatabaseService {
   }
 
   Future<List<StrengthWorkoutTemplate>> getWorkoutTemplates() async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     final List<Map<String, dynamic>> templateMaps = await db.query('strength_workout_templates');
     List<StrengthWorkoutTemplate> templates = [];
     for (var map in templateMaps) {
@@ -396,7 +347,7 @@ class DatabaseService {
   }
 
   Future<void> deleteWorkoutBlock(String id) async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     await db.transaction((txn) async {
       await txn.delete('workout_blocks', where: 'id = ?', whereArgs: [id]);
       await txn.delete('block_exercises', where: 'blockId = ?', whereArgs: [id]);
@@ -404,7 +355,7 @@ class DatabaseService {
   }
 
   Future<void> deleteWorkoutTemplate(String id) async {
-    final db = await database;
+    final db = await DatabaseHelper.database;
     await db.transaction((txn) async {
       await txn.delete('strength_workout_templates', where: 'id = ?', whereArgs: [id]);
       await txn.delete('template_items', where: 'templateId = ?', whereArgs: [id]);

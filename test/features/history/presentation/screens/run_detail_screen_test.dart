@@ -2,17 +2,47 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
-import 'package:runlabag/core/services/database_service.dart';
+import 'package:runlabag/core/domain/repositories/run_repository.dart';
 import 'package:runlabag/core/services/theme_service.dart';
 import 'package:runlabag/core/domain/models/run_model.dart';
 import 'package:runlabag/features/history/presentation/screens/run_detail_screen.dart';
 
-class _EmptyDatabaseService extends DatabaseService {
+class _EmptyRunRepository implements RunRepository {
   @override
-  Future<RunModel?> getRunById(String id) async => null;
+  Future<RunModel?> getById(String id) async => null;
 
   @override
-  Future<List<RunModel>> getRunSummaries() async => const [];
+  Future<List<RunModel>> getSummaries() async => const [];
+
+  @override
+  Future<List<RunModel>> getSummariesBetween(DateTime start, DateTime end) async =>
+      const [];
+
+  @override
+  Future<RunModel?> getLastRunSummary() async => null;
+
+  @override
+  Future<void> saveRun(RunModel run) async {}
+
+  @override
+  Future<void> deleteRun(String id) async {}
+
+  @override
+  Future<void> savePaceZones(
+    String runId,
+    Map<String, double> distanceByZone,
+  ) async {}
+
+  @override
+  Future<Map<String, double>> getPaceZoneTotals(
+    DateTime start,
+    DateTime end,
+  ) async => {};
+
+  @override
+  Future<List<Map<String, dynamic>>> getRunsMissingPaceZones({
+    int limit = 40,
+  }) async => [];
 }
 
 void main() {
@@ -35,7 +65,7 @@ void main() {
         MultiProvider(
           providers: [
             ChangeNotifierProvider(create: (_) => ThemeService()),
-            Provider<DatabaseService>.value(value: _EmptyDatabaseService()),
+            Provider<RunRepository>.value(value: _EmptyRunRepository()),
           ],
           child: MaterialApp(home: RunDetailScreen(run: run)),
         ),
@@ -74,7 +104,7 @@ void main() {
         MultiProvider(
           providers: [
             ChangeNotifierProvider(create: (_) => ThemeService()),
-            Provider<DatabaseService>.value(value: _EmptyDatabaseService()),
+            Provider<RunRepository>.value(value: _EmptyRunRepository()),
           ],
           child: MaterialApp(home: RunDetailScreen(run: run)),
         ),
@@ -115,7 +145,7 @@ void main() {
         MultiProvider(
           providers: [
             ChangeNotifierProvider(create: (_) => ThemeService()),
-            Provider<DatabaseService>.value(value: _EmptyDatabaseService()),
+            Provider<RunRepository>.value(value: _EmptyRunRepository()),
           ],
           child: MaterialApp(home: RunDetailScreen(run: run)),
         ),

@@ -156,7 +156,10 @@ void main() {
     await database.saveUserProfile(
       UserProfile(name: 'Antigo', age: 30, weight: 70, height: 170),
     );
-    expect(await (await database.database).query('user_profile'), hasLength(1));
+    expect(
+      await (await DatabaseHelper.database).query('user_profile'),
+      hasLength(1),
+    );
     expect((await database.getUserProfile())?.name, 'Antigo');
     await database.saveUserProfile(
       UserProfile(name: 'Novo', age: 30, weight: 72, height: 170),

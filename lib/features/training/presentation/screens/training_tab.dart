@@ -4,7 +4,6 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/glass_container.dart';
-import '../../../../core/services/database_service.dart';
 import 'package:runlabag/core/domain/models/training_plan.dart';
 import '../../services/training_service.dart';
 
@@ -16,7 +15,6 @@ class TrainingTab extends StatefulWidget {
 }
 
 class _TrainingTabState extends State<TrainingTab> {
-  DatabaseService get _dbService => context.read<DatabaseService>();
   late TrainingService _trainingService;
   
   UserPlanEnrollment? _activeEnrollment;
@@ -28,7 +26,7 @@ class _TrainingTabState extends State<TrainingTab> {
   @override
   void initState() {
     super.initState();
-    _trainingService = TrainingService(_dbService);
+    _trainingService = context.read<TrainingService>();
     _loadAll();
   }
 

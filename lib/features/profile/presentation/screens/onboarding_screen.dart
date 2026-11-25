@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:runlabag/core/theme/app_colors.dart';
-import 'package:runlabag/core/services/database_service.dart';
+import 'package:runlabag/core/domain/repositories/user_repository.dart';
 import 'package:runlabag/core/domain/models/user_profile.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -100,8 +100,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         weeklyGoal: _parseNumber(_weeklyGoalController.text),
       );
 
-      final dbService = context.read<DatabaseService>();
-      await dbService.saveUserProfile(profile);
+      final userRepository = context.read<UserRepository>();
+      await userRepository.saveUserProfile(profile);
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('hasCompletedOnboarding', true);

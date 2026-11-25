@@ -4,7 +4,9 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/glass_container.dart';
-import '../../../../core/services/database_service.dart';
+import '../../../../core/domain/repositories/run_repository.dart';
+import '../../../../core/domain/repositories/stats_repository.dart';
+import '../../../../core/domain/repositories/user_repository.dart';
 import '../../../../core/utils/time_utils.dart';
 import '../../../../core/services/recommendation_service.dart';
 import 'add_run_screen.dart';
@@ -25,7 +27,9 @@ class HistoryTab extends StatefulWidget {
 }
 
 class _HistoryTabState extends State<HistoryTab> {
-  DatabaseService get _dbService => context.read<DatabaseService>();
+  RunRepository get _runRepo => context.read<RunRepository>();
+  StatsRepository get _statsRepo => context.read<StatsRepository>();
+  UserRepository get _userRepo => context.read<UserRepository>();
   List<RunModel> _allRuns = [];
   List<RunModel> _filteredRuns = [];
   bool _isLoading = true;
@@ -82,8 +86,8 @@ class _HistoryTabState extends State<HistoryTab> {
 
   Future<void> _loadData() async {
     final requestId = _latestLoad.begin();
-    final runs = await _dbService.getRunSummaries();
-    final profile = await _dbService.getUserProfile();
+    final runs = await _runRepo.getSummaries();
+    final profile = await _userRepo.getUserProfile();
 
     if (mounted && _latestLoad.isCurrent(requestId)) {
       DateTime? min;
@@ -143,7 +147,7 @@ class _HistoryTabState extends State<HistoryTab> {
         : (_userProfile?.monthlyGoal ?? 80.0);
 
     // Try to load an existing historical snapshot for this period
-    var historicalGoal = await _dbService.getGoalHistory(
+    var historicalGoal = await _statsRepo.getGoalHistory(
       periodId,
       goalType,
     );
@@ -152,7 +156,7 @@ class _HistoryTabState extends State<HistoryTab> {
     if (historicalGoal == null) {
       // No snapshot yet — create one now to "freeze" the current goal to this period
       historicalGoal = defaultGoal;
-      await _dbService.saveGoalHistory(periodId, goalType, defaultGoal);
+      await _statsRepo.saveGoalHistory(periodId, goalType, defaultGoal);
       if (!mounted || !_latestLoad.isCurrent(requestId)) return;
     }
 
@@ -227,7 +231,7 @@ class _HistoryTabState extends State<HistoryTab> {
 
     // Faixas de ritmo do período: números já calculados no salvamento do
     // treino (tabela run_pace_zones). Nenhuma rota é decodificada aqui.
-    final totals = await _dbService.getPaceZoneTotals(rangeStart, rangeEnd);
+    final totals = await _runRepo.getPaceZoneTotals(rangeStart, rangeEnd);
     if (!mounted || !_latestLoad.isCurrent(requestId)) return;
     final zoneTotals = <PaceZone, double>{};
     for (final entry in totals.entries) {
@@ -503,7 +507,7 @@ class _HistoryTabState extends State<HistoryTab> {
                 final navigator = Navigator.of(context);
 
                 // Save per-period (historical) goal
-                await _dbService.saveGoalHistory(
+                await _statsRepo.saveGoalHistory(
                   periodId,
                   goalType,
                   newPeriodGoal,
@@ -525,7 +529,7 @@ class _HistoryTabState extends State<HistoryTab> {
                         : _userProfile!.monthlyGoal,
                     lastGoalUpdate: DateTime.now(),
                   );
-                  await _dbService.saveUserProfile(updatedProfile);
+                  await _userRepo.saveUserProfile(updatedProfile);
                   if (mounted) setState(() => _userProfile = updatedProfile);
                 }
 
@@ -1203,7 +1207,7 @@ class _HistoryTabState extends State<HistoryTab> {
                       final weekNum = (day / 7).floor() + 1;
                       final nextPeriodId =
                           '${startOfNextWeek.year}-W${weekNum.toString().padLeft(2, '0')}';
-                      await _dbService.saveGoalHistory(
+                      await _statsRepo.saveGoalHistory(
                         nextPeriodId,
                         'weekly',
                         res.recommendedGoal,
@@ -1219,7 +1223,7 @@ class _HistoryTabState extends State<HistoryTab> {
                         monthlyGoal: _userProfile!.monthlyGoal,
                         lastGoalUpdate: DateTime.now(),
                       );
-                      await _dbService.saveUserProfile(newProfile);
+                      await _userRepo.saveUserProfile(newProfile);
                       if (mounted) {
                         setState(() {
                           _userProfile = newProfile;

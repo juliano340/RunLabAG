@@ -8,7 +8,9 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/services/backup_service.dart';
-import '../../../../core/services/database_service.dart';
+import '../../../../core/domain/repositories/run_repository.dart';
+import '../../../../core/domain/repositories/stats_repository.dart';
+import '../../../../core/domain/repositories/user_repository.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../run/domain/services/run_metrics_service.dart';
 import '../widgets/route_drawing_map.dart';
@@ -58,7 +60,9 @@ class AddRunScreen extends StatefulWidget {
 }
 
 class _AddRunScreenState extends State<AddRunScreen> {
-  DatabaseService get _dbService => context.read<DatabaseService>();
+  StatsRepository get _statsRepo => context.read<StatsRepository>();
+  UserRepository get _userRepo => context.read<UserRepository>();
+  RunRepository get _runRepo => context.read<RunRepository>();
   BackupService get _backupService => context.read<BackupService>();
   final _distanceController = TextEditingController();
   final _durationController = TextEditingController();
@@ -106,8 +110,8 @@ class _AddRunScreenState extends State<AddRunScreen> {
   }
 
   Future<void> _loadAnchors() async {
-    final stats = await _dbService.getUserStats();
-    final profile = await _dbService.getUserProfile();
+    final stats = await _statsRepo.getUserStats();
+    final profile = await _userRepo.getUserProfile();
     if (!mounted) return;
 
     // Ritmo médio tipado; a UI não faz parse de string formatada.
@@ -247,7 +251,7 @@ class _AddRunScreenState extends State<AddRunScreen> {
     }
 
     try {
-      await _dbService.saveRun(run);
+      await _runRepo.saveRun(run);
       unawaited(_backupService.runAutoBackupIfEnabled());
       if (!mounted) return;
       // O repositório emite a mudança e as abas dependentes recarregam.
