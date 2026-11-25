@@ -61,6 +61,9 @@ lib/
   enquanto `ActiveRunScreen` cuida apenas de UI, mapa e navegação;
 - Repositórios são consumidos por interfaces no domínio, com implementações
   sqflite e decorators de cache na camada de dados;
+- Telas usam repositórios estreitos; `DatabaseService` fica como compatibilidade;
+- `BackupStore` isola o schema do backup v4, incluindo faixas de ritmo, planos,
+  sessões e dicionário de exercícios;
 - `ReadModelCache` compartilha resumos, perfil, recordes e estatísticas entre as
   abas, com single-flight e invalidação por escopo;
 - `DataChangeHub` notifica apenas as abas que dependem do dado alterado;

@@ -61,6 +61,9 @@ lib/
   while `ActiveRunScreen` handles only UI, maps, and navigation;
 - Repositories are consumed through domain interfaces, with sqflite
   implementations and cache decorators in the data layer;
+- Screens use narrow repositories; `DatabaseService` remains as compatibility;
+- `BackupStore` isolates the v4 backup schema, including pace zones, plans,
+  sessions, and the exercise dictionary;
 - `ReadModelCache` shares summaries, profile, records, and statistics across
   tabs, with single-flight behavior and scope-based invalidation;
 - `DataChangeHub` notifies only the tabs that depend on the changed data;
