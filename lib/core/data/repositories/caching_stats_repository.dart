@@ -147,54 +147,11 @@ class CachingStatsRepository implements StatsRepository {
   }
 
   @override
-  Future<Map<String, int>> getRunsByTypeBetween(
-    DateTime start,
-    DateTime end,
-  ) async {
-    final value = await _cache.getOrFetch(
-      'runs-by-type:${start.millisecondsSinceEpoch}:'
-      '${end.millisecondsSinceEpoch}',
-      () => _inner.getRunsByTypeBetween(start, end),
-      scopes: {DataScope.runs},
-    );
-    return Map<String, int>.unmodifiable(value);
-  }
-
-  @override
   Future<ConsistencyStats> getConsistencyStats(DateTime since) {
     final key = 'consistency:${_dayKey(since)}:${_dayKey(DateTime.now())}';
     return _cache.getOrFetch(
       key,
       () => _inner.getConsistencyStats(since),
-      scopes: {DataScope.runs},
-    );
-  }
-
-  @override
-  Future<Map<String, dynamic>> getPerformanceTrend(int weeks) {
-    final key = 'performance-trend:$weeks:${_weekKey(DateTime.now())}';
-    return _cache.getOrFetch(
-      key,
-      () => _inner.getPerformanceTrend(weeks),
-      scopes: {DataScope.runs, DataScope.profile, DataScope.goals},
-    );
-  }
-
-  @override
-  Future<Map<String, dynamic>> comparePeriods(
-    DateTime start1,
-    DateTime end1,
-    DateTime start2,
-    DateTime end2,
-  ) {
-    final key =
-        'compare:${start1.millisecondsSinceEpoch}:'
-        '${end1.millisecondsSinceEpoch}:'
-        '${start2.millisecondsSinceEpoch}:'
-        '${end2.millisecondsSinceEpoch}';
-    return _cache.getOrFetch(
-      key,
-      () => _inner.comparePeriods(start1, end1, start2, end2),
       scopes: {DataScope.runs},
     );
   }

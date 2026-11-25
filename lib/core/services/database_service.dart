@@ -1,6 +1,5 @@
 import 'package:sqflite/sqflite.dart';
 import 'database_helper.dart';
-import 'package:runlabag/core/domain/services/pace_zone_service.dart';
 import '../data/repositories/active_run_repository.dart';
 import '../data/repositories/achievement_repository.dart';
 import '../data/repositories/run_repository.dart';
@@ -82,41 +81,6 @@ class DatabaseService {
       _runRepo.savePaceZones(runId, distanceByZone);
   Future<Map<String, double>> getPaceZoneTotals(DateTime start, DateTime end) =>
       _runRepo.getPaceZoneTotals(start, end);
-
-  /// Calcula as faixas de ritmo que faltam, um treino por vez.
-  ///
-  /// Roda em segundo plano depois do primeiro frame. Cada iteração carrega a
-  /// rota de um único treino, então o custo é limitado mesmo com histórico
-  /// grande. Retorna quantos treinos foram processados.
-  Future<int> backfillPaceZones({int batchSize = 12}) async {
-    var processed = 0;
-    final pending = await _runRepo.getRunsMissingPaceZones(limit: batchSize);
-    for (final row in pending) {
-      final run = RunModel.fromMap({
-        'id': row['id'],
-        'date': DateTime.now().toIso8601String(),
-        'distanceKm': row['distanceKm'],
-        'durationSeconds': row['durationSeconds'],
-        'pace': '0:00',
-        'calories': 0,
-        'route': row['route'],
-        'splits': row['splits'],
-      });
-      final result = PaceZoneService.analyze(
-        route: run.route,
-        routeTimes: run.routeTimes,
-        distanceKm: run.distanceKm,
-        durationSeconds: run.durationSeconds,
-        splits: run.splits,
-      );
-      await _runRepo.savePaceZones(
-        row['id'] as String,
-        {for (final e in result.distanceByZoneKm.entries) e.key.name: e.value},
-      );
-      processed++;
-    }
-    return processed;
-  }
 
   // --- User Profile ---
   Future<void> saveUserProfile(UserProfile profile) => _userRepo.saveUserProfile(profile);
@@ -367,17 +331,6 @@ class DatabaseService {
   Future<List<MonthlyEvolutionStats>> getMonthlyEvolution(int numberOfMonths) =>
       _statsRepo.getMonthlyEvolution(numberOfMonths);
 
-  Future<Map<String, int>> getRunsByTypeBetween(DateTime start, DateTime end) =>
-      _statsRepo.getRunsByTypeBetween(start, end);
-
   Future<ConsistencyStats> getConsistencyStats(DateTime since) =>
       _statsRepo.getConsistencyStats(since);
-
-  Future<Map<String, dynamic>> getPerformanceTrend(int weeks) =>
-      _statsRepo.getPerformanceTrend(weeks);
-
-  Future<Map<String, dynamic>> comparePeriods(
-    DateTime start1, DateTime end1,
-    DateTime start2, DateTime end2,
-  ) => _statsRepo.comparePeriods(start1, end1, start2, end2);
 }

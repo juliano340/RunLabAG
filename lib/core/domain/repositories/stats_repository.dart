@@ -38,16 +38,5 @@ abstract interface class StatsRepository {
 
   Future<List<MonthlyEvolutionStats>> getMonthlyEvolution(int numberOfMonths);
 
-  Future<Map<String, int>> getRunsByTypeBetween(DateTime start, DateTime end);
-
   Future<ConsistencyStats> getConsistencyStats(DateTime since);
-
-  Future<Map<String, dynamic>> getPerformanceTrend(int weeks);
-
-  Future<Map<String, dynamic>> comparePeriods(
-    DateTime start1,
-    DateTime end1,
-    DateTime start2,
-    DateTime end2,
-  );
 }
