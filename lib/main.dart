@@ -10,16 +10,15 @@ import 'core/theme/app_colors.dart';
 import 'core/services/theme_service.dart';
 import 'core/services/ad_service.dart';
 import 'core/services/analytics_service.dart';
-import 'core/services/database_service.dart';
 import 'core/services/backup_service.dart';
 import 'core/services/notification_service.dart';
+import 'core/services/pace_zone_backfill_service.dart';
 import 'features/onboarding/presentation/screens/welcome_screen.dart';
 import 'features/dashboard/presentation/screens/main_screen.dart';
 import 'features/profile/presentation/screens/onboarding_screen.dart';
 import 'features/profile/presentation/screens/privacy_screen.dart';
 
 import 'features/strength_training/presentation/providers/strength_workout_provider.dart';
-import 'core/providers/runs_provider.dart';
 import 'core/data/data_change_hub.dart';
 import 'core/data/read_model_cache.dart';
 import 'core/domain/repositories/run_repository.dart';
@@ -85,9 +84,6 @@ void main() async {
         MultiProvider(
           providers: [
             ChangeNotifierProvider(create: (_) => ThemeService()),
-            ChangeNotifierProvider(
-              create: (_) => RunsProvider(changes: dependencies.changes),
-            ),
             Provider<DataChangeHub>.value(value: dependencies.changes),
             Provider<ReadModelCache>.value(value: dependencies.cache),
             Provider<RunRepository>.value(value: dependencies.runRepository),
@@ -130,7 +126,9 @@ void main() async {
 
       // Só depois do primeiro frame: nada aqui pode atrasar a abertura.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(_afterFirstFrame(prefs, dependencies.databaseService));
+        unawaited(
+          _afterFirstFrame(prefs, dependencies.paceZoneBackfillService),
+        );
       });
     },
     (error, stack) {
@@ -143,7 +141,7 @@ void main() async {
 /// Boot concluído: zera o contador e inicializa serviços pesados sem bloquear.
 Future<void> _afterFirstFrame(
   SharedPreferences? prefs,
-  DatabaseService databaseService,
+  PaceZoneBackfillService paceZoneBackfillService,
 ) async {
   try {
     await prefs?.setInt(_bootAttemptsKey, 0);
@@ -179,7 +177,7 @@ Future<void> _afterFirstFrame(
     try {
       // Limite de segurança: nunca fica em loop se uma gravação falhar.
       for (var round = 0; round < 50; round++) {
-        final processed = await databaseService.backfillPaceZones();
+        final processed = await paceZoneBackfillService.runBatch();
         if (processed == 0) break;
       }
     } catch (e) {

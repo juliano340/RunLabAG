@@ -57,8 +57,11 @@ lib/
 ## Architecture
 
 - `app/composition_root.dart` builds the dependency graph once;
-- `RunSessionController` owns GPS, timer, auto-pause, splits, and persistence,
-  while `ActiveRunScreen` handles only UI, maps, and navigation;
+- `RunSessionController` coordinates GPS, timer, and events; route/codecs,
+  persistence, auto-pause, splits, and pace live in testable collaborators;
+  `ActiveRunScreen` handles only UI, maps, and navigation;
+- `HomeDashboardViewModel` and `HistoryDashboardViewModel` own loading,
+  filters, goals, and derived values without knowing widgets or navigation;
 - Repositories are consumed through domain interfaces, with sqflite
   implementations and cache decorators in the data layer;
 - Screens use narrow repositories; `DatabaseService` remains as compatibility;
@@ -66,7 +69,8 @@ lib/
   sessions, and the exercise dictionary;
 - `ReadModelCache` shares summaries, profile, records, and statistics across
   tabs, with single-flight behavior and scope-based invalidation;
-- `DataChangeHub` notifies only the tabs that depend on the changed data;
+- `DataChangeHub` notifies only the tabs that depend on the changed data,
+  without a bridge provider or explicit global invalidation in screens;
 - `LatestRequest` prevents stale loads from overwriting newer results.
 - Run updates are split into a 1-second tick, structural state, and route changes;
 - `LivePaceTrace` accumulates the pace-colored route incrementally and
@@ -130,9 +134,11 @@ flutter analyze
 
 ## Data and backup
 
-Workouts and profile data are stored locally with sqflite. When automatic
-backup is enabled and storage permission has been granted, backup files are
-saved to:
+Workouts and profile data are stored locally with sqflite. The app does not
+require an account and does not sync workouts to a RunLab cloud. Firebase
+Analytics and Crashlytics are optional and only active when Firebase is
+configured. When automatic backup is enabled and storage permission has been
+granted, backup files are saved to:
 
 ```text
 /Download/RunLab/

@@ -21,6 +21,7 @@ import '../core/services/achievement_service.dart';
 import '../core/services/analytics_service.dart';
 import '../core/services/backup_service.dart';
 import '../core/services/database_service.dart';
+import '../core/services/pace_zone_backfill_service.dart';
 import '../features/run/application/run_persistence_coordinator.dart';
 import '../features/run/data/repositories/database_active_run_store.dart';
 import '../features/run/data/repositories/database_run_profile_source.dart';
@@ -36,7 +37,7 @@ import '../features/strength_training/domain/repositories/strength_workout_repos
 class AppDependencies {
   final DataChangeHub changes;
   final ReadModelCache cache;
-  final DatabaseService databaseService;
+  final PaceZoneBackfillService paceZoneBackfillService;
   final RunRepository runRepository;
   final StatsRepository statsRepository;
   final UserRepository userRepository;
@@ -53,7 +54,7 @@ class AppDependencies {
   const AppDependencies({
     required this.changes,
     required this.cache,
-    required this.databaseService,
+    required this.paceZoneBackfillService,
     required this.runRepository,
     required this.statsRepository,
     required this.userRepository,
@@ -94,11 +95,13 @@ AppDependencies buildAppDependencies() {
   );
   final backupService = BackupService(store: SqfliteBackupStore());
   final trainingService = TrainingService(databaseService);
-  final activeRunStore = DatabaseActiveRunStore(databaseService);
-  final runProfileSource = DatabaseRunProfileSource(databaseService);
+  final activeRunStore = DatabaseActiveRunStore(activeRunRepository);
+  final runProfileSource = DatabaseRunProfileSource(userRepository);
   final runPersistenceCoordinator = RunPersistenceCoordinator(
-    dbService: databaseService,
-    achievementService: AchievementService(dbService: databaseService),
+    achievementService: AchievementService(
+      statsRepository: statsRepository,
+      achievementRepository: achievementRepository,
+    ),
     backupService: backupService,
     analyticsService: AnalyticsService(),
     completionStore: SqfliteRunCompletionStore(),
@@ -109,7 +112,7 @@ AppDependencies buildAppDependencies() {
   return AppDependencies(
     changes: changes,
     cache: cache,
-    databaseService: databaseService,
+    paceZoneBackfillService: PaceZoneBackfillService(runRepository),
     runRepository: runRepository,
     statsRepository: statsRepository,
     userRepository: userRepository,

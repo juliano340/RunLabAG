@@ -19,7 +19,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart';
 import 'package:runlabag/core/services/ad_service.dart';
-import '../../../../core/providers/runs_provider.dart';
 import '../../../../core/services/notification_service.dart';
 import 'bmi_detail_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -159,15 +158,8 @@ class _ProfileTabState extends State<ProfileTab> {
 
       final oldPhotoPath = _profile!.profilePicturePath;
 
-      final updatedProfile = UserProfile(
-        name: _profile!.name,
-        age: _profile!.age,
-        weight: _profile!.weight,
-        height: _profile!.height,
+      final updatedProfile = _profile!.copyWith(
         profilePicturePath: savedImage.path,
-        weeklyGoal: _profile!.weeklyGoal,
-        monthlyGoal: _profile!.monthlyGoal,
-        kmNotificationsEnabled: _profile!.kmNotificationsEnabled,
       );
 
       await _userRepo.saveUserProfile(updatedProfile);
@@ -191,10 +183,15 @@ class _ProfileTabState extends State<ProfileTab> {
   Future<void> _removeProfilePicture() async {
     if (_profile == null) return;
 
-    // Delete local file if it exists
-    if (_profile!.profilePicturePath != null) {
+    final oldPhotoPath = _profile!.profilePicturePath;
+    // Primeiro persista a remoção; só depois apague o arquivo. Se o banco
+    // falhar, o perfil continua apontando para uma foto que ainda existe.
+    final updatedProfile = _profile!.copyWith(profilePicturePath: null);
+    await _userRepo.saveUserProfile(updatedProfile);
+
+    if (oldPhotoPath != null) {
       try {
-        final file = File(_profile!.profilePicturePath!);
+        final file = File(oldPhotoPath);
         if (await file.exists()) {
           await file.delete();
         }
@@ -203,18 +200,6 @@ class _ProfileTabState extends State<ProfileTab> {
       }
     }
 
-    final updatedProfile = UserProfile(
-      name: _profile!.name,
-      age: _profile!.age,
-      weight: _profile!.weight,
-      height: _profile!.height,
-      profilePicturePath: null,
-      weeklyGoal: _profile!.weeklyGoal,
-      monthlyGoal: _profile!.monthlyGoal,
-      kmNotificationsEnabled: _profile!.kmNotificationsEnabled,
-    );
-
-    await _userRepo.saveUserProfile(updatedProfile);
     _loadProfile();
   }
 
@@ -268,15 +253,17 @@ class _ProfileTabState extends State<ProfileTab> {
             style: ElevatedButton.styleFrom(backgroundColor: cs.primary),
             onPressed: () async {
               if (formKey.currentState!.validate()) {
-                final updatedProfile = UserProfile(
+                final updatedProfile = _profile!.copyWith(
                   name: nameController.text,
                   age: int.tryParse(ageController.text) ?? _profile!.age,
                   weight: _parseNumber(weightController.text),
                   height: _parseNumber(heightController.text),
-                  profilePicturePath: _profile!.profilePicturePath,
                   weeklyGoal: _parseNumber(weeklyGoalController.text),
-                  monthlyGoal: _profile!.monthlyGoal,
-                  kmNotificationsEnabled: _profile!.kmNotificationsEnabled,
+                  lastGoalUpdate:
+                      _parseNumber(weeklyGoalController.text) !=
+                          _profile!.weeklyGoal
+                      ? DateTime.now()
+                      : _profile!.lastGoalUpdate,
                 );
                 await _userRepo.saveUserProfile(updatedProfile);
                 if (context.mounted) {
@@ -534,15 +521,7 @@ class _ProfileTabState extends State<ProfileTab> {
                       key: const ValueKey('notifications_switch'),
                       value: _profile?.kmNotificationsEnabled ?? true,
                       onChanged: _profile == null ? null : (value) async {
-                        final updated = UserProfile(
-                          name: _profile!.name,
-                          age: _profile!.age,
-                          weight: _profile!.weight,
-                          height: _profile!.height,
-                          profilePicturePath: _profile!.profilePicturePath,
-                          weeklyGoal: _profile!.weeklyGoal,
-                          monthlyGoal: _profile!.monthlyGoal,
-                                            lastGoalUpdate: _profile!.lastGoalUpdate,
+                        final updated = _profile!.copyWith(
                           kmNotificationsEnabled: value,
                         );
                         await _userRepo.saveUserProfile(updated);
@@ -676,7 +655,7 @@ class _ProfileTabState extends State<ProfileTab> {
                             ),
                           );
                           if (success) {
-                            context.read<RunsProvider>().notifyDataChanged();
+                            context.read<DataChangeHub>().emit({DataScope.all});
                             _loadProfile();
                           }
                         }
@@ -932,18 +911,7 @@ class _ProfileTabState extends State<ProfileTab> {
 
     if (confirmed != true || !mounted) return;
 
-    // Remove o arquivo da foto local
-    if (_profile?.profilePicturePath != null) {
-      try {
-        final photoFile = File(_profile!.profilePicturePath!);
-        if (await photoFile.exists()) {
-          await photoFile.delete();
-        }
-      } catch (e) {
-        debugPrint('Erro ao remover foto no reset: $e');
-      }
-    }
-
+    final photoPath = _profile?.profilePicturePath;
     try {
       await _resetRepo.resetAllData();
     } catch (e) {
@@ -965,7 +933,21 @@ class _ProfileTabState extends State<ProfileTab> {
     }
     if (!mounted || !context.mounted) return;
 
-    context.read<RunsProvider>().notifyDataChanged();
+    // O banco já confirmou o reset; agora a foto pode ser removida sem risco
+    // de deixar o perfil apontando para um arquivo inexistente.
+    if (photoPath != null) {
+      try {
+        final photoFile = File(photoPath);
+        if (await photoFile.exists()) {
+          await photoFile.delete();
+        }
+      } catch (e) {
+        debugPrint('Erro ao remover foto no reset: $e');
+      }
+    }
+    if (!mounted || !context.mounted) return;
+
+    context.read<DataChangeHub>().emit({DataScope.all});
     _loadProfile();
 
     ScaffoldMessenger.of(context).showSnackBar(

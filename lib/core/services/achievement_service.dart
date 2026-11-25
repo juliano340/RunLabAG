@@ -1,23 +1,38 @@
 import 'package:lucide_icons/lucide_icons.dart';
-import 'database_service.dart';
+import '../data/repositories/achievement_repository.dart';
+import '../data/repositories/run_repository.dart';
+import '../data/repositories/stats_repository.dart';
+import '../data/repositories/user_repository.dart';
+import '../domain/repositories/achievement_repository.dart';
+import '../domain/repositories/stats_repository.dart';
 import 'package:runlabag/core/domain/models/run_model.dart';
 
 class AchievementService {
-  final DatabaseService _dbService;
+  final StatsRepository _statsRepository;
+  final AchievementRepository _achievementRepository;
 
-  AchievementService({DatabaseService? dbService})
-    : _dbService = dbService ?? DatabaseService();
+  AchievementService({
+    StatsRepository? statsRepository,
+    AchievementRepository? achievementRepository,
+  }) : _statsRepository =
+           statsRepository ??
+           SqfliteStatsRepository(
+             runRepository: SqfliteRunRepository(),
+             userRepository: SqfliteUserRepository(),
+           ),
+       _achievementRepository =
+           achievementRepository ?? SqfliteAchievementRepository();
 
   /// Verifica e salva novas conquistas com base no último treino.
   /// Retorna apenas conquistas REALMENTE novas (ainda não desbloqueadas).
   Future<List<Map<String, dynamic>>> checkAwards(RunModel latestRun) async {
     final List<Map<String, dynamic>> candidates = [];
     // Totais agregados em SQL: não carrega nenhum treino do banco.
-    final totals = await _dbService.getTotals();
+    final totals = await _statsRepository.getTotals();
     final double totalDist = totals.totalDistanceKm;
 
     // Conquistas já desbloqueadas — usadas para filtrar duplicatas
-    final earned = await _dbService.getEarnedAchievements();
+    final earned = await _achievementRepository.getEarnedAchievements();
     final Set<String> earnedIds = earned.map((e) => e.id).toSet();
 
     // 1. Primeiro Passo: Complete sua primeira corrida
@@ -100,11 +115,11 @@ class AchievementService {
 
     // Salvar no banco
     for (var achievement in newlyEarned) {
-      await _dbService.saveAchievement(
-        achievement['id'],
-        achievement['title'],
-        achievement['desc'],
-        achievement['icon'],
+      await _achievementRepository.saveAchievement(
+        id: achievement['id'],
+        title: achievement['title'],
+        description: achievement['desc'],
+        iconCode: achievement['icon'],
       );
     }
 

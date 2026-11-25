@@ -9,6 +9,8 @@ class UserProfile {
   final DateTime? lastGoalUpdate;
   final bool kmNotificationsEnabled;
 
+  static const Object _unset = Object();
+
   UserProfile({
     required this.name,
     required this.age,
@@ -20,6 +22,35 @@ class UserProfile {
     this.lastGoalUpdate,
     this.kmNotificationsEnabled = true,
   });
+
+  UserProfile copyWith({
+    String? name,
+    int? age,
+    double? weight,
+    double? height,
+    Object? profilePicturePath = _unset,
+    double? weeklyGoal,
+    double? monthlyGoal,
+    Object? lastGoalUpdate = _unset,
+    bool? kmNotificationsEnabled,
+  }) {
+    return UserProfile(
+      name: name ?? this.name,
+      age: age ?? this.age,
+      weight: weight ?? this.weight,
+      height: height ?? this.height,
+      profilePicturePath: identical(profilePicturePath, _unset)
+          ? this.profilePicturePath
+          : profilePicturePath as String?,
+      weeklyGoal: weeklyGoal ?? this.weeklyGoal,
+      monthlyGoal: monthlyGoal ?? this.monthlyGoal,
+      lastGoalUpdate: identical(lastGoalUpdate, _unset)
+          ? this.lastGoalUpdate
+          : lastGoalUpdate as DateTime?,
+      kmNotificationsEnabled:
+          kmNotificationsEnabled ?? this.kmNotificationsEnabled,
+    );
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -45,7 +76,9 @@ class UserProfile {
       profilePicturePath: map['profilePicturePath'],
       weeklyGoal: map['weeklyGoal'] ?? 20.0,
       monthlyGoal: map['monthlyGoal'] ?? 80.0,
-      lastGoalUpdate: map['lastGoalUpdate'] != null ? DateTime.parse(map['lastGoalUpdate']) : null,
+      lastGoalUpdate: map['lastGoalUpdate'] != null
+          ? DateTime.parse(map['lastGoalUpdate'])
+          : null,
       kmNotificationsEnabled: (map['kmNotificationsEnabled'] ?? 1) == 1,
     );
   }

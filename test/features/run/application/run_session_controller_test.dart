@@ -258,6 +258,20 @@ void main() {
     await initializing;
   });
 
+  test('início preserva meta e pacing configurados antes da corrida', () async {
+    await controller.initialize();
+    controller.setGoal(
+      distanceKm: 5,
+      targetTimeSeconds: 1800,
+      pacingService: null,
+    );
+
+    expect(await controller.start(warmUpGps: false), isTrue);
+
+    expect(controller.distanceGoal, 5);
+    expect(effects.startedRuns, ['meta_distancia']);
+  });
+
   test('start duplo não zera a corrida em andamento', () async {
     await startController();
     clock.tick(3);

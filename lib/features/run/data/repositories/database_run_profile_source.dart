@@ -1,13 +1,15 @@
-import 'package:runlabag/core/domain/models/user_profile.dart';
-import 'package:runlabag/core/services/database_service.dart';
-
+import '../../../../core/data/repositories/user_repository.dart';
+import '../../../../core/domain/models/user_profile.dart';
+import '../../../../core/domain/repositories/user_repository.dart';
 import '../../domain/repositories/run_profile_source.dart';
 
+/// Adapta o repositório de perfil à porta consumida pelo motor da corrida.
 class DatabaseRunProfileSource implements RunProfileSource {
-  final DatabaseService _databaseService;
+  final UserRepository _repository;
 
-  DatabaseRunProfileSource(this._databaseService);
+  DatabaseRunProfileSource([UserRepository? repository])
+    : _repository = repository ?? SqfliteUserRepository();
 
   @override
-  Future<UserProfile?> load() => _databaseService.getUserProfile();
+  Future<UserProfile?> load() => _repository.getUserProfile();
 }

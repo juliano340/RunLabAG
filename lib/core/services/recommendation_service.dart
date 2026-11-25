@@ -50,11 +50,12 @@ class RecommendationService {
     runs, // kept for backward compat — treated as currentWeekRuns
     List<RunModel> monthRuns = const [],
     double? currentPeriodGoal,
+    DateTime? now,
   }) {
     final List<RunModel> currentWeekRuns = runs;
     final double goalKm = currentPeriodGoal ?? profile.weeklyGoal;
-    final now = DateTime.now();
-    final weekday = now.weekday; // Mon=1 … Sun=7
+    final DateTime currentTime = now ?? DateTime.now();
+    final weekday = currentTime.weekday; // Mon=1 … Sun=7
 
     // ── 1. Base metrics ──────────────────────────────────────────────────
     double weekKm = currentWeekRuns.fold(0.0, (s, r) => s + r.distanceKm);
@@ -77,7 +78,11 @@ class RecommendationService {
 
     // ── 4. Pace trend vs monthly baseline ────────────────────────────────
     double weekPace = _avgPaceSeconds(currentWeekRuns);
-    final startOfWeek = now.subtract(Duration(days: weekday - 1));
+    final startOfWeek = DateTime(
+      currentTime.year,
+      currentTime.month,
+      currentTime.day,
+    ).subtract(Duration(days: currentTime.weekday % 7));
     final monthBaseline = monthRuns
         .where((r) => r.date.isBefore(startOfWeek))
         .toList();
@@ -89,7 +94,9 @@ class RecommendationService {
 
     // ── 5. Cooldown gate ─────────────────────────────────────────────────
     if (profile.lastGoalUpdate != null) {
-      final daysSinceUpdate = now.difference(profile.lastGoalUpdate!).inDays;
+      final daysSinceUpdate = currentTime
+          .difference(profile.lastGoalUpdate!)
+          .inDays;
       if (daysSinceUpdate < 7) {
         return RecommendationResult(
           recommendedGoal: goalKm,

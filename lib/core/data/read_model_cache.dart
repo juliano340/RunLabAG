@@ -12,7 +12,6 @@ class ReadModelCache {
 
   ReadModelCache({DataChangeHub? hub}) : _hub = hub ?? DataChangeHub();
 
-  DataChangeHub get changes => _hub;
   int get revision => _hub.revision(DataScope.all);
 
   void invalidate([Set<DataScope> scopes = const {DataScope.all}]) {

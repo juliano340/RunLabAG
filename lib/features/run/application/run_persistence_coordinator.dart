@@ -8,7 +8,6 @@ import '../../../core/domain/repositories/run_completion_store.dart';
 import '../../../core/services/achievement_service.dart';
 import '../../../core/services/analytics_service.dart';
 import '../../../core/services/backup_service.dart';
-import '../../../core/services/database_service.dart' show DatabaseService;
 import 'package:runlabag/core/domain/models/run_model.dart';
 import 'package:runlabag/core/domain/models/run_split.dart';
 import 'package:runlabag/core/domain/models/auto_pause_event.dart';
@@ -28,7 +27,6 @@ class RunPersistenceResult {
 }
 
 class RunPersistenceCoordinator {
-  final DatabaseService _dbService;
   final AchievementService _achievementService;
   final BackupService _backupService;
   final AnalyticsService _analyticsService;
@@ -37,15 +35,13 @@ class RunPersistenceCoordinator {
   final VoidCallback? _onRunCommitted;
 
   RunPersistenceCoordinator({
-    DatabaseService? dbService,
     AchievementService? achievementService,
     BackupService? backupService,
     AnalyticsService? analyticsService,
     RunCompletionStore? completionStore,
     TrainingService? trainingService,
     VoidCallback? onRunCommitted,
-  }) : _dbService = dbService ?? DatabaseService(),
-       _achievementService = achievementService ?? AchievementService(),
+  }) : _achievementService = achievementService ?? AchievementService(),
        _backupService = backupService ?? BackupService(),
        _analyticsService = analyticsService ?? AnalyticsService(),
        _completionStore = completionStore ?? SqfliteRunCompletionStore(),
@@ -134,11 +130,13 @@ class RunPersistenceCoordinator {
     }
 
     var isPlanSuccessful = false;
-    try {
-      final trainingService = _trainingService ?? TrainingService(_dbService);
-      isPlanSuccessful = await trainingService.matchRunToPlan(run);
-    } catch (e) {
-      debugPrint('Falha ao vincular treino ao plano: $e');
+    final trainingService = _trainingService;
+    if (trainingService != null) {
+      try {
+        isPlanSuccessful = await trainingService.matchRunToPlan(run);
+      } catch (e) {
+        debugPrint('Falha ao vincular treino ao plano: $e');
+      }
     }
 
     var newAwards = <Map<String, dynamic>>[];

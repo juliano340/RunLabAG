@@ -1,23 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/glass_container.dart';
 import '../../../../core/domain/repositories/run_repository.dart';
 import '../../../../core/domain/repositories/stats_repository.dart';
 import '../../../../core/domain/repositories/user_repository.dart';
 import '../../../../core/utils/time_utils.dart';
-import '../../../../core/services/recommendation_service.dart';
+import '../../../../core/data/data_change_hub.dart';
+import '../../../../core/utils/clock.dart';
+import '../../application/history_dashboard_view_model.dart';
+import '../../domain/history_period.dart';
+import '../widgets/pace_distribution_card.dart';
 import 'add_run_screen.dart';
 import 'run_detail_screen.dart';
-import 'package:provider/provider.dart';
-import '../../../../core/data/data_change_hub.dart';
-import '../../../../core/utils/latest_request.dart';
-import 'package:runlabag/core/domain/services/pace_zone_service.dart';
-import '../widgets/pace_distribution_card.dart';
 import 'package:runlabag/core/domain/models/run_model.dart';
-import 'package:runlabag/core/domain/models/user_profile.dart';
 
 class HistoryTab extends StatefulWidget {
   const HistoryTab({super.key});
@@ -27,528 +28,180 @@ class HistoryTab extends StatefulWidget {
 }
 
 class _HistoryTabState extends State<HistoryTab> {
-  RunRepository get _runRepo => context.read<RunRepository>();
-  StatsRepository get _statsRepo => context.read<StatsRepository>();
-  UserRepository get _userRepo => context.read<UserRepository>();
-  List<RunModel> _allRuns = [];
-  List<RunModel> _filteredRuns = [];
-  bool _isLoading = true;
-  int _selectedPeriodIndex = 0; // 0: Semana, 1: Mês
-  final List<String> _periods = ['Semana', 'Mês'];
+  static const _periods = ['Semana', 'Mês'];
 
-  UserProfile? _userProfile;
-  double _currentPeriodGoal =
-      20.0; // The historically-locked goal for the displayed period
+  late final HistoryDashboardViewModel _viewModel;
 
-  // Agregado das faixas de ritmo dos treinos do período (rosquinha do dashboard).
-  Map<PaceZone, double> _paceZoneTotals = {};
-
-  // Lista de atividades: 3 primeiras + "Ver mais"/"Ver menos".
+  // Estado exclusivamente visual: a VM não sabe se a lista está expandida.
   bool _runsExpanded = false;
-
-  // Pagination State
-  DateTime _referenceDate = DateTime.now();
-  DateTime? _minDate;
-  DateTime? _maxDate;
-  RecommendationResult? _recommendation;
-
-  Listenable? _dataListenable;
-  final LatestRequest _latestLoad = LatestRequest();
 
   @override
   void initState() {
     super.initState();
-    _loadData();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final changes = context.read<DataChangeHub>();
-    final listenable = changes.listenableFor({
-      DataScope.runs,
-      DataScope.profile,
-      DataScope.goals,
-      DataScope.paceZones,
-    });
-    if (_dataListenable != listenable) {
-      _dataListenable?.removeListener(_loadData);
-      _dataListenable = listenable;
-      _dataListenable!.addListener(_loadData);
-    }
+    _viewModel = HistoryDashboardViewModel(
+      runRepository: context.read<RunRepository>(),
+      statsRepository: context.read<StatsRepository>(),
+      userRepository: context.read<UserRepository>(),
+      changes: context.read<DataChangeHub>(),
+      clock: const SystemClock(),
+    );
+    unawaited(_viewModel.initialize());
   }
 
   @override
   void dispose() {
-    _dataListenable?.removeListener(_loadData);
+    _viewModel.dispose();
     super.dispose();
   }
 
-  Future<void> _loadData() async {
-    final requestId = _latestLoad.begin();
-    final runs = await _runRepo.getSummaries();
-    final profile = await _userRepo.getUserProfile();
-
-    if (mounted && _latestLoad.isCurrent(requestId)) {
-      DateTime? min;
-      DateTime? max;
-      if (runs.isNotEmpty) {
-        min = runs.map((r) => r.date).reduce((a, b) => a.isBefore(b) ? a : b);
-        max = runs.map((r) => r.date).reduce((a, b) => a.isAfter(b) ? a : b);
-      }
-
-      setState(() {
-        _allRuns = runs;
-        _userProfile = profile;
-        _minDate = min;
-        _maxDate = max;
-      });
-      await _filterData(requestId);
-      if (mounted && _latestLoad.isCurrent(requestId)) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  /// Converte o nome persistido da faixa (`run_pace_zones.zone`) no enum.
-  PaceZone? _zoneForName(String name) {
-    for (final zone in PaceZone.values) {
-      if (zone.name == name) return zone;
-    }
-    return null;
-  }
-
-  String _getPeriodId() {
-    if (_selectedPeriodIndex == 0) {
-      // Weekly
-      final startOfWeek = _referenceDate.subtract(
-        Duration(days: _referenceDate.weekday % 7),
-      );
-      // ISO week number-like ID: YYYY-WNN
-      final dayOfYear = startOfWeek
-          .difference(DateTime(startOfWeek.year, 1, 1))
-          .inDays;
-      final weekNum = (dayOfYear / 7).floor() + 1;
-      return '${startOfWeek.year}-W${weekNum.toString().padLeft(2, '0')}';
-    } else {
-      // Monthly
-      return '${_referenceDate.year}-${_referenceDate.month.toString().padLeft(2, '0')}';
-    }
-  }
-
-  Future<void> _filterData([int? requestId]) async {
-    requestId ??= _latestLoad.begin();
-    final periodId = _getPeriodId();
-    final goalType = _selectedPeriodIndex == 0 ? 'weekly' : 'monthly';
-    DateTime? rangeStart;
-    DateTime? rangeEnd;
-    final defaultGoal = _selectedPeriodIndex == 0
-        ? (_userProfile?.weeklyGoal ?? 20.0)
-        : (_userProfile?.monthlyGoal ?? 80.0);
-
-    // Try to load an existing historical snapshot for this period
-    var historicalGoal = await _statsRepo.getGoalHistory(
-      periodId,
-      goalType,
-    );
-    if (!mounted || !_latestLoad.isCurrent(requestId)) return;
-
-    if (historicalGoal == null) {
-      // No snapshot yet — create one now to "freeze" the current goal to this period
-      historicalGoal = defaultGoal;
-      await _statsRepo.saveGoalHistory(periodId, goalType, defaultGoal);
-      if (!mounted || !_latestLoad.isCurrent(requestId)) return;
-    }
-
-    if (_selectedPeriodIndex == 0) {
-      // Week
-      final startOfWeek = _referenceDate.subtract(
-        Duration(days: _referenceDate.weekday % 7),
-      );
-      final start = DateTime(
-        startOfWeek.year,
-        startOfWeek.month,
-        startOfWeek.day,
-      );
-      final end = start.add(const Duration(days: 7));
-      rangeStart = start;
-      rangeEnd = end;
-
-      _filteredRuns = _allRuns
-          .where(
-            (run) =>
-                run.date.isAfter(start.subtract(const Duration(seconds: 1))) &&
-                run.date.isBefore(end),
-          )
-          .toList();
-
-      final now = DateTime.now();
-      final currentWeekStart = now.subtract(Duration(days: now.weekday % 7));
-
-      if (start.year == currentWeekStart.year &&
-          start.month == currentWeekStart.month &&
-          start.day == currentWeekStart.day &&
-          _userProfile != null) {
-        _recommendation = RecommendationService.calculateWeeklyRecommendation(
-          profile: _userProfile!,
-          runs: _filteredRuns, // current week only (already filtered above)
-          monthRuns: _allRuns.where((r) {
-            final cutoff = now.subtract(const Duration(days: 30));
-            return r.date.isAfter(cutoff) &&
-                r.date.isBefore(start); // exclude current week
-          }).toList(),
-          currentPeriodGoal: historicalGoal,
-        );
-      } else {
-        _recommendation = null;
-      }
-    } else {
-      // Month
-      _recommendation = null;
-      final startOfMonth = DateTime(
-        _referenceDate.year,
-        _referenceDate.month,
-        1,
-      );
-      final nextMonth = DateTime(
-        _referenceDate.year,
-        _referenceDate.month + 1,
-        1,
-      );
-      rangeStart = startOfMonth;
-      rangeEnd = nextMonth;
-
-      _filteredRuns = _allRuns
-          .where(
-            (run) =>
-                run.date.isAfter(
-                  startOfMonth.subtract(const Duration(seconds: 1)),
-                ) &&
-                run.date.isBefore(nextMonth),
-          )
-          .toList();
-    }
-
-    // Faixas de ritmo do período: números já calculados no salvamento do
-    // treino (tabela run_pace_zones). Nenhuma rota é decodificada aqui.
-    final totals = await _runRepo.getPaceZoneTotals(rangeStart, rangeEnd);
-    if (!mounted || !_latestLoad.isCurrent(requestId)) return;
-    final zoneTotals = <PaceZone, double>{};
-    for (final entry in totals.entries) {
-      final zone = _zoneForName(entry.key);
-      if (zone == null || entry.value <= 0) continue;
-      zoneTotals[zone] = (zoneTotals[zone] ?? 0) + entry.value;
-    }
-    _paceZoneTotals = zoneTotals;
-
-    if (mounted && _latestLoad.isCurrent(requestId)) {
-      setState(() {
-        _currentPeriodGoal = historicalGoal!;
-        _runsExpanded = false;
-      });
-    }
-  }
-
-  bool _canGoPrevious() {
-    if (_minDate == null) return false;
-
-    // Calculate the start of the earliest possible period we should show
-    // Usually we don't need to go before the first run ever recorded
-    if (_selectedPeriodIndex == 0) {
-      // Semana
-      final startOfCurrentWeek = _referenceDate.subtract(
-        Duration(days: _referenceDate.weekday % 7),
-      );
-      final start = DateTime(
-        startOfCurrentWeek.year,
-        startOfCurrentWeek.month,
-        startOfCurrentWeek.day,
-      );
-      return _minDate!.isBefore(start);
-    } else {
-      // Mês
-      final startOfCurrentMonth = DateTime(
-        _referenceDate.year,
-        _referenceDate.month,
-        1,
-      );
-      return _minDate!.isBefore(startOfCurrentMonth);
-    }
-  }
-
-  bool _canGoNext() {
-    // We should ALWAYS be able to see the current week/month even if there's no data yet.
-    final now = DateTime.now();
-    DateTime effectiveMax = _maxDate == null || now.isAfter(_maxDate!)
-        ? now
-        : _maxDate!;
-
-    if (_selectedPeriodIndex == 0) {
-      // PROPOSAL: Allow one future week (+ 7 days) to see upcoming goals
-      effectiveMax = effectiveMax.add(const Duration(days: 7));
-
-      // Semana
-      final startOfCurrentWeek = _referenceDate.subtract(
-        Duration(days: _referenceDate.weekday % 7),
-      );
-      final endOfCurrentWeek = DateTime(
-        startOfCurrentWeek.year,
-        startOfCurrentWeek.month,
-        startOfCurrentWeek.day,
-      ).add(const Duration(days: 7));
-      return effectiveMax.isAfter(
-        endOfCurrentWeek.subtract(const Duration(seconds: 1)),
-      );
-    } else {
-      // Mês
-      final startOfNextMonth = DateTime(
-        _referenceDate.year,
-        _referenceDate.month + 1,
-        1,
-      );
-      return effectiveMax.isAfter(
-        startOfNextMonth.subtract(const Duration(seconds: 1)),
-      );
-    }
-  }
-
-  void _previousPeriod() {
-    if (!_canGoPrevious()) return;
-    setState(() {
-      if (_selectedPeriodIndex == 0) {
-        _referenceDate = _referenceDate.subtract(const Duration(days: 7));
-      } else {
-        _referenceDate = DateTime(
-          _referenceDate.year,
-          _referenceDate.month - 1,
-          1,
-        );
-      }
-    });
-    _filterData();
-  }
-
-  void _nextPeriod() {
-    if (!_canGoNext()) return;
-    setState(() {
-      if (_selectedPeriodIndex == 0) {
-        _referenceDate = _referenceDate.add(const Duration(days: 7));
-      } else {
-        _referenceDate = DateTime(
-          _referenceDate.year,
-          _referenceDate.month + 1,
-          1,
-        );
-      }
-    });
-    _filterData();
-  }
-
-  String _getPeriodTitle() {
-    final months = [
-      '',
-      'Janeiro',
-      'Fevereiro',
-      'Março',
-      'Abril',
-      'Maio',
-      'Junho',
-      'Julho',
-      'Agosto',
-      'Setembro',
-      'Outubro',
-      'Novembro',
-      'Dezembro',
-    ];
-    final monthsShort = [
-      '',
-      'Jan',
-      'Fev',
-      'Mar',
-      'Abr',
-      'Mai',
-      'Jun',
-      'Jul',
-      'Ago',
-      'Set',
-      'Out',
-      'Nov',
-      'Dez',
-    ];
-
-    if (_selectedPeriodIndex == 0) {
-      final startOfWeek = _referenceDate.subtract(
-        Duration(days: _referenceDate.weekday % 7),
-      );
-      final endOfWeek = startOfWeek.add(const Duration(days: 6));
-
-      if (startOfWeek.month == endOfWeek.month) {
-        return '${startOfWeek.day} - ${endOfWeek.day} de ${months[startOfWeek.month]}';
-      } else {
-        return '${startOfWeek.day} ${monthsShort[startOfWeek.month]} - ${endOfWeek.day} ${monthsShort[endOfWeek.month]}';
-      }
-    } else {
-      return '${months[_referenceDate.month]} ${_referenceDate.year}';
-    }
-  }
-
-  void _showGoalSettings() {
-    final periodId = _getPeriodId();
-    final goalType = _selectedPeriodIndex == 0 ? 'weekly' : 'monthly';
+  void _showGoalSettings(HistoryDashboardViewModel vm) {
     final periodController = TextEditingController(
-      text: _currentPeriodGoal.toStringAsFixed(1),
+      text: vm.currentPeriodGoal.toStringAsFixed(1),
     );
-    final TextEditingController globalController = TextEditingController(
-      text: _selectedPeriodIndex == 0
-          ? (_userProfile?.weeklyGoal.toStringAsFixed(1) ?? '20.0')
-          : (_userProfile?.monthlyGoal.toStringAsFixed(1) ?? '80.0'),
+    final globalController = TextEditingController(
+      text: vm.defaultGoal.toStringAsFixed(1),
     );
+    var isSaving = false;
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        final cs = Theme.of(context).colorScheme;
-        return AlertDialog(
-          backgroundColor: cs.surface,
-          title: Text(
-            'Configurar Meta',
-            style: GoogleFonts.outfit(color: cs.onSurface),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Per-period goal
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: cs.primary.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: cs.primary.withValues(alpha: 0.2)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+    unawaited(
+      showDialog<void>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            final cs = Theme.of(context).colorScheme;
+            return AlertDialog(
+              backgroundColor: cs.surface,
+              title: Text(
+                'Configurar Meta',
+                style: GoogleFonts.outfit(color: cs.onSurface),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Per-period goal
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: cs.primary.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: cs.primary.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.lock_clock, color: cs.primary, size: 14),
-                        const SizedBox(width: 6),
+                        Row(
+                          children: [
+                            Icon(Icons.lock_clock, color: cs.primary, size: 14),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Meta deste período',
+                              style: GoogleFonts.outfit(
+                                color: cs.primary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
                         Text(
-                          'Meta deste período',
+                          'Altera apenas este período. Não afeta o histórico.',
                           style: GoogleFonts.outfit(
-                            color: cs.primary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
+                            color: cs.onSurfaceVariant,
+                            fontSize: 11,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: periodController,
+                          keyboardType: TextInputType.number,
+                          style: TextStyle(color: cs.onSurface),
+                          decoration: InputDecoration(
+                            labelText: 'Meta (km)',
+                            labelStyle: TextStyle(color: cs.onSurfaceVariant),
+                            enabledBorder: UnderlineInputBorder(
+                              borderSide: BorderSide(color: cs.outline),
+                            ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Altera apenas este período. Não afeta o histórico.',
-                      style: GoogleFonts.outfit(
+                  ),
+                  const SizedBox(height: 16),
+                  // Default / future goal
+                  TextField(
+                    controller: globalController,
+                    keyboardType: TextInputType.number,
+                    style: TextStyle(color: cs.onSurface),
+                    decoration: InputDecoration(
+                      labelText: 'Meta padrão futura (km)',
+                      helperText: 'Aplicada a novos períodos',
+                      helperStyle: TextStyle(
                         color: cs.onSurfaceVariant,
                         fontSize: 11,
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: periodController,
-                      keyboardType: TextInputType.number,
-                      style: TextStyle(color: cs.onSurface),
-                      decoration: InputDecoration(
-                        labelText: 'Meta (km)',
-                        labelStyle: TextStyle(color: cs.onSurfaceVariant),
-                        enabledBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(color: cs.outline),
-                        ),
+                      labelStyle: TextStyle(color: cs.onSurfaceVariant),
+                      enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: cs.outline),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Default / future goal
-              TextField(
-                controller: globalController,
-                keyboardType: TextInputType.number,
-                style: TextStyle(color: cs.onSurface),
-                decoration: InputDecoration(
-                  labelText: 'Meta padrão futura (km)',
-                  helperText: 'Aplicada a novos períodos',
-                  helperStyle: TextStyle(
-                    color: cs.onSurfaceVariant,
-                    fontSize: 11,
                   ),
-                  labelStyle: TextStyle(color: cs.onSurfaceVariant),
-                  enabledBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: cs.outline),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving ? null : () => Navigator.pop(context),
+                  child: Text(
+                    'CANCELAR',
+                    style: TextStyle(color: cs.onSurfaceVariant),
                   ),
                 ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'CANCELAR',
-                style: TextStyle(color: cs.onSurfaceVariant),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: cs.primary),
-              onPressed: () async {
-                final newPeriodGoal =
-                    double.tryParse(periodController.text) ??
-                    _currentPeriodGoal;
-                final newGlobalGoal =
-                    double.tryParse(globalController.text) ??
-                    (_userProfile?.weeklyGoal ?? 20.0);
-                final navigator = Navigator.of(context);
-
-                // Save per-period (historical) goal
-                await _statsRepo.saveGoalHistory(
-                  periodId,
-                  goalType,
-                  newPeriodGoal,
-                );
-
-                // Save global default for future periods
-                if (_userProfile != null) {
-                  final updatedProfile = UserProfile(
-                    name: _userProfile!.name,
-                    age: _userProfile!.age,
-                    weight: _userProfile!.weight,
-                    height: _userProfile!.height,
-                    profilePicturePath: _userProfile!.profilePicturePath,
-                    weeklyGoal: _selectedPeriodIndex == 0
-                        ? newGlobalGoal
-                        : _userProfile!.weeklyGoal,
-                    monthlyGoal: _selectedPeriodIndex == 1
-                        ? newGlobalGoal
-                        : _userProfile!.monthlyGoal,
-                    lastGoalUpdate: DateTime.now(),
-                  );
-                  await _userRepo.saveUserProfile(updatedProfile);
-                  if (mounted) setState(() => _userProfile = updatedProfile);
-                }
-
-                if (mounted) {
-                  setState(() => _currentPeriodGoal = newPeriodGoal);
-                  navigator.pop();
-                }
-              },
-              child: Text(
-                'SALVAR',
-                style: TextStyle(
-                  color: cs.onPrimary,
-                  fontWeight: FontWeight.bold,
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: cs.primary),
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          setDialogState(() => isSaving = true);
+                          final navigator = Navigator.of(context);
+                          final saved = await vm.saveGoals(
+                            periodGoalText: periodController.text,
+                            futureGoalText: globalController.text,
+                          );
+                          if (!mounted || !context.mounted) return;
+                          setDialogState(() => isSaving = false);
+                          if (saved) {
+                            navigator.pop();
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Não foi possível salvar as metas. Verifique os valores.',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                  child: Text(
+                    'SALVAR',
+                    style: TextStyle(
+                      color: cs.onPrimary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ],
-        );
-      },
+              ],
+            );
+          },
+        ),
+      ).whenComplete(() async {
+        // O futuro do showDialog termina no início da animação de saída.
+        // Aguardar a rota sair evita usar controllers já descartados.
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        periodController.dispose();
+        globalController.dispose();
+      }),
     );
   }
 
@@ -562,121 +215,163 @@ class _HistoryTabState extends State<HistoryTab> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
+    return ListenableBuilder(
+      listenable: _viewModel,
+      builder: (context, child) {
+        final vm = _viewModel;
+        return SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Dashboard',
+                      style: GoogleFonts.outfit(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          onPressed: _openAddRun,
+                          tooltip: 'Adicionar treino',
+                          icon: Icon(
+                            LucideIcons.plus,
+                            color: Theme.of(context).colorScheme.primary,
+                            size: 24,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => _showGoalSettings(vm),
+                          icon: Icon(
+                            LucideIcons.settings,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                            size: 20,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildPeriodSelector(vm),
+              const SizedBox(height: 12),
+              _buildPaginationHeader(vm),
+              const SizedBox(height: 12),
+              Expanded(child: _buildHistoryContent(vm)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHistoryContent(HistoryDashboardViewModel vm) {
+    if (vm.status == HistoryLoadStatus.loading) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.primaryNeon),
+      );
+    }
+    if (vm.status == HistoryLoadStatus.error) {
+      return _buildErrorState(vm);
+    }
+
+    return SingleChildScrollView(
+      key: const PageStorageKey('history_scroll'),
+      physics: const BouncingScrollPhysics(),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Dashboard',
+                  'Atividades',
                   style: GoogleFonts.outfit(
                     color: Theme.of(context).colorScheme.onSurface,
-                    fontSize: 32,
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      onPressed: _openAddRun,
-                      tooltip: 'Adicionar treino',
-                      icon: Icon(
-                        LucideIcons.plus,
-                        color: Theme.of(context).colorScheme.primary,
-                        size: 24,
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: _showGoalSettings,
-                      icon: Icon(
-                        LucideIcons.settings,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        size: 20,
-                      ),
-                    ),
-                  ],
+                const Spacer(),
+                Text(
+                  '${vm.filteredRuns.length} treinos',
+                  style: GoogleFonts.outfit(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          _buildPeriodSelector(),
-          const SizedBox(height: 12),
-          _buildPaginationHeader(),
-          const SizedBox(height: 12),
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      color: AppColors.primaryNeon,
-                    ),
-                  )
-                : SingleChildScrollView(
-                    key: const PageStorageKey('history_scroll'),
-                    physics: const BouncingScrollPhysics(),
-                    child: Column(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: Row(
-                            children: [
-                              Text(
-                                'Atividades',
-                                style: GoogleFonts.outfit(
-                                  color: Theme.of(context).colorScheme.onSurface,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const Spacer(),
-                              Text(
-                                '${_filteredRuns.length} treinos',
-                                style: GoogleFonts.outfit(
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        _buildActivitiesList(),
-                        const SizedBox(height: 24),
-                        _buildAnalyticsSummary(),
-                        const SizedBox(height: 24),
-                        if (_paceZoneTotals.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 24),
-                            child: PaceDistributionCard(
-                              distanceByZoneKm: _paceZoneTotals,
-                              totalKm: _filteredRuns.fold<double>(
-                                0,
-                                (sum, run) => sum + run.distanceKm,
-                              ),
-                            ),
-                          ),
-                        if (_paceZoneTotals.isNotEmpty)
-                          const SizedBox(height: 24),
-                        // Dica de evolução no fim do scroll: contexto, não
-                        // obstáculo antes da lista.
-                        if (_recommendation != null && _selectedPeriodIndex == 0)
-                          _buildRecommendationCard(),
-                        const SizedBox(height: 24),
-                      ],
-                    ),
-                  ),
-          ),
+          const SizedBox(height: 4),
+          _buildActivitiesList(vm),
+          const SizedBox(height: 24),
+          _buildAnalyticsSummary(vm),
+          const SizedBox(height: 24),
+          if (vm.paceZoneTotals.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: PaceDistributionCard(
+                distanceByZoneKm: vm.paceZoneTotals,
+                totalKm: vm.summary.totalKm,
+              ),
+            ),
+          if (vm.paceZoneTotals.isNotEmpty) const SizedBox(height: 24),
+          // Dica de evolução no fim do scroll: contexto, não
+          // obstáculo antes da lista.
+          if (vm.recommendation != null && vm.selectedPeriodIndex == 0)
+            _buildRecommendationCard(vm),
+          const SizedBox(height: 24),
         ],
       ),
     );
   }
 
-  Widget _buildPeriodSelector() {
+  Widget _buildErrorState(HistoryDashboardViewModel vm) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              LucideIcons.history,
+              size: 48,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.25),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Não foi possível carregar o histórico.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => unawaited(vm.refresh()),
+              child: Text(
+                'Tentar novamente',
+                style: GoogleFonts.outfit(color: cs.onPrimary),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPeriodSelector(HistoryDashboardViewModel vm) {
     final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -690,15 +385,13 @@ class _HistoryTabState extends State<HistoryTab> {
         ),
         child: Row(
           children: List.generate(_periods.length, (index) {
-            final isSelected = _selectedPeriodIndex == index;
+            final isSelected = vm.selectedPeriodIndex == index;
             return Expanded(
               child: GestureDetector(
                 onTap: () {
-                  setState(() {
-                    _selectedPeriodIndex = index;
-                    _referenceDate = DateTime.now();
-                  });
-                  _filterData();
+                  if (isSelected) return;
+                  setState(() => _runsExpanded = false);
+                  unawaited(index == 0 ? vm.selectWeek() : vm.selectMonth());
                 },
                 child: Container(
                   alignment: Alignment.center,
@@ -730,9 +423,9 @@ class _HistoryTabState extends State<HistoryTab> {
     );
   }
 
-  Widget _buildPaginationHeader() {
-    final canPrev = _canGoPrevious();
-    final canNext = _canGoNext();
+  Widget _buildPaginationHeader(HistoryDashboardViewModel vm) {
+    final canPrev = vm.canGoPrevious;
+    final canNext = vm.canGoNext;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -740,7 +433,9 @@ class _HistoryTabState extends State<HistoryTab> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           IconButton(
-            onPressed: canPrev ? _previousPeriod : null,
+            onPressed: canPrev
+                ? () => _changePeriod(vm.goToPreviousPeriod)
+                : null,
             icon: Icon(
               LucideIcons.chevronLeft,
               color: canPrev
@@ -752,7 +447,7 @@ class _HistoryTabState extends State<HistoryTab> {
             visualDensity: VisualDensity.compact,
           ),
           Text(
-            _getPeriodTitle(),
+            vm.period.title,
             style: GoogleFonts.outfit(
               color: Theme.of(context).colorScheme.onSurface,
               fontWeight: FontWeight.bold,
@@ -760,7 +455,7 @@ class _HistoryTabState extends State<HistoryTab> {
             ),
           ),
           IconButton(
-            onPressed: canNext ? _nextPeriod : null,
+            onPressed: canNext ? () => _changePeriod(vm.goToNextPeriod) : null,
             icon: Icon(
               LucideIcons.chevronRight,
               color: canNext
@@ -776,15 +471,20 @@ class _HistoryTabState extends State<HistoryTab> {
     );
   }
 
-  Widget _buildAnalyticsSummary() {
-    double totalKm = _filteredRuns.fold(0.0, (sum, r) => sum + r.distanceKm);
-    int totalDur = _filteredRuns.fold(0, (sum, r) => sum + r.durationSeconds);
-    int totalCal = _filteredRuns.fold(0, (sum, r) => sum + r.calories);
-    double weightLossKg = totalCal / 7700.0;
+  void _changePeriod(Future<void> Function() change) {
+    setState(() => _runsExpanded = false);
+    unawaited(change());
+  }
 
-    double goal = _currentPeriodGoal;
-    double rawProgress = goal > 0 ? totalKm / goal : 0.0;
-    double progress = rawProgress.clamp(0.0, 1.0);
+  Widget _buildAnalyticsSummary(HistoryDashboardViewModel vm) {
+    final summary = vm.summary;
+    final totalKm = summary.totalKm;
+    final totalDur = summary.totalSeconds;
+    final totalCal = summary.totalCalories;
+    final weightLossKg = summary.estimatedWeightLossKg;
+    final goal = vm.currentPeriodGoal;
+    final rawProgress = summary.rawGoalProgress;
+    final progress = summary.goalProgress;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -809,7 +509,7 @@ class _HistoryTabState extends State<HistoryTab> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      SizedBox(height: 100, child: _buildBarChart()),
+                      SizedBox(height: 100, child: _buildBarChart(vm)),
                     ],
                   ),
                 ),
@@ -928,76 +628,13 @@ class _HistoryTabState extends State<HistoryTab> {
     );
   }
 
-  Widget _buildBarChart() {
-    List<BarChartGroupData> barGroups = [];
-    double maxDistance = 0;
-
-    if (_selectedPeriodIndex == 0) {
-      // Semana
-      final startOfWeek = _referenceDate.subtract(
-        Duration(days: _referenceDate.weekday % 7),
-      );
-
-      for (int i = 0; i < 7; i++) {
-        final day = DateTime(
-          startOfWeek.year,
-          startOfWeek.month,
-          startOfWeek.day,
-        ).add(Duration(days: i));
-        double dailyTotal = _allRuns
-            .where(
-              (r) =>
-                  r.date.year == day.year &&
-                  r.date.month == day.month &&
-                  r.date.day == day.day,
-            )
-            .fold(0.0, (sum, r) => sum + r.distanceKm);
-
-        if (dailyTotal > maxDistance) maxDistance = dailyTotal;
-        barGroups.add(_makeGroupData(i, dailyTotal, maxDistance));
-      }
-    } else {
-      // Mês
-      final year = _referenceDate.year;
-      final month = _referenceDate.month;
-      final firstDayOfMonth = DateTime(year, month, 1);
-      final lastDayOfMonth = DateTime(year, month + 1, 0);
-
-      int weekIndex = 0;
-      DateTime currentStart = firstDayOfMonth;
-
-      while (currentStart.isBefore(
-        lastDayOfMonth.add(const Duration(seconds: 1)),
-      )) {
-        final currentEnd = currentStart.add(const Duration(days: 7));
-        final effectiveEnd = currentEnd.isAfter(lastDayOfMonth)
-            ? lastDayOfMonth.add(const Duration(seconds: 1))
-            : currentEnd;
-
-        double weeklyTotal = _allRuns
-            .where(
-              (r) =>
-                  r.date.isAfter(
-                    currentStart.subtract(const Duration(seconds: 1)),
-                  ) &&
-                  r.date.isBefore(effectiveEnd),
-            )
-            .fold(0.0, (sum, r) => sum + r.distanceKm);
-
-        if (weeklyTotal > maxDistance) maxDistance = weeklyTotal;
-        barGroups.add(_makeGroupData(weekIndex, weeklyTotal, maxDistance));
-
-        currentStart = currentEnd;
-        weekIndex++;
-      }
-    }
-
-    if (maxDistance == 0) maxDistance = 5.0;
+  Widget _buildBarChart(HistoryDashboardViewModel vm) {
+    final barGroups = [for (final bar in vm.chartBars) _makeGroupData(bar)];
 
     return BarChart(
       BarChartData(
         alignment: BarChartAlignment.spaceAround,
-        maxY: maxDistance * 1.2,
+        maxY: vm.chartMaxDistance * 1.2,
         barTouchData: BarTouchData(
           enabled: true,
           touchTooltipData: BarTouchTooltipData(
@@ -1025,7 +662,7 @@ class _HistoryTabState extends State<HistoryTab> {
               showTitles: true,
               getTitlesWidget: (value, meta) {
                 String text = '';
-                if (_selectedPeriodIndex == 0) {
+                if (vm.selectedPeriodIndex == 0) {
                   const days = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
                   text = days[value.toInt() % 7];
                 } else {
@@ -1061,22 +698,19 @@ class _HistoryTabState extends State<HistoryTab> {
     );
   }
 
-  BarChartGroupData _makeGroupData(int x, double y, double maxY) {
+  BarChartGroupData _makeGroupData(HistoryChartBar bar) {
     Color barColor = AppColors.primaryNeon;
-    if (maxY > 0) {
-      double ratio = y / maxY;
-      if (ratio > 0.7) {
-        barColor = Colors.purpleAccent;
-      } else if (ratio > 0.4) {
-        barColor = Colors.orangeAccent;
-      }
+    if (bar.colorRatio > 0.7) {
+      barColor = Colors.purpleAccent;
+    } else if (bar.colorRatio > 0.4) {
+      barColor = Colors.orangeAccent;
     }
 
     return BarChartGroupData(
-      x: x,
+      x: bar.index,
       barRods: [
         BarChartRodData(
-          toY: y,
+          toY: bar.distanceKm,
           color: barColor,
           width: 8,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(2)),
@@ -1085,31 +719,30 @@ class _HistoryTabState extends State<HistoryTab> {
     );
   }
 
-  Widget _buildActivitiesList() {
-    if (_filteredRuns.isEmpty) return _buildEmptyState();
+  Widget _buildActivitiesList(HistoryDashboardViewModel vm) {
+    final runs = vm.filteredRuns;
+    if (runs.isEmpty) return _buildEmptyState();
 
     const previewCount = 3;
-    final hasMore = _filteredRuns.length > previewCount;
-    final visibleCount = _runsExpanded || !hasMore
-        ? _filteredRuns.length
-        : previewCount;
+    final hasMore = runs.length > previewCount;
+    final visibleCount = _runsExpanded || !hasMore ? runs.length : previewCount;
 
     return Column(
       children: [
         for (var i = 0; i < visibleCount; i++)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: _buildRunCard(_filteredRuns[i]),
+            child: _buildRunCard(runs[i], vm),
           ),
-        if (hasMore) _buildRunsToggle(),
+        if (hasMore) _buildRunsToggle(runs.length),
       ],
     );
   }
 
   /// "Ver mais / Ver menos" — mesmo idioma plano da lista, centralizado.
-  Widget _buildRunsToggle() {
+  Widget _buildRunsToggle(int runCount) {
     final cs = Theme.of(context).colorScheme;
-    final hidden = _filteredRuns.length - 3;
+    final hidden = runCount - 3;
     return GestureDetector(
       onTap: () => setState(() => _runsExpanded = !_runsExpanded),
       child: Padding(
@@ -1137,8 +770,8 @@ class _HistoryTabState extends State<HistoryTab> {
     );
   }
 
-  Widget _buildRecommendationCard() {
-    final res = _recommendation!;
+  Widget _buildRecommendationCard(HistoryDashboardViewModel vm) {
+    final res = vm.recommendation!;
     final isAlert = res.emoji == '🔴' || res.emoji == '🟡';
     final isInfo = res.emoji == '📊' || res.emoji == '⏱️';
     final cs = Theme.of(context).colorScheme;
@@ -1193,54 +826,9 @@ class _HistoryTabState extends State<HistoryTab> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  onPressed: () async {
-                    if (_userProfile != null) {
-                      // Snapshot next week's goal
-                      final now = DateTime.now();
-                      final nextWeekDate = now.add(const Duration(days: 7));
-                      final startOfNextWeek = nextWeekDate.subtract(
-                        Duration(days: nextWeekDate.weekday - 1),
-                      );
-                      final day = startOfNextWeek
-                          .difference(DateTime(startOfNextWeek.year, 1, 1))
-                          .inDays;
-                      final weekNum = (day / 7).floor() + 1;
-                      final nextPeriodId =
-                          '${startOfNextWeek.year}-W${weekNum.toString().padLeft(2, '0')}';
-                      await _statsRepo.saveGoalHistory(
-                        nextPeriodId,
-                        'weekly',
-                        res.recommendedGoal,
-                      );
-
-                      final newProfile = UserProfile(
-                        name: _userProfile!.name,
-                        age: _userProfile!.age,
-                        weight: _userProfile!.weight,
-                        height: _userProfile!.height,
-                        profilePicturePath: _userProfile!.profilePicturePath,
-                        weeklyGoal: res.recommendedGoal,
-                        monthlyGoal: _userProfile!.monthlyGoal,
-                        lastGoalUpdate: DateTime.now(),
-                      );
-                      await _userRepo.saveUserProfile(newProfile);
-                      if (mounted) {
-                        setState(() {
-                          _userProfile = newProfile;
-                          _recommendation = null;
-                        });
-                      }
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Meta da próxima semana definida! 🚀',
-                            ),
-                          ),
-                        );
-                      }
-                    }
-                  },
+                  onPressed: vm.isSaving
+                      ? null
+                      : () => _applyRecommendation(vm),
                   child: Text(
                     'DEFINIR META PRÓX. SEMANA: ${res.recommendedGoal.toStringAsFixed(1)} KM',
                     style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
@@ -1254,11 +842,25 @@ class _HistoryTabState extends State<HistoryTab> {
     );
   }
 
-  Widget _buildRunCard(RunModel run) {
+  Future<void> _applyRecommendation(HistoryDashboardViewModel vm) async {
+    if (vm.isSaving) return;
+    final applied = await vm.applyRecommendation();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          applied
+              ? 'Meta da próxima semana definida! 🚀'
+              : 'Não foi possível definir a meta da próxima semana.',
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRunCard(RunModel run, HistoryDashboardViewModel vm) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final typeColor =
-        run.type == 'Caminhada' ? Colors.blueAccent : cs.primary;
+    final typeColor = run.type == 'Caminhada' ? Colors.blueAccent : cs.primary;
 
     // Item plano estilo Strava: sem card, sem caixa de ícone — distância
     // manda, métricas em linha, data à direita. Divisor de 1px separa.
@@ -1267,15 +869,16 @@ class _HistoryTabState extends State<HistoryTab> {
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => RunDetailScreen(run: run)),
-        ).then((_) => _loadData());
+        ).then((_) => unawaited(vm.refresh()));
       },
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
-              color: (isDark ? Colors.white : Colors.black)
-                  .withValues(alpha: 0.06),
+              color: (isDark ? Colors.white : Colors.black).withValues(
+                alpha: 0.06,
+              ),
               width: 1,
             ),
           ),
@@ -1329,10 +932,7 @@ class _HistoryTabState extends State<HistoryTab> {
                 if (run.mood.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      run.mood,
-                      style: const TextStyle(fontSize: 14),
-                    ),
+                    child: Text(run.mood, style: const TextStyle(fontSize: 14)),
                   ),
               ],
             ),

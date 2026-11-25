@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/clock.dart';
 import '../../../../core/widgets/glass_container.dart';
+import '../../application/home_dashboard_view_model.dart';
+import '../../application/home_stats_window_store.dart';
 import '../widgets/start_run_button.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
@@ -16,11 +19,7 @@ import 'package:runlabag/core/domain/repositories/stats_repository.dart';
 import 'package:runlabag/core/domain/repositories/user_repository.dart';
 import 'package:runlabag/core/domain/repositories/active_run_repository.dart';
 import 'package:runlabag/core/data/data_change_hub.dart';
-import 'package:runlabag/core/utils/latest_request.dart';
 import '../../../history/presentation/screens/run_detail_screen.dart';
-import 'package:runlabag/core/domain/models/run_model.dart';
-import 'package:runlabag/core/domain/models/user_profile.dart';
-import 'package:runlabag/core/domain/models/user_stats.dart';
 
 class HomeTab extends StatefulWidget {
   final VoidCallback? onNavigateToProfile;
@@ -42,282 +41,242 @@ class HomeTab extends StatefulWidget {
 }
 
 class _HomeTabState extends State<HomeTab> {
-  StatsRepository get _statsRepo => context.read<StatsRepository>();
-  UserRepository get _userRepo => context.read<UserRepository>();
-  RunRepository get _runRepo => context.read<RunRepository>();
-  ActiveRunRepository get _activeRunRepo => context.read<ActiveRunRepository>();
-  UserStats _stats = UserStats.empty;
-  // Janela da Visão Geral: 0 = tudo, 1 = 30d, 2 = 60d, 3 = 90d.
-  int _statsPeriod = 0;
-  List<double> _weeklyProgress = List.filled(7, 0.0);
-  UserProfile? _profile;
-  RunModel? _lastRun;
-  bool _isLoading = true;
-
-  // Última janela selecionada na Visão Geral (persiste entre sessões).
-  static const _statsPeriodKey = 'home_stats_period';
+  late final HomeDashboardViewModel _viewModel;
+  bool _isShowingRecoverySheet = false;
 
   @override
   void initState() {
     super.initState();
-    _restoreStatsPeriod();
+    _viewModel = HomeDashboardViewModel(
+      statsRepository: context.read<StatsRepository>(),
+      userRepository: context.read<UserRepository>(),
+      runRepository: context.read<RunRepository>(),
+      activeRunRepository: context.read<ActiveRunRepository>(),
+      statsWindowStore: const SharedPreferencesHomeStatsWindowStore(),
+      clock: const SystemClock(),
+      embedded: widget.embedded,
+    )..addListener(_onDashboardChanged);
+    unawaited(_viewModel.initialize());
   }
-
-  // Recarrega apenas quando dados usados pela Home mudam.
-  Listenable? _dataListenable;
-  final LatestRequest _latestLoad = LatestRequest();
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final changes = context.read<DataChangeHub>();
-    final listenable = changes.listenableFor({
-      DataScope.runs,
-      DataScope.profile,
-      DataScope.goals,
-    });
-    if (_dataListenable != listenable) {
-      _dataListenable?.removeListener(_loadData);
-      _dataListenable = listenable;
-      _dataListenable!.addListener(_loadData);
-    }
+    _viewModel.updateDataChanges(
+      changes.listenableFor({
+        DataScope.runs,
+        DataScope.profile,
+        DataScope.goals,
+      }),
+    );
   }
 
   @override
   void dispose() {
-    _dataListenable?.removeListener(_loadData);
+    _viewModel.removeListener(_onDashboardChanged);
+    _viewModel.dispose();
     super.dispose();
   }
 
-  Future<void> _restoreStatsPeriod() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    setState(() {
-      _statsPeriod = prefs.getInt(_statsPeriodKey) ?? 0;
-    });
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    final requestId = _latestLoad.begin();
-    // Dispara em paralelo: o boot não deve esperar uma consulta por vez.
-    final statsFuture = _statsRepo.getUserStats(since: _statsSince);
-    final progressFuture = _statsRepo.getWeeklyProgress();
-    final profileFuture = _userRepo.getUserProfile();
-    final lastRunFuture = _runRepo.getLastRunSummary();
-
-    final stats = await statsFuture;
-    final progress = await progressFuture;
-    final profile = await profileFuture;
-    final lastRun = await lastRunFuture;
-
-    if (mounted && _latestLoad.isCurrent(requestId)) {
-      setState(() {
-        _stats = stats;
-        _weeklyProgress = progress;
-        _profile = profile;
-        _lastRun = lastRun;
-        _isLoading = false;
-      });
-      // No modo embutido há um treino vivo por definição: o sheet de
-      // recuperação seria absurdo (o pill do modo navegação cobre).
-      if (!widget.embedded) _checkForActiveRun(requestId);
-    }
-  }
-
-  Future<void> _checkForActiveRun(int requestId) async {
-    // Só metadados aqui: a rota (centenas de KB) só é lida se o usuário
-    // decidir retomar/salvar.
-    final activeRun = await _activeRunRepo.getActiveRunMeta();
-    if (activeRun != null &&
-        mounted &&
-        _latestLoad.isCurrent(requestId)) {
-      _showRecoveryBottomSheet(activeRun);
-    }
+  void _onDashboardChanged() {
+    if (!mounted || _isShowingRecoverySheet) return;
+    final activeRun = _viewModel.takePendingRecovery();
+    if (activeRun != null) _showRecoveryBottomSheet(activeRun);
   }
 
   void _showRecoveryBottomSheet(Map<String, dynamic> activeRun) {
     final bool isFinished = (activeRun['finished'] ?? 0) == 1;
 
-    showModalBottomSheet(
-      context: context,
-      isDismissible: false,
-      enableDrag: false,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        final cs = Theme.of(context).colorScheme;
-        return SafeArea(
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: cs.surface,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(30),
+    _isShowingRecoverySheet = true;
+    unawaited(
+      showModalBottomSheet(
+        context: context,
+        isDismissible: false,
+        enableDrag: false,
+        backgroundColor: Colors.transparent,
+        builder: (context) {
+          final cs = Theme.of(context).colorScheme;
+          return SafeArea(
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: cs.surface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(30),
+                ),
+                border: Border.all(color: cs.primary.withValues(alpha: 0.3)),
               ),
-              border: Border.all(color: cs.primary.withValues(alpha: 0.3)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: cs.onSurfaceVariant.withValues(alpha: 0.4),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Icon(LucideIcons.undo2, color: cs.primary, size: 48),
-                const SizedBox(height: 16),
-                Text(
-                  isFinished ? 'Treino não salvo' : 'Treino não Finalizado!',
-                  style: GoogleFonts.outfit(
-                    color: cs.onSurface,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  isFinished
-                      ? 'Encontramos um treino finalizado que ainda não foi salvo. '
-                        'Deseja salvá-lo agora?'
-                      : 'Encontramos um treino que foi interrompido. Deseja retomar de onde parou?',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.outfit(color: cs.onSurfaceVariant),
-                ),
-                const SizedBox(height: 32),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          side: BorderSide(color: cs.error),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                        ),
-                        onPressed: () async {
-                          await _activeRunRepo.clearActiveRun();
-                          if (context.mounted) Navigator.pop(context);
-                        },
-                        child: Text(
-                          'DESCARTAR',
-                          style: TextStyle(color: cs.error),
-                        ),
-                      ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: cs.primary,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
+                  ),
+                  const SizedBox(height: 24),
+                  Icon(LucideIcons.undo2, color: cs.primary, size: 48),
+                  const SizedBox(height: 16),
+                  Text(
+                    isFinished ? 'Treino não salvo' : 'Treino não Finalizado!',
+                    style: GoogleFonts.outfit(
+                      color: cs.onSurface,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    isFinished
+                        ? 'Encontramos um treino finalizado que ainda não foi salvo. '
+                              'Deseja salvá-lo agora?'
+                        : 'Encontramos um treino que foi interrompido. Deseja retomar de onde parou?',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(color: cs.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 32),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            side: BorderSide(color: cs.error),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
                           ),
-                        ),
-                        onPressed: () async {
-                          // Agora sim: carrega metadados + rota.
-                          final navigator = Navigator.of(context);
-                          final full = await _activeRunRepo.getActiveRun();
-                          if (!mounted) return;
-                          navigator.pop();
-                          if (full == null) return;
-                          Navigator.of(this.context)
-                              .push(
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      ActiveRunScreen(restoredState: full),
-                                ),
-                              )
-                              .then((_) => _loadData());
-                        },
-                        child: Text(
-                          isFinished ? 'SALVAR' : 'RETOMAR',
-                          style: TextStyle(
-                            color: cs.onPrimary,
-                            fontWeight: FontWeight.bold,
+                          onPressed: () async {
+                            try {
+                              await _viewModel.discardActiveRun();
+                              if (context.mounted) Navigator.pop(context);
+                            } catch (_) {
+                              // A ViewModel registra o erro; mantém o sheet aberto.
+                            }
+                          },
+                          child: Text(
+                            'DESCARTAR',
+                            style: TextStyle(color: cs.error),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            backgroundColor: cs.primary,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                          ),
+                          onPressed: () async {
+                            // Agora sim: carrega metadados + rota.
+                            final navigator = Navigator.of(context);
+                            try {
+                              final full = await _viewModel
+                                  .loadActiveRunForResume();
+                              if (!mounted) return;
+                              navigator.pop();
+                              if (full == null) return;
+                              Navigator.of(this.context)
+                                  .push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          ActiveRunScreen(restoredState: full),
+                                    ),
+                                  )
+                                  .then((_) => _viewModel.load());
+                            } catch (_) {
+                              // A ViewModel registra o erro; mantém o sheet aberto.
+                            }
+                          },
+                          child: Text(
+                            isFinished ? 'SALVAR' : 'RETOMAR',
+                            style: TextStyle(
+                              color: cs.onPrimary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ).whenComplete(() {
+        _isShowingRecoverySheet = false;
+        if (mounted) _onDashboardChanged();
+      }),
     );
-  }
-
-  String _getGreeting() {
-    final hour = DateTime.now().hour;
-    if (hour >= 5 && hour < 12) return 'Bom dia,';
-    if (hour >= 12 && hour < 18) return 'Boa tarde,';
-    return 'Boa noite,';
-  }
-
-  double _getMaxY() {
-    double maxDist = 0;
-    for (var dist in _weeklyProgress) {
-      if (dist > maxDist) maxDist = dist;
-    }
-    // Piso de 2 km para semanas leves + headroom para a barra não encostar
-    // no teto. Sem o piso antigo de 10 km: treinos curtos usam a tela toda.
-    return maxDist < 2 ? 2 : (maxDist * 1.2).ceilToDouble();
-  }
-
-  // Semana começa no domingo (mesma convenção de getWeeklyProgress).
-  int get _todayIndex => DateTime.now().weekday % 7;
-
-  // ── Visão Geral: janela dos totais ─────────────────────────────────────
-
-  DateTime? get _statsSince {
-    final days = switch (_statsPeriod) {
-      1 => 7,
-      2 => 15,
-      3 => 30,
-      4 => 60,
-      5 => 90,
-      _ => 0,
-    };
-    return days == 0 ? null : DateTime.now().subtract(Duration(days: days));
-  }
-
-  Future<void> _changeStatsPeriod(int index) async {
-    if (index == _statsPeriod) return;
-    final requestId = _latestLoad.begin();
-    setState(() => _statsPeriod = index);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_statsPeriodKey, index);
-    final stats = await _statsRepo.getUserStats(since: _statsSince);
-    if (mounted && _latestLoad.isCurrent(requestId)) {
-      setState(() => _stats = stats);
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.primaryNeon),
-      );
-    }
+    return ListenableBuilder(
+      listenable: _viewModel,
+      builder: (context, child) {
+        if (_viewModel.isLoading) {
+          return const Center(
+            child: CircularProgressIndicator(color: AppColors.primaryNeon),
+          );
+        }
+        if (!_viewModel.hasLoaded && _viewModel.hasError) {
+          return _buildDashboardError();
+        }
+        return _buildDashboard(context);
+      },
+    );
+  }
 
-    double weeklyTotal = _weeklyProgress.fold(0, (sum, item) => sum + item);
-    double weeklyGoal = _profile?.weeklyGoal ?? 20.0;
-    double rawProgress = weeklyGoal > 0 ? weeklyTotal / weeklyGoal : 0.0;
-    double goalProgress = rawProgress.clamp(0.0, 1.0);
+  Widget _buildDashboardError() {
+    final cs = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.cloudOff, size: 40, color: cs.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text(
+              'Não foi possível carregar o dashboard.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                color: cs.onSurface,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: _viewModel.load,
+              child: const Text('Tentar novamente'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDashboard(BuildContext context) {
+    final weeklyTotal = _viewModel.weeklyTotal;
+    final weeklyGoal = _viewModel.weeklyGoal;
+    final rawProgress = _viewModel.rawGoalProgress;
+    final goalProgress = _viewModel.goalProgress;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return SafeArea(
       child: RefreshIndicator(
-        onRefresh: _loadData,
+        onRefresh: _viewModel.load,
         color: AppColors.primaryNeon,
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         child: SingleChildScrollView(
@@ -356,12 +315,15 @@ class _HomeTabState extends State<HomeTab> {
                               radius: 24,
                               backgroundColor: AppColors.cardBackground,
                               backgroundImage:
-                                  _profile?.profilePicturePath != null
+                                  _viewModel.profile?.profilePicturePath != null
                                   ? FileImage(
-                                      File(_profile!.profilePicturePath!),
+                                      File(
+                                        _viewModel.profile!.profilePicturePath!,
+                                      ),
                                     )
                                   : null,
-                              child: _profile?.profilePicturePath == null
+                              child:
+                                  _viewModel.profile?.profilePicturePath == null
                                   ? const Icon(
                                       LucideIcons.user,
                                       color: AppColors.primaryNeon,
@@ -376,7 +338,7 @@ class _HomeTabState extends State<HomeTab> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _getGreeting(),
+                            _viewModel.greeting,
                             style: GoogleFonts.outfit(
                               color:
                                   Theme.of(context).brightness ==
@@ -387,7 +349,7 @@ class _HomeTabState extends State<HomeTab> {
                             ),
                           ),
                           Text(
-                            _profile?.name ?? 'Atleta',
+                            _viewModel.profile?.name ?? 'Atleta',
                             style: GoogleFonts.outfit(
                               color: Theme.of(context).colorScheme.onSurface,
                               fontSize: 20,
@@ -474,7 +436,7 @@ class _HomeTabState extends State<HomeTab> {
                         MaterialPageRoute(
                           builder: (_) => const ActiveRunScreen(),
                         ),
-                      ).then((_) => _loadData());
+                      ).then((_) => _viewModel.load());
                     },
                   ),
                 ),
@@ -490,7 +452,7 @@ class _HomeTabState extends State<HomeTab> {
                           builder: (_) =>
                               const ActiveRunScreen(autoStart: true),
                         ),
-                      ).then((_) => _loadData());
+                      ).then((_) => _viewModel.load());
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(
@@ -534,7 +496,7 @@ class _HomeTabState extends State<HomeTab> {
               const SizedBox(height: 32),
 
               // Last Training Summary
-              if (_lastRun != null) ...[
+              if (_viewModel.lastRun != null) ...[
                 Text(
                   'Último Treino',
                   style: GoogleFonts.outfit(
@@ -548,7 +510,7 @@ class _HomeTabState extends State<HomeTab> {
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => RunDetailScreen(run: _lastRun!),
+                      builder: (_) => RunDetailScreen(run: _viewModel.lastRun!),
                     ),
                   ),
                   child: GlassContainer(
@@ -578,7 +540,7 @@ class _HomeTabState extends State<HomeTab> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                '${_lastRun!.distanceKm.toStringAsFixed(2)} km em ${_formatRunDuration(_lastRun!.durationSeconds)}',
+                                '${_viewModel.lastRun!.distanceKm.toStringAsFixed(2)} km em ${_viewModel.lastRunDurationLabel}',
                                 style: GoogleFonts.outfit(
                                   color: isDark
                                       ? Colors.white
@@ -588,7 +550,7 @@ class _HomeTabState extends State<HomeTab> {
                                 ),
                               ),
                               Text(
-                                'Ritmo: ${_lastRun!.pace}/km | Calorias: ${_lastRun!.calories} kcal',
+                                'Ritmo: ${_viewModel.lastRun!.pace}/km | Calorias: ${_viewModel.lastRun!.calories} kcal',
                                 style: GoogleFonts.outfit(
                                   color: isDark
                                       ? AppColors.textMuted
@@ -624,40 +586,66 @@ class _HomeTabState extends State<HomeTab> {
               const SizedBox(height: 10),
               Row(
                 children: [
-                  _buildStatsPeriodChip('Tudo', 0, isDark),
-                  _buildStatsPeriodChip('7d', 1, isDark),
-                  _buildStatsPeriodChip('15d', 2, isDark),
-                  _buildStatsPeriodChip('30d', 3, isDark),
-                  _buildStatsPeriodChip('60d', 4, isDark),
-                  _buildStatsPeriodChip('90d', 5, isDark),
+                  for (final entry
+                      in HomeDashboardViewModel.statsPeriodLabels
+                          .asMap()
+                          .entries)
+                    _buildStatsPeriodChip(entry.value, entry.key, isDark),
                 ],
               ),
               const SizedBox(height: 12),
+              if (_viewModel.hasError)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    children: [
+                      Icon(
+                        LucideIcons.cloudOff,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Não foi possível atualizar os dados.',
+                          style: GoogleFonts.outfit(
+                            color: Theme.of(context).colorScheme.error,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _viewModel.load,
+                        child: const Text('Tentar novamente'),
+                      ),
+                    ],
+                  ),
+                ),
               GlassContainer(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Row(
                   children: [
                     _buildCompactStat(
                       icon: LucideIcons.map,
-                      value: _stats.formattedTotalDistance,
+                      value: _viewModel.stats.formattedTotalDistance,
                       unit: 'km',
                     ),
                     _buildStatDivider(isDark),
                     _buildCompactStat(
                       icon: LucideIcons.activity,
-                      value: _stats.formattedTotalRuns,
+                      value: _viewModel.stats.formattedTotalRuns,
                       unit: 'treinos',
                     ),
                     _buildStatDivider(isDark),
                     _buildCompactStat(
                       icon: LucideIcons.timer,
-                      value: _stats.formattedAveragePace,
+                      value: _viewModel.stats.formattedAveragePace,
                       unit: '/km',
                     ),
                     _buildStatDivider(isDark),
                     _buildCompactStat(
                       icon: LucideIcons.flame,
-                      value: _stats.formattedTotalCalories,
+                      value: _viewModel.stats.formattedTotalCalories,
                       unit: 'kcal',
                     ),
                   ],
@@ -678,7 +666,7 @@ class _HomeTabState extends State<HomeTab> {
                     ),
                   ),
                   Text(
-                    'Hoje: ${_weeklyProgress[_todayIndex].toStringAsFixed(1)} km',
+                    'Hoje: ${_viewModel.weeklyProgress[_viewModel.todayIndex].toStringAsFixed(1)} km',
                     style: GoogleFonts.outfit(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
@@ -701,17 +689,16 @@ class _HomeTabState extends State<HomeTab> {
                 child: BarChart(
                   BarChartData(
                     alignment: BarChartAlignment.spaceAround,
-                    maxY: _getMaxY(),
+                    maxY: _viewModel.chartMaxY,
                     barTouchData: BarTouchData(
                       enabled: true,
                       touchTooltipData: BarTouchTooltipData(
                         getTooltipColor: (_) =>
                             Theme.of(context).colorScheme.surface,
                         tooltipBorder: BorderSide(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .outline
-                              .withValues(alpha: 0.3),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.outline.withValues(alpha: 0.3),
                         ),
                         getTooltipItem: (group, groupIndex, rod, rodIndex) {
                           return BarTooltipItem(
@@ -728,9 +715,7 @@ class _HomeTabState extends State<HomeTab> {
                       show: true,
                       drawVerticalLine: false,
                       getDrawingHorizontalLine: (value) => FlLine(
-                        color: isDark
-                            ? Colors.white10
-                            : AppColors.borderLight,
+                        color: isDark ? Colors.white10 : AppColors.borderLight,
                         strokeWidth: 1,
                       ),
                     ),
@@ -764,7 +749,7 @@ class _HomeTabState extends State<HomeTab> {
                             if (index < 0 || index > 6) {
                               return const Text('');
                             }
-                            final isToday = index == _todayIndex;
+                            final isToday = index == _viewModel.todayIndex;
                             return Text(
                               labels[index],
                               style: TextStyle(
@@ -792,15 +777,15 @@ class _HomeTabState extends State<HomeTab> {
                           x: i,
                           barRods: [
                             BarChartRodData(
-                              toY: _weeklyProgress[i],
-                              color: i == _todayIndex
+                              toY: _viewModel.weeklyProgress[i],
+                              color: i == _viewModel.todayIndex
                                   ? (isDark
                                         ? AppColors.primaryNeon
                                         : AppColors.lightPrimary)
                                   : (isDark
-                                          ? AppColors.primaryNeon
-                                          : AppColors.lightPrimary)
-                                      .withValues(alpha: 0.35),
+                                            ? AppColors.primaryNeon
+                                            : AppColors.lightPrimary)
+                                        .withValues(alpha: 0.35),
                               width: 14,
                               borderRadius: const BorderRadius.vertical(
                                 top: Radius.circular(4),
@@ -832,24 +817,12 @@ class _HomeTabState extends State<HomeTab> {
     return isDark ? AppColors.primaryNeon : AppColors.lightPrimary;
   }
 
-  String _formatRunDuration(int seconds) {
-    if (seconds >= 3600) {
-      final h = seconds ~/ 3600;
-      final m = (seconds % 3600) ~/ 60;
-      return '${h}h ${m}m';
-    } else {
-      final m = seconds ~/ 60;
-      final s = seconds % 60;
-      return '${m}m ${s.toString().padLeft(2, '0')}s';
-    }
-  }
-
   Widget _buildStatsPeriodChip(String label, int index, bool isDark) {
-    final selected = _statsPeriod == index;
+    final selected = _viewModel.selectedStatsPeriod == index;
     final accent = isDark ? AppColors.primaryNeon : AppColors.lightPrimary;
     return Expanded(
       child: GestureDetector(
-        onTap: () => _changeStatsPeriod(index),
+        onTap: () => _viewModel.changeStatsPeriod(index),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           margin: EdgeInsets.only(right: index < 5 ? 8 : 0),

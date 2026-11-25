@@ -6,7 +6,7 @@ class RunSplit {
 
   Map<String, dynamic> toMap() => {'t': timeSeconds, 'c': calories};
   factory RunSplit.fromMap(Map<String, dynamic> map) => RunSplit(
-    timeSeconds: map['t'] ?? 0,
-    calories: map['c'] ?? 0,
+    timeSeconds: (map['t'] as num?)?.toInt() ?? 0,
+    calories: (map['c'] as num?)?.toInt() ?? 0,
   );
 }

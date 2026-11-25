@@ -57,8 +57,11 @@ lib/
 ## Arquitetura
 
 - `app/composition_root.dart` monta o grafo de dependências uma única vez;
-- `RunSessionController` concentra GPS, timer, autopausa, splits e persistência,
-  enquanto `ActiveRunScreen` cuida apenas de UI, mapa e navegação;
+- `RunSessionController` coordena GPS, timer e eventos; rota/codecs,
+  persistência, autopausa, splits e pace vivem em colaboradores testáveis;
+  `ActiveRunScreen` cuida apenas de UI, mapa e navegação;
+- `HomeDashboardViewModel` e `HistoryDashboardViewModel` concentram carga,
+  filtros, metas e valores derivados sem conhecer widgets ou navegação;
 - Repositórios são consumidos por interfaces no domínio, com implementações
   sqflite e decorators de cache na camada de dados;
 - Telas usam repositórios estreitos; `DatabaseService` fica como compatibilidade;
@@ -66,7 +69,8 @@ lib/
   sessões e dicionário de exercícios;
 - `ReadModelCache` compartilha resumos, perfil, recordes e estatísticas entre as
   abas, com single-flight e invalidação por escopo;
-- `DataChangeHub` notifica apenas as abas que dependem do dado alterado;
+- `DataChangeHub` notifica apenas as abas que dependem do dado alterado, sem
+  provider ponte nem invalidação global explícita nas telas;
 - `LatestRequest` impede que carregamentos antigos sobrescrevam resultados novos.
 - Atualizações de corrida são separadas em tick de 1 s, estado estrutural e rota;
 - `LivePaceTrace` acumula o traçado colorido por ritmo de forma incremental,
@@ -130,8 +134,10 @@ flutter analyze
 
 ## Dados e backup
 
-Os treinos e o perfil são armazenados localmente com sqflite. Quando o backup
-automático está ativo e a permissão de armazenamento foi concedida, os arquivos
+Os treinos e o perfil são armazenados localmente com sqflite. O aplicativo não
+exige conta e não sincroniza treinos com uma nuvem do RunLab. Firebase Analytics
+e Crashlytics são opcionais e só ficam ativos quando o Firebase está configurado.
+Quando o backup automático está ativo e a permissão de armazenamento foi concedida, os arquivos
 são salvos em:
 
 ```text

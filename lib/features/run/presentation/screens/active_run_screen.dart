@@ -10,7 +10,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/data/data_change_hub.dart';
 import '../../../../core/domain/services/pace_zone_service.dart';
-import '../../../../core/providers/runs_provider.dart';
 import '../../../../core/services/analytics_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/theme_service.dart';
@@ -689,9 +688,7 @@ class _ActiveRunScreenState extends State<ActiveRunScreen>
       );
       if (!mounted) return;
 
-      context.read<RunsProvider>().notifyDataChanged(
-        scopes: {DataScope.achievements},
-      );
+      context.read<DataChangeHub>().emit({DataScope.achievements});
 
       String snackMessage = '';
       if (result.isPlanSuccessful) {
